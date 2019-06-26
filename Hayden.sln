@@ -1,0 +1,31 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio 15
+VisualStudioVersion = 15.0.28307.645
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Hayden", "Hayden\Hayden.csproj", "{B2332680-9E68-45DE-9429-CF76A03A747D}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Hayden.Tests", "Hayden.Tests\Hayden.Tests.csproj", "{637C27A6-2403-4116-AC0A-D81921BFBD1B}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{B2332680-9E68-45DE-9429-CF76A03A747D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B2332680-9E68-45DE-9429-CF76A03A747D}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B2332680-9E68-45DE-9429-CF76A03A747D}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B2332680-9E68-45DE-9429-CF76A03A747D}.Release|Any CPU.Build.0 = Release|Any CPU
+		{637C27A6-2403-4116-AC0A-D81921BFBD1B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{637C27A6-2403-4116-AC0A-D81921BFBD1B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{637C27A6-2403-4116-AC0A-D81921BFBD1B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{637C27A6-2403-4116-AC0A-D81921BFBD1B}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {848B13BF-F041-4602-AB96-DF079E367EA1}
+	EndGlobalSection
+EndGlobal
