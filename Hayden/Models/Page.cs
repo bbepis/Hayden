@@ -9,6 +9,9 @@ namespace Hayden.Models
 
 		[JsonProperty("last_modified")]
 		public ulong LastModified { get; set; }
+
+		[JsonIgnore]
+		public bool IsArchived => LastModified == ulong.MaxValue;
 	}
 
 

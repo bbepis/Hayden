@@ -23,7 +23,7 @@ namespace Hayden
 			string board = args[0];
 			string downloadDir = args[1];
 
-			Log($"Downloading from board \"{board}\" to directory {downloadDir}");
+			Log($"Downloading from board /{board}/ to directory {downloadDir}");
 			Log("Press Q to stop archival.");
 
 			var boardArchiver = new BoardArchiver(board, new FilesystemThreadConsumer(downloadDir));

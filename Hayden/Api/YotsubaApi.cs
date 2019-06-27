@@ -17,19 +17,6 @@ namespace Hayden
 		NotFound
 	}
 
-	public class YotsubaResponse<T>
-	{
-		public YotsubaResponseType ResponseType { get; }
-
-		public T Payload { get; }
-
-		public YotsubaResponse(YotsubaResponseType responseType, T payload)
-		{
-			ResponseType = responseType;
-			Payload = payload;
-		}
-	}
-
 	public static class YotsubaApi
 	{
 		public static HttpClient HttpClient { get; set; }
@@ -55,45 +42,33 @@ namespace Hayden
 			return request;
 		}
 
-		public static async Task<YotsubaResponse<Thread>> GetThread(string board, ulong threadNumber, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default(CancellationToken))
+		public static Task<(Thread Thread, YotsubaResponseType ResponseType)> GetThread(string board, ulong threadNumber, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default(CancellationToken))
 		{
-			var request = CreateRequest(new Uri($"https://a.4cdn.org/{board}/thread/{threadNumber}.json"), modifiedSince);
-
-			var response = await HttpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-
-			if (response.StatusCode == HttpStatusCode.NotModified)
-				return new YotsubaResponse<Thread>(YotsubaResponseType.NotModified, null);
-
-			if (response.StatusCode == HttpStatusCode.NotFound)
-				return new YotsubaResponse<Thread>(YotsubaResponseType.NotFound, null);
-
-			if (!response.IsSuccessStatusCode)
-				throw new WebException($"Received an error code: {response.StatusCode}");
-
-			using (response)
-			using (var responseStream = await response.Content.ReadAsStreamAsync())
-			using (StreamReader streamReader = new StreamReader(responseStream))
-			using (JsonReader reader = new JsonTextReader(streamReader))
-			{
-				var serializer = JsonSerializer.Create();
-
-				var posts = serializer.Deserialize<Thread>(reader);
-
-				return new YotsubaResponse<Thread>(YotsubaResponseType.Ok, posts);
-			}
+			return MakeYotsubaApiCall<Thread>(new Uri($"https://a.4cdn.org/{board}/thread/{threadNumber}.json"), modifiedSince, cancellationToken);
 		}
 
-		public static async Task<YotsubaResponse<Page[]>> GetBoard(string board, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default(CancellationToken))
+		public static Task<(Page[] Pages, YotsubaResponseType ResponseType)> GetBoard(string board, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default)
 		{
-			var request = CreateRequest(new Uri($"https://a.4cdn.org/{board}/threads.json"), modifiedSince);
+			return MakeYotsubaApiCall<Page[]>(new Uri($"https://a.4cdn.org/{board}/threads.json"), modifiedSince, cancellationToken);
+		}
+
+		public static Task<(ulong[] ThreadIds, YotsubaResponseType ResponseType)> GetArchive(string board, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default)
+		{
+			return MakeYotsubaApiCall<ulong[]>(new Uri($"https://a.4cdn.org/{board}/archive.json"), modifiedSince, cancellationToken);
+		}
+
+		private static readonly JsonSerializer jsonSerializer = JsonSerializer.Create();
+		private static async Task<(T, YotsubaResponseType)> MakeYotsubaApiCall<T>(Uri uri, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default)
+		{
+			var request = CreateRequest(uri, modifiedSince);
 
 			var response = await HttpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
 
 			if (response.StatusCode == HttpStatusCode.NotModified)
-				return new YotsubaResponse<Page[]>(YotsubaResponseType.NotModified, null);
+				return (default, YotsubaResponseType.NotModified);
 
 			if (response.StatusCode == HttpStatusCode.NotFound)
-				return new YotsubaResponse<Page[]>(YotsubaResponseType.NotFound, null);
+				return (default, YotsubaResponseType.NotFound);
 
 			if (!response.IsSuccessStatusCode)
 				throw new WebException($"Received an error code: {response.StatusCode}");
@@ -103,11 +78,9 @@ namespace Hayden
 			using (StreamReader streamReader = new StreamReader(responseStream))
 			using (JsonReader reader = new JsonTextReader(streamReader))
 			{
-				var serializer = JsonSerializer.Create();
+				var obj = jsonSerializer.Deserialize<T>(reader);
 
-				var pages = serializer.Deserialize<Page[]>(reader);
-
-				return new YotsubaResponse<Page[]>(YotsubaResponseType.Ok, pages);
+				return (obj, YotsubaResponseType.Ok);
 			}
 		}
 	}
