@@ -2,8 +2,11 @@
 
 namespace Hayden.Models
 {
-	public class PageThread
+	public struct PageThread
 	{
+		[JsonIgnore]
+		public const ulong ArchivedLastModifiedTime = ulong.MaxValue;
+
 		[JsonProperty("no")]
 		public ulong ThreadNumber { get; set; }
 
@@ -11,11 +14,11 @@ namespace Hayden.Models
 		public ulong LastModified { get; set; }
 
 		[JsonIgnore]
-		public bool IsArchived => LastModified == ulong.MaxValue;
+		public bool IsArchived => LastModified == ArchivedLastModifiedTime;
 	}
 
 
-	public class Page
+	public struct Page
 	{
 		[JsonProperty("page")]
 		public uint PageNumber { get; set; }

@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 using Hayden.Models;
 
@@ -9,5 +10,7 @@ namespace Hayden.Contract
 		Task ConsumeThread(Thread thread, string board);
 
 		Task ThreadUntracked(ulong threadId, string board);
+
+		Task<ulong[]> CheckExistingThreads(IEnumerable<ulong> threadIdsToCheck, string board, bool archivedOnly);
 	}
 }

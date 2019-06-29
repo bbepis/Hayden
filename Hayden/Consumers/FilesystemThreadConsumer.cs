@@ -1,4 +1,5 @@
 ﻿using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -87,6 +88,11 @@ namespace Hayden.Consumers
 			ThreadCounters.TryRemove(threadId, out _);
 
 			return Task.CompletedTask;
+		}
+
+		public Task<ulong[]> CheckExistingThreads(IEnumerable<ulong> threadIdsToCheck, string board, bool archivedOnly)
+		{
+			throw new System.NotImplementedException();
 		}
 
 		private async Task DownloadFile(string imageUrl, string downloadPath)
