@@ -5,7 +5,6 @@ using System.Threading.Tasks;
 using Hayden.Config;
 using Hayden.Consumers;
 using Hayden.Contract;
-using MySql.Data.MySqlClient;
 using Newtonsoft.Json.Linq;
 
 namespace Hayden
@@ -34,19 +33,16 @@ namespace Hayden
 				case "Asagi":
 					var asagiConfig = rawConfigFile["backend"].ToObject<AsagiConfig>();
 
-					var connection = new MySqlConnection(asagiConfig.ConnectionString);
-					await connection.OpenAsync();
-
-					consumer = new AsagiThreadConsumer(connection, asagiConfig);
+					consumer = new AsagiThreadConsumer(asagiConfig);
 					break;
 
 				default:
 					throw new ArgumentException($"Unknown backend type {backendType}");
 			}
 
-			Log("Initialized.");
-
 			var yotsubaConfig = rawConfigFile["source"].ToObject<YotsubaConfig>();
+
+			Log("Initialized.");
 
 			//Log($"Downloading from board /{board}/ to directory {downloadDir}");
 			Log("Press Q to stop archival.");

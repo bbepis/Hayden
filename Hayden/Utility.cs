@@ -1,4 +1,6 @@
 ﻿using System;
+using System.IO;
+using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -54,6 +56,17 @@ namespace Hayden
 			finally
 			{
 				Console.CancelKeyPress -= cancelWatcher;
+			}
+		}
+
+		public static string GetEmbeddedText(string resourceName)
+		{
+			var assembly = Assembly.GetExecutingAssembly();
+
+			using (Stream stream = assembly.GetManifestResourceStream(resourceName))
+			using (StreamReader reader = new StreamReader(stream))
+			{
+				return reader.ReadToEnd();
 			}
 		}
 	}

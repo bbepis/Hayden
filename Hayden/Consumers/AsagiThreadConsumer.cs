@@ -16,18 +16,16 @@ namespace Hayden.Consumers
 {
 	public class AsagiThreadConsumer : IThreadConsumer
 	{
-		private MySqlConnection Connection { get; }
 		private AsagiConfig Config { get; }
 		private string ThumbDownloadLocation { get; }
 		private string ImageDownloadLocation { get; }
 
 		private ConcurrentDictionary<string, DatabaseCommands> PreparedStatements { get; } = new ConcurrentDictionary<string, DatabaseCommands>();
 
-		public AsagiThreadConsumer(MySqlConnection connection, AsagiConfig config)
+		public AsagiThreadConsumer(AsagiConfig config)
 		{
-			Connection = connection;
 			Config = config;
-
+			
 			ThumbDownloadLocation = Path.Combine(Config.DownloadLocation, "thumb");
 			ImageDownloadLocation = Path.Combine(Config.DownloadLocation, "images");
 
@@ -35,22 +33,35 @@ namespace Hayden.Consumers
 			Directory.CreateDirectory(ImageDownloadLocation);
 		}
 
-		private ConcurrentDictionary<ulong, ConcurrentDictionary<ulong, int>> ThreadHashes { get; } = new ConcurrentDictionary<ulong, ConcurrentDictionary<ulong, int>>();
+		private ConcurrentDictionary<ThreadHashObject, SortedList<ulong, int>> ThreadHashes { get; } = new ConcurrentDictionary<ThreadHashObject, SortedList<ulong, int>>();
 
 		private DatabaseCommands GetPreparedStatements(string board)
-			=> PreparedStatements.GetOrAdd(board, b => new DatabaseCommands(Connection, b));
+			=> PreparedStatements.GetOrAdd(board, b =>
+			{
+				var connection = new MySqlConnection(Config.ConnectionString);
+				connection.Open();
+
+				return new DatabaseCommands(connection, b);
+			});
 
 		public async Task ConsumeThread(Thread thread, string board)
 		{
 			var dbCommands = GetPreparedStatements(board);
 
-			var threadHashes = ThreadHashes.GetOrAdd(thread.OriginalPost.PostNumber, x =>
+			var hashObject = new ThreadHashObject(board, thread.OriginalPost.PostNumber);
+
+			var threadHashes = ThreadHashes.GetOrAdd(hashObject, x =>
 			{
 				// Rebuild hashes from database, if they exist
 
-				var hashes = dbCommands.WithAccess(async connection => dbCommands.GetHashesOfThread(x)).Result;
+				var hashes = dbCommands.WithAccess(async connection => dbCommands.GetHashesOfThread(x.ThreadId)).Result;
 
-				return new ConcurrentDictionary<ulong, int>(hashes);
+				var sortedList = new SortedList<ulong, int>();
+
+				foreach (var hashPair in hashes)
+					sortedList.Add(hashPair.Key, hashPair.Value);
+
+				return sortedList;
 			});
 
 			foreach (var post in thread.Posts)
@@ -108,6 +119,8 @@ namespace Hayden.Consumers
 				}
 			}
 
+			List<ulong> postNumbersToDelete = new List<ulong>();
+
 			foreach (var postNumber in threadHashes.Keys)
 			{
 				if (thread.Posts.All(x => x.PostNumber != postNumber))
@@ -118,14 +131,27 @@ namespace Hayden.Consumers
 
 					await dbCommands.WithAccess(connection => dbCommands.DeletePost(postNumber));
 
-					threadHashes.Remove(postNumber, out _);
+					postNumbersToDelete.Add(postNumber);
 				}
+			}
+
+			// workaround for not being able to remove from a collection while enumerating it
+			foreach (var postNumber in postNumbersToDelete)
+				threadHashes.Remove(postNumber, out _);
+
+
+			if (thread.OriginalPost.Archived == true)
+			{
+				// We don't need the hashes if the thread is archived, since it will never change
+				// If it does change, we can just grab a new set from the database
+
+				ThreadHashes.TryRemove(hashObject, out _);
 			}
 		}
 
 		public async Task ThreadUntracked(ulong threadId, string board)
 		{
-			ThreadHashes.Remove(threadId, out _);
+			ThreadHashes.TryRemove(new ThreadHashObject(board, threadId), out _);
 		}
 
 		public async Task<ulong[]> CheckExistingThreads(IEnumerable<ulong> threadIdsToCheck, string board, bool archivedOnly)
@@ -149,7 +175,8 @@ namespace Hayden.Consumers
 
 		public void Dispose()
 		{
-			Connection.Dispose();
+			foreach (var preparedStatements in PreparedStatements.Values)
+				preparedStatements.Dispose();
 		}
 
 		~AsagiThreadConsumer()
@@ -171,7 +198,7 @@ namespace Hayden.Consumers
 			}
 		}
 
-		private class DatabaseCommands
+		private class DatabaseCommands : IDisposable
 		{
 			public SemaphoreSlim AccessSemaphore { get; } = new SemaphoreSlim(1);
 
@@ -181,6 +208,8 @@ namespace Hayden.Consumers
 			private MySqlCommand UpdateQuery { get; }
 			private MySqlCommand DeleteQuery { get; }
 			private MySqlCommand SelectHashQuery { get; }
+
+			private static readonly string CreateTablesQuery = Utility.GetEmbeddedText("Hayden.Consumers.AsagiSchema.sql");
 
 			private const string BaseInsertQuery = "INSERT INTO `{0}`"
 												   + "  (poster_ip, num, subnum, thread_num, op, timestamp, timestamp_expired, preview_orig, preview_w, preview_h,"
@@ -195,6 +224,8 @@ namespace Hayden.Consumers
 			public DatabaseCommands(MySqlConnection connection, string board)
 			{
 				Connection = connection;
+
+				CreateTables(board);
 
 				InsertQuery = new MySqlCommand(string.Format(BaseInsertQuery, board), connection);
 				InsertQuery.Parameters.Add("@post_no", MySqlDbType.UInt32);
@@ -243,9 +274,31 @@ namespace Hayden.Consumers
 				DeleteQuery.Parameters.Add("@thread_no", MySqlDbType.UInt32);
 				DeleteQuery.Prepare();
 
-				SelectHashQuery = new MySqlCommand($"SELECT num, locked, sticky, comment, media_filename FROM `{board}` WHERE num = @thread_no OR thread_num = @thread_no", connection);
+				SelectHashQuery = new MySqlCommand($"SELECT num, locked, sticky, comment, media_filename FROM `{board}` WHERE deleted = 0 AND (num = @thread_no OR thread_num = @thread_no)", connection);
 				SelectHashQuery.Parameters.Add("@thread_no", MySqlDbType.UInt32);
 				SelectHashQuery.Prepare();
+			}
+
+			private void CreateTables(string board)
+			{
+				var command = new MySqlCommand($"SHOW TABLES LIKE '{board}_%';", Connection);
+				DataTable tables = new DataTable();
+
+				using (var reader = command.ExecuteReader())
+					tables.Load(reader);
+				
+				if (tables.Rows.Count == 0)
+				{
+					Program.Log($"[Asagi] Creating tables for board /{board}/");
+
+					string formattedQuery = string.Format(CreateTablesQuery, board);
+
+					foreach (var splitString in formattedQuery.Split('$'))
+					{
+						command = new MySqlCommand(splitString, Connection);
+						command.ExecuteNonQuery();
+					}
+				}
 			}
 
 			public Task InsertPost(Post post)
@@ -309,6 +362,7 @@ namespace Hayden.Consumers
 			{
 				SelectHashQuery.Parameters["@thread_no"].Value = theadNumber;
 
+				var threadHashes = new List<KeyValuePair<ulong, int>>();
 				using (var reader = SelectHashQuery.ExecuteReader())
 				{
 					Post tempPost = new Post();
@@ -322,9 +376,11 @@ namespace Hayden.Consumers
 						tempPost.OriginalFilename = reader["media_filename"] == DBNull.Value ? null
 							: ((string)reader["media_filename"]).Substring(0, ((string)reader["media_filename"]).LastIndexOf('.'));
 
-						yield return new KeyValuePair<ulong, int>(tempPost.PostNumber, tempPost.GenerateAsagiHash());
+						threadHashes.Add(new KeyValuePair<ulong, int>(tempPost.PostNumber, tempPost.GenerateAsagiHash()));
 					}
 				}
+
+				return threadHashes;
 			}
 
 			public async Task<T> WithAccess<T>(Func<MySqlConnection, Task<T>> taskFunc)
@@ -353,6 +409,39 @@ namespace Hayden.Consumers
 				{
 					AccessSemaphore.Release();
 				}
+			}
+			
+			private void Dispose(bool disposing)
+			{
+				AccessSemaphore?.Dispose();
+				Connection?.Dispose();
+				InsertQuery?.Dispose();
+				UpdateQuery?.Dispose();
+				DeleteQuery?.Dispose();
+				SelectHashQuery?.Dispose();
+			}
+
+			public void Dispose()
+			{
+				Dispose(true);
+				GC.SuppressFinalize(this);
+			}
+
+			~DatabaseCommands() {
+				Dispose(false);
+			}
+		}
+
+		private struct ThreadHashObject
+		{
+			public string Board { get; set; }
+
+			public ulong ThreadId { get; set; }
+
+			public ThreadHashObject(string board, ulong threadId)
+			{
+				Board = board;
+				ThreadId = threadId;
 			}
 		}
 	}

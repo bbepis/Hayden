@@ -24,33 +24,42 @@ namespace Hayden
 
 		private DateTimeOffset? LastBoardUpdate { get; set; }
 
-		private readonly FifoSemaphore APISemaphore = new FifoSemaphore(1);
+		private FifoSemaphore APISemaphore { get; }
 
-		private PageThread[] CurrentActivePageThreads { get; set; } = new PageThread[0];
-		private PageThread[] CurrentArchivedPageThreads { get; set; } = new PageThread[0];
-
-
-		public BoardArchiver(YotsubaConfig config, IThreadConsumer threadConsumer)
+		public BoardArchiver(YotsubaConfig config, IThreadConsumer threadConsumer, FifoSemaphore apiSemaphore = null)
 		{
 			Config = config;
 			ThreadConsumer = threadConsumer;
+
+			APISemaphore = apiSemaphore ?? new FifoSemaphore(1);
 
 			ApiCooldownTimespan = TimeSpan.FromSeconds(config.ApiDelay ?? 1);
 			BoardUpdateTimespan = TimeSpan.FromSeconds(config.BoardDelay ?? 30);
 		}
 
-		public async Task Execute(CancellationToken cancellationToken)
+		public async Task Execute(CancellationToken token)
 		{
 			TrackedThreads.Clear();
 
-			var semaphoreTask = SemaphoreUpdateTask(cancellationToken);
+			var semaphoreTask = SemaphoreUpdateTask(token);
 
-			await BoardUpdateTask(cancellationToken, Config.Boards[0]);
+			var boardTasks = new List<Task>();
+
+			foreach (var board in Config.Boards)
+			{
+				boardTasks.Add(BoardUpdateTask(token, board));
+			}
+
+			await Task.WhenAll(boardTasks);
 		}
 
 		private async Task BoardUpdateTask(CancellationToken token, string board)
 		{
 			bool firstRun = true;
+			var threadSemaphore = new SemaphoreSlim(10);
+			
+			PageThread[] currentActivePageThreads = new PageThread[0];
+			PageThread[] currentArchivedPageThreads = new PageThread[0];
 
 			while (!token.IsCancellationRequested)
 			{
@@ -65,7 +74,7 @@ namespace Hayden
 				switch (pagesRequest.ResponseType)
 				{
 					case YotsubaResponseType.Ok:
-						CurrentActivePageThreads = pagesRequest.Pages.SelectMany(x => x.Threads).ToArray();
+						currentActivePageThreads = pagesRequest.Pages.SelectMany(x => x.Threads).ToArray();
 						hasChanged = true;
 						break;
 
@@ -86,7 +95,7 @@ namespace Hayden
 				{
 					case YotsubaResponseType.Ok:
 
-						CurrentArchivedPageThreads = archiveRequest.ThreadIds
+						currentArchivedPageThreads = archiveRequest.ThreadIds
 																   // Order by ascending thread number, to ensure we don't miss something from the very end of the archive
 																   // that gets pruned by the time we get to it.
 																   .OrderBy(x => x)
@@ -96,20 +105,18 @@ namespace Hayden
 						{
 							var existingArchivedThreads = await ThreadConsumer.CheckExistingThreads(archiveRequest.ThreadIds, board, true);
 
-							Program.Log($"Found {existingArchivedThreads.Length} existing archived threads");
+							Program.Log($"Found {existingArchivedThreads.Length} existing archived threads for board /{board}/");
 
 							foreach (ulong existingThreadId in existingArchivedThreads)
 							{
 								var threadTracker = new ThreadTracker
 								{
 									Archived = true,
-									Updated = false,
+									Poll = false,
 									ThreadNumber = existingThreadId,
 									Board = board,
 									LastModified = PageThread.ArchivedLastModifiedTime
 								};
-
-								threadTracker.UpdateTask = ThreadUpdateTask(token, threadTracker);
 
 								TrackedThreads.TryAdd(existingThreadId, threadTracker);
 							}
@@ -127,9 +134,26 @@ namespace Hayden
 						break;
 				}
 
+				var waitTask = Task.Delay(BoardUpdateTimespan, token);
+
 				if (hasChanged)
 				{
-					UpdateThreadsToTrack(CurrentArchivedPageThreads.Concat(CurrentActivePageThreads), board, token);
+					var updateTrackers = UpdateThreadsToTrack(currentArchivedPageThreads.Concat(currentActivePageThreads), board);
+
+					var weakReferences = new List<WeakReference<Task>>();
+					
+					foreach (var tracker in updateTrackers)
+					{
+						await threadSemaphore.WaitAsync();
+
+						weakReferences.Add(new WeakReference<Task>(ThreadUpdateTask(CancellationToken.None, tracker).ContinueWith(x => threadSemaphore.Release())));
+					}
+
+					foreach (var updateTask in weakReferences)
+					{
+						if (updateTask.TryGetTarget(out var task))
+							await task;
+					}
 
 					firstRun = false;
 
@@ -139,13 +163,13 @@ namespace Hayden
 
 				//Program.Log($"DEBUG: Total threads: {CurrentActivePageThreads.Length + CurrentArchivedPageThreads.Length}");
 
-				await Task.Delay(BoardUpdateTimespan, token);
+				await waitTask;
 			}
 		}
 
-		private void UpdateThreadsToTrack(IEnumerable<PageThread> threads, string board, CancellationToken token = default)
+		private List<ThreadTracker> UpdateThreadsToTrack(IEnumerable<PageThread> threads, string board)
 		{
-			int enqueuedThreads = 0;
+			List<ThreadTracker> updateTrackers = new List<ThreadTracker>();
 
 			// Process threads that are currently not dead.
 
@@ -159,16 +183,15 @@ namespace Hayden
 					{
 						// Thread has updated.
 						threadTracker.LastModified = thread.LastModified;
-						threadTracker.Updated = true;
 
-						enqueuedThreads++;
+						threadTracker.Poll = true;
 					}
 					else if (thread.IsArchived && !threadTracker.Archived)
 					{
 						// Thread has become archived.
 						threadTracker.Archived = true;
 
-						enqueuedThreads++;
+						threadTracker.Poll = true;
 					}
 					else
 					{
@@ -187,19 +210,21 @@ namespace Hayden
 						Board = board,
 						LastModified = thread.LastModified,
 						Archived = thread.IsArchived,
-						Updated = true,
+						Poll = true
 					};
 
 					TrackedThreads[thread.ThreadNumber] = threadTracker;
-
-					threadTracker.UpdateTask = ThreadUpdateTask(token, threadTracker);
-
-					enqueuedThreads++;
 				}
 			}
 
-			if (enqueuedThreads > 0)
-				Program.Log($"{enqueuedThreads} threads have been enqueued for polling");
+			foreach (var threadTracker in TrackedThreads.Values)
+			{
+				if (threadTracker.Board == board && threadTracker.Poll)
+					updateTrackers.Add(threadTracker);
+			}
+
+			if (updateTrackers.Count > 0)
+				Program.Log($"{updateTrackers.Count} threads from /{board}/ have been enqueued for polling");
 
 			// Find threads that we are monitoring but are dead.
 
@@ -216,77 +241,65 @@ namespace Hayden
 			// Update the last time we checked the board.
 
 			LastBoardUpdate = DateTimeOffset.Now;
+
+			return updateTrackers;
 		}
 
 		private async Task ThreadUpdateTask(CancellationToken token, ThreadTracker tracker)
 		{
-			bool isArchived = tracker.Archived;
-
-			while (!token.IsCancellationRequested)
+			try
 			{
-				if (!tracker.Deleted
-					&& !tracker.Updated
-					&& tracker.Archived == isArchived)
+				await APISemaphore.WaitAsync(token);
+
+				Program.Log($"Polling thread /{tracker.Board}/{tracker.ThreadNumber}");
+
+				var response = await YotsubaApi.GetThread(tracker.Board, tracker.ThreadNumber, tracker.LastUpdate, token);
+
+				switch (response.ResponseType)
 				{
-					await Task.Delay(1000);
-					continue;
-				}
+					case YotsubaResponseType.Ok:
+						tracker.LastUpdate = DateTimeOffset.Now;
+						Program.Log($"Downloading changes from thread /{tracker.Board}/{tracker.ThreadNumber}");
 
-				try
-				{
-					await APISemaphore.WaitAsync(token);
+						await ThreadConsumer.ConsumeThread(response.Thread, tracker.Board);
 
-					Program.Log($"Polling thread /{tracker.Board}/{tracker.ThreadNumber}");
+						if (response.Thread.OriginalPost.Archived == true)
+						{
+							Program.Log($"Thread /{tracker.Board}/{tracker.ThreadNumber} has been archived");
+						}
 
-					var response = await YotsubaApi.GetThread(tracker.Board, tracker.ThreadNumber, tracker.LastUpdate, token);
+						tracker.Deleted = false;
+						tracker.Poll = false;
 
-					switch (response.ResponseType)
-					{
-						case YotsubaResponseType.Ok:
-							tracker.LastUpdate = DateTimeOffset.Now;
-							Program.Log($"Downloading changes from thread /{tracker.Board}/{tracker.ThreadNumber}");
-
-							await ThreadConsumer.ConsumeThread(response.Thread, tracker.Board);
-
-							if (response.Thread.OriginalPost.Archived == true)
-							{
-								Program.Log($"Thread /{tracker.Board}/{tracker.ThreadNumber} has been archived");
-								isArchived = true;
-							}
-
-							tracker.Deleted = false;
-
-							break;
-
-						case YotsubaResponseType.NotModified:
-							tracker.Deleted = false;
-
-							break;
-
-						case YotsubaResponseType.NotFound:
-							Program.Log($"Thread /{tracker.Board}/{tracker.ThreadNumber} returned HTTP 404 Not Found");
-							break;
-
-						default:
-							throw new ArgumentOutOfRangeException();
-					}
-
-					tracker.Updated = false;
-
-					if (tracker.Deleted)
-					{
-						Program.Log($"Thread /{tracker.Board}/{tracker.ThreadNumber} has been pruned or deleted; stopping tracking");
 						break;
-					}
+
+					case YotsubaResponseType.NotModified:
+						tracker.Deleted = false;
+						tracker.Poll = false;
+
+						break;
+
+					case YotsubaResponseType.NotFound:
+						Program.Log($"Thread /{tracker.Board}/{tracker.ThreadNumber} returned HTTP 404 Not Found");
+						tracker.Poll = true;
+						break;
+
+					default:
+						throw new ArgumentOutOfRangeException();
 				}
-				catch (Exception exception)
+
+				if (tracker.Deleted)
 				{
-					Program.Log($"ERROR: Could not poll or update thread: {exception}");
+					Program.Log($"Thread /{tracker.Board}/{tracker.ThreadNumber} has been pruned or deleted; stopping tracking");
+
+					await ThreadConsumer.ThreadUntracked(tracker.ThreadNumber, tracker.Board);
+					TrackedThreads.Remove(tracker.ThreadNumber, out _);
 				}
 			}
-
-			await ThreadConsumer.ThreadUntracked(tracker.ThreadNumber, tracker.Board);
-			TrackedThreads.Remove(tracker.ThreadNumber, out _);
+			catch (Exception exception)
+			{
+				Program.Log($"ERROR: Could not poll or update thread /{tracker.Board}/{tracker.ThreadNumber}. Will try again next board update\nException: {exception}");
+			}
 		}
 
 		private async Task SemaphoreUpdateTask(CancellationToken token)
@@ -314,9 +327,7 @@ namespace Hayden
 
 			public bool Deleted { get; set; } = false;
 
-			public bool Updated { get; set; } = false;
-
-			public Task UpdateTask { get; set; }
+			public bool Poll { get; set; }
 		}
 	}
 }
