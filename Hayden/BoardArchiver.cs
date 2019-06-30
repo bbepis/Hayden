@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Hayden.Config;
 using Hayden.Contract;
 using Hayden.Models;
 
@@ -11,7 +12,7 @@ namespace Hayden
 {
 	public class BoardArchiver
 	{
-		public string Board { get; }
+		public YotsubaConfig Config { get; }
 
 		protected IThreadConsumer ThreadConsumer { get; }
 
@@ -29,10 +30,13 @@ namespace Hayden
 		private PageThread[] CurrentArchivedPageThreads { get; set; } = new PageThread[0];
 
 
-		public BoardArchiver(string board, IThreadConsumer threadConsumer)
+		public BoardArchiver(YotsubaConfig config, IThreadConsumer threadConsumer)
 		{
-			Board = board;
+			Config = config;
 			ThreadConsumer = threadConsumer;
+
+			ApiCooldownTimespan = TimeSpan.FromSeconds(config.ApiDelay ?? 1);
+			BoardUpdateTimespan = TimeSpan.FromSeconds(config.BoardDelay ?? 30);
 		}
 
 		public async Task Execute(CancellationToken cancellationToken)
@@ -41,22 +45,22 @@ namespace Hayden
 
 			var semaphoreTask = SemaphoreUpdateTask(cancellationToken);
 
-			await BoardUpdateTask(cancellationToken);
+			await BoardUpdateTask(cancellationToken, Config.Boards[0]);
 		}
 
-		private async Task BoardUpdateTask(CancellationToken token)
+		private async Task BoardUpdateTask(CancellationToken token, string board)
 		{
 			bool firstRun = true;
 
 			while (!token.IsCancellationRequested)
 			{
-				Program.Log($"Getting contents of board /{Board}/");
+				Program.Log($"Getting contents of board /{board}/");
 
 				bool hasChanged = false;
 
 				await APISemaphore.WaitAsync(token);
 
-				var pagesRequest = await YotsubaApi.GetBoard(Board, LastBoardUpdate, token);
+				var pagesRequest = await YotsubaApi.GetBoard(board, LastBoardUpdate, token);
 
 				switch (pagesRequest.ResponseType)
 				{
@@ -70,14 +74,14 @@ namespace Hayden
 
 					case YotsubaResponseType.NotFound:
 					default:
-						Program.Log($"Unable to index board /{Board}/, is there a connection error?");
+						Program.Log($"Unable to index board /{board}/, is there a connection error?");
 						break;
 				}
 
 
 				await APISemaphore.WaitAsync(token);
 
-				var archiveRequest = await YotsubaApi.GetArchive(Board, LastBoardUpdate, token);
+				var archiveRequest = await YotsubaApi.GetArchive(board, LastBoardUpdate, token);
 				switch (archiveRequest.ResponseType)
 				{
 					case YotsubaResponseType.Ok:
@@ -90,7 +94,7 @@ namespace Hayden
 
 						if (firstRun)
 						{
-							var existingArchivedThreads = await ThreadConsumer.CheckExistingThreads(archiveRequest.ThreadIds, Board, true);
+							var existingArchivedThreads = await ThreadConsumer.CheckExistingThreads(archiveRequest.ThreadIds, board, true);
 
 							Program.Log($"Found {existingArchivedThreads.Length} existing archived threads");
 
@@ -101,6 +105,7 @@ namespace Hayden
 									Archived = true,
 									Updated = false,
 									ThreadNumber = existingThreadId,
+									Board = board,
 									LastModified = PageThread.ArchivedLastModifiedTime
 								};
 
@@ -118,13 +123,13 @@ namespace Hayden
 
 					case YotsubaResponseType.NotFound:
 					default:
-						Program.Log($"Unable to index the archive of board /{Board}/, is there a connection error?");
+						Program.Log($"Unable to index the archive of board /{board}/, is there a connection error?");
 						break;
 				}
 
 				if (hasChanged)
 				{
-					UpdateThreadsToTrack(CurrentArchivedPageThreads.Concat(CurrentActivePageThreads), token);
+					UpdateThreadsToTrack(CurrentArchivedPageThreads.Concat(CurrentActivePageThreads), board, token);
 
 					firstRun = false;
 
@@ -138,7 +143,7 @@ namespace Hayden
 			}
 		}
 
-		private void UpdateThreadsToTrack(IEnumerable<PageThread> threads, CancellationToken token = default)
+		private void UpdateThreadsToTrack(IEnumerable<PageThread> threads, string board, CancellationToken token = default)
 		{
 			int enqueuedThreads = 0;
 
@@ -179,6 +184,7 @@ namespace Hayden
 					threadTracker = new ThreadTracker
 					{
 						ThreadNumber = thread.ThreadNumber,
+						Board = board,
 						LastModified = thread.LastModified,
 						Archived = thread.IsArchived,
 						Updated = true,
@@ -230,21 +236,21 @@ namespace Hayden
 				{
 					await APISemaphore.WaitAsync(token);
 
-					Program.Log($"Polling thread /{Board}/{tracker.ThreadNumber}");
+					Program.Log($"Polling thread /{tracker.Board}/{tracker.ThreadNumber}");
 
-					var response = await YotsubaApi.GetThread(Board, tracker.ThreadNumber, tracker.LastUpdate, token);
+					var response = await YotsubaApi.GetThread(tracker.Board, tracker.ThreadNumber, tracker.LastUpdate, token);
 
 					switch (response.ResponseType)
 					{
 						case YotsubaResponseType.Ok:
 							tracker.LastUpdate = DateTimeOffset.Now;
-							Program.Log($"Downloading changes from thread /{Board}/{tracker.ThreadNumber}");
+							Program.Log($"Downloading changes from thread /{tracker.Board}/{tracker.ThreadNumber}");
 
-							await ThreadConsumer.ConsumeThread(response.Thread, Board);
+							await ThreadConsumer.ConsumeThread(response.Thread, tracker.Board);
 
 							if (response.Thread.OriginalPost.Archived == true)
 							{
-								Program.Log($"Thread /{Board}/{tracker.ThreadNumber} has been archived");
+								Program.Log($"Thread /{tracker.Board}/{tracker.ThreadNumber} has been archived");
 								isArchived = true;
 							}
 
@@ -258,7 +264,7 @@ namespace Hayden
 							break;
 
 						case YotsubaResponseType.NotFound:
-							Program.Log($"Thread /{Board}/{tracker.ThreadNumber} returned HTTP 404 Not Found");
+							Program.Log($"Thread /{tracker.Board}/{tracker.ThreadNumber} returned HTTP 404 Not Found");
 							break;
 
 						default:
@@ -269,7 +275,7 @@ namespace Hayden
 
 					if (tracker.Deleted)
 					{
-						Program.Log($"Thread /{Board}/{tracker.ThreadNumber} has been pruned or deleted; stopping tracking");
+						Program.Log($"Thread /{tracker.Board}/{tracker.ThreadNumber} has been pruned or deleted; stopping tracking");
 						break;
 					}
 				}
@@ -279,7 +285,7 @@ namespace Hayden
 				}
 			}
 
-			await ThreadConsumer.ThreadUntracked(tracker.ThreadNumber, Board);
+			await ThreadConsumer.ThreadUntracked(tracker.ThreadNumber, tracker.Board);
 			TrackedThreads.Remove(tracker.ThreadNumber, out _);
 		}
 
@@ -297,6 +303,8 @@ namespace Hayden
 		private class ThreadTracker
 		{
 			public ulong ThreadNumber { get; set; }
+
+			public string Board { get; set; }
 
 			public DateTimeOffset? LastUpdate { get; set; }
 

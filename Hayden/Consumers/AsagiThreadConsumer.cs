@@ -6,6 +6,7 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Hayden.Config;
 using Hayden.Contract;
 using Hayden.Models;
 using MySql.Data.MySqlClient;
@@ -16,19 +17,19 @@ namespace Hayden.Consumers
 	public class AsagiThreadConsumer : IThreadConsumer
 	{
 		private MySqlConnection Connection { get; }
-		private string RootDownloadLocation { get; }
+		private AsagiConfig Config { get; }
 		private string ThumbDownloadLocation { get; }
 		private string ImageDownloadLocation { get; }
 
 		private ConcurrentDictionary<string, DatabaseCommands> PreparedStatements { get; } = new ConcurrentDictionary<string, DatabaseCommands>();
 
-		public AsagiThreadConsumer(MySqlConnection connection, string rootDownloadLocation)
+		public AsagiThreadConsumer(MySqlConnection connection, AsagiConfig config)
 		{
 			Connection = connection;
-			RootDownloadLocation = rootDownloadLocation;
+			Config = config;
 
-			ThumbDownloadLocation = Path.Combine(RootDownloadLocation, "thumb");
-			ImageDownloadLocation = Path.Combine(RootDownloadLocation, "images");
+			ThumbDownloadLocation = Path.Combine(Config.DownloadLocation, "thumb");
+			ImageDownloadLocation = Path.Combine(Config.DownloadLocation, "images");
 
 			Directory.CreateDirectory(ThumbDownloadLocation);
 			Directory.CreateDirectory(ImageDownloadLocation);
@@ -80,21 +81,25 @@ namespace Hayden.Consumers
 						string timestampString = post.TimestampedFilename.ToString();
 						string radixString = Path.Combine(timestampString.Substring(0, 4), timestampString.Substring(4, 2));
 
+						if (Config.FullImagesEnabled)
+						{
+							Directory.CreateDirectory(Path.Combine(ImageDownloadLocation, radixString));
 
-						Directory.CreateDirectory(Path.Combine(ImageDownloadLocation, radixString));
-						Directory.CreateDirectory(Path.Combine(ThumbDownloadLocation, radixString));
+							string fullImageFilename = Path.Combine(ImageDownloadLocation, radixString, post.TimestampedFilenameFull);
+							string fullImageUrl = $"https://i.4cdn.org/{board}/{post.TimestampedFilenameFull}";
 
+							await DownloadFile(fullImageUrl, fullImageFilename);
+						}
+						
+						if (Config.ThumbnailsEnabled)
+						{
+							Directory.CreateDirectory(Path.Combine(ThumbDownloadLocation, radixString));
 
-						string fullImageFilename = Path.Combine(ImageDownloadLocation, radixString, post.TimestampedFilenameFull);
-						string fullImageUrl = $"https://i.4cdn.org/{board}/{post.TimestampedFilenameFull}";
+							string thumbFilename = Path.Combine(ThumbDownloadLocation, radixString, $"{post.TimestampedFilename}s.jpg");
+							string thumbUrl = $"https://i.4cdn.org/{board}/{post.TimestampedFilename}s.jpg";
 
-						await DownloadFile(fullImageUrl, fullImageFilename);
-
-
-						string thumbFilename = Path.Combine(ThumbDownloadLocation, radixString, $"{post.TimestampedFilename}s.jpg");
-						string thumbUrl = $"https://i.4cdn.org/{board}/{post.TimestampedFilename}s.jpg";
-
-						await DownloadFile(thumbUrl, thumbFilename);
+							await DownloadFile(thumbUrl, thumbFilename);
+						}
 					}
 
 					await dbCommands.WithAccess(connection => dbCommands.InsertPost(post));
