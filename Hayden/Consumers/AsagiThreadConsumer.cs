@@ -94,7 +94,7 @@ namespace Hayden.Consumers
 
 						if (Config.FullImagesEnabled)
 						{
-							Directory.CreateDirectory(Path.Combine(ImageDownloadLocation, radixString));
+							Directory.CreateDirectory(Path.Combine(ImageDownloadLocation, board, radixString));
 
 							string fullImageFilename = Path.Combine(ImageDownloadLocation, radixString, post.TimestampedFilenameFull);
 							string fullImageUrl = $"https://i.4cdn.org/{board}/{post.TimestampedFilenameFull}";
@@ -104,7 +104,7 @@ namespace Hayden.Consumers
 						
 						if (Config.ThumbnailsEnabled)
 						{
-							Directory.CreateDirectory(Path.Combine(ThumbDownloadLocation, radixString));
+							Directory.CreateDirectory(Path.Combine(ThumbDownloadLocation, board, radixString));
 
 							string thumbFilename = Path.Combine(ThumbDownloadLocation, radixString, $"{post.TimestampedFilename}s.jpg");
 							string thumbUrl = $"https://i.4cdn.org/{board}/{post.TimestampedFilename}s.jpg";
