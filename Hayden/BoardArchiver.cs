@@ -16,9 +16,9 @@ namespace Hayden
 
 		protected IThreadConsumer ThreadConsumer { get; }
 
-		public TimeSpan BoardUpdateTimespan { get; set; } = TimeSpan.FromSeconds(30);
+		public TimeSpan BoardUpdateTimespan { get; set; }
 
-		public TimeSpan ApiCooldownTimespan { get; set; } = TimeSpan.FromSeconds(1);
+		public TimeSpan ApiCooldownTimespan { get; set; }
 
 		private ConcurrentDictionary<ulong, ThreadTracker> TrackedThreads { get; } = new ConcurrentDictionary<ulong, ThreadTracker>();
 
@@ -96,10 +96,10 @@ namespace Hayden
 					case YotsubaResponseType.Ok:
 
 						currentArchivedPageThreads = archiveRequest.ThreadIds
-																   // Order by ascending thread number, to ensure we don't miss something from the very end of the archive
-																   // that gets pruned by the time we get to it.
-																   .OrderBy(x => x)
-																   .Select(x => new PageThread { ThreadNumber = x, LastModified = PageThread.ArchivedLastModifiedTime }).ToArray();
+						   // Order by ascending thread number, to ensure we don't miss something from the very end of the archive
+						   // that gets pruned by the time we get to it.
+						   .OrderBy(x => x)
+						   .Select(x => new PageThread { ThreadNumber = x, LastModified = PageThread.ArchivedLastModifiedTime }).ToArray();
 
 						if (firstRun)
 						{
@@ -146,7 +146,8 @@ namespace Hayden
 					{
 						await threadSemaphore.WaitAsync();
 
-						weakReferences.Add(new WeakReference<Task>(ThreadUpdateTask(CancellationToken.None, tracker).ContinueWith(x => threadSemaphore.Release())));
+						weakReferences.Add(new WeakReference<Task>(ThreadUpdateTask(CancellationToken.None, tracker)
+							.ContinueWith(x => threadSemaphore.Release())));
 					}
 
 					foreach (var updateTask in weakReferences)
@@ -160,8 +161,6 @@ namespace Hayden
 					System.Runtime.GCSettings.LargeObjectHeapCompactionMode = System.Runtime.GCLargeObjectHeapCompactionMode.CompactOnce;
 					GC.Collect();
 				}
-
-				//Program.Log($"DEBUG: Total threads: {CurrentActivePageThreads.Length + CurrentArchivedPageThreads.Length}");
 
 				await waitTask;
 			}
