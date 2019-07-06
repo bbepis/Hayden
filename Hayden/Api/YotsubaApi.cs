@@ -30,7 +30,7 @@ namespace Hayden
 				AutomaticDecompression = DecompressionMethods.Deflate | DecompressionMethods.GZip
 			}, false);
 			
-			HttpClient.DefaultRequestHeaders.UserAgent.ParseAdd("Hayden/0.2.0");
+			HttpClient.DefaultRequestHeaders.UserAgent.ParseAdd("Hayden/0.3.0");
 			HttpClient.DefaultRequestHeaders.AcceptEncoding.ParseAdd("gzip, deflate");
 		}
 
