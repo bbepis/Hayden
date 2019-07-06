@@ -9,7 +9,7 @@ namespace Hayden.Contract
 	{
 		Task ConsumeThread(Thread thread, string board);
 
-		Task ThreadUntracked(ulong threadId, string board);
+		Task ThreadUntracked(ulong threadId, string board, bool deleted);
 
 		Task<ulong[]> CheckExistingThreads(IEnumerable<ulong> threadIdsToCheck, string board, bool archivedOnly);
 	}

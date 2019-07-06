@@ -3,6 +3,7 @@ using System.IO;
 using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
+using NodaTime;
 
 namespace Hayden
 {
@@ -68,6 +69,16 @@ namespace Hayden
 			{
 				return reader.ReadToEnd();
 			}
+		}
+
+		private static readonly DateTimeZone EasternTimeZone = DateTimeZoneProviders.Tzdb["America/New_York"];
+
+		public static uint GetNewYorkTimestamp(DateTimeOffset offset)
+		{
+			return (uint)(ZonedDateTime.FromDateTimeOffset(offset)
+									   .WithZone(EasternTimeZone)
+									   .ToDateTimeUnspecified()
+						  - DateTime.UnixEpoch).TotalSeconds;
 		}
 	}
 }

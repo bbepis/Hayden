@@ -10,7 +10,7 @@ namespace Hayden.Consumers
 		public Task ConsumeThread(Thread thread, string board)
 			=> Task.CompletedTask;
 
-		public Task ThreadUntracked(ulong threadId, string board)
+		public Task ThreadUntracked(ulong threadId, string board, bool deleted)
 			=> Task.CompletedTask;
 
 		public Task<ulong[]> CheckExistingThreads(IEnumerable<ulong> threadIdsToCheck, string board, bool archivedOnly)

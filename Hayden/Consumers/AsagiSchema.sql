@@ -45,7 +45,7 @@
   INDEX email_index (`email`),
   INDEX poster_ip_index (`poster_ip`),
   INDEX timestamp_index (`timestamp`)
-) engine=InnoDB CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) engine=InnoDB CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 
 CREATE TABLE IF NOT EXISTS `{0}_deleted` LIKE `{0}`;
@@ -71,7 +71,7 @@ CREATE TABLE IF NOT EXISTS `{0}_threads` (
   INDEX time_last_modified_index (`time_last_modified`),
   INDEX sticky_index (`sticky`),
   INDEX locked_index (`locked`)
-) ENGINE=InnoDB CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 
 CREATE TABLE IF NOT EXISTS `{0}_users` (
@@ -85,7 +85,7 @@ CREATE TABLE IF NOT EXISTS `{0}_users` (
   UNIQUE name_trip_index (`name`, `trip`),
   INDEX firstseen_index (`firstseen`),
   INDEX postcount_index (`postcount`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 
 CREATE TABLE IF NOT EXISTS `{0}_images` (
@@ -101,7 +101,7 @@ CREATE TABLE IF NOT EXISTS `{0}_images` (
   UNIQUE media_hash_index (`media_hash`),
   INDEX total_index (`total`),
   INDEX banned_index (`banned`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 
 CREATE TABLE IF NOT EXISTS `{0}_daily` (
@@ -114,7 +114,7 @@ CREATE TABLE IF NOT EXISTS `{0}_daily` (
   `names` int(10) unsigned NOT NULL,
 
   PRIMARY KEY (`day`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 $
 
 DROP PROCEDURE IF EXISTS `update_thread_{0}`;

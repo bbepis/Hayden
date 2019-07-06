@@ -9,5 +9,7 @@
 		public bool ThumbnailsEnabled { get; set; }
 
 		public string ConnectionString { get; set; }
+
+		public int SqlConnectionPoolSize { get; set; }
 	}
 }

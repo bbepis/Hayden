@@ -28,7 +28,7 @@ namespace Hayden
 				MaxConnectionsPerServer = 24,
 				UseCookies = false,
 				AutomaticDecompression = DecompressionMethods.Deflate | DecompressionMethods.GZip
-			});
+			}, false);
 			
 			HttpClient.DefaultRequestHeaders.UserAgent.ParseAdd("Hayden/0.2.0");
 			HttpClient.DefaultRequestHeaders.AcceptEncoding.ParseAdd("gzip, deflate");
@@ -60,27 +60,26 @@ namespace Hayden
 		private static readonly JsonSerializer jsonSerializer = JsonSerializer.Create();
 		private static async Task<(T, YotsubaResponseType)> MakeYotsubaApiCall<T>(Uri uri, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default)
 		{
-			var request = CreateRequest(uri, modifiedSince);
-
-			var response = await HttpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-
-			if (response.StatusCode == HttpStatusCode.NotModified)
-				return (default, YotsubaResponseType.NotModified);
-
-			if (response.StatusCode == HttpStatusCode.NotFound)
-				return (default, YotsubaResponseType.NotFound);
-
-			if (!response.IsSuccessStatusCode)
-				throw new WebException($"Received an error code: {response.StatusCode}");
-
-			using (response)
-			using (var responseStream = await response.Content.ReadAsStreamAsync())
-			using (StreamReader streamReader = new StreamReader(responseStream))
-			using (JsonReader reader = new JsonTextReader(streamReader))
+			using (var request = CreateRequest(uri, modifiedSince))
+			using (var response = await HttpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken))
 			{
-				var obj = jsonSerializer.Deserialize<T>(reader);
+				if (response.StatusCode == HttpStatusCode.NotModified)
+					return (default, YotsubaResponseType.NotModified);
 
-				return (obj, YotsubaResponseType.Ok);
+				if (response.StatusCode == HttpStatusCode.NotFound)
+					return (default, YotsubaResponseType.NotFound);
+
+				if (!response.IsSuccessStatusCode)
+					throw new WebException($"Received an error code: {response.StatusCode}");
+				
+				using (var responseStream = await response.Content.ReadAsStreamAsync())
+				using (StreamReader streamReader = new StreamReader(responseStream))
+				using (JsonReader reader = new JsonTextReader(streamReader))
+				{
+					var obj = jsonSerializer.Deserialize<T>(reader);
+
+					return (obj, YotsubaResponseType.Ok);
+				}
 			}
 		}
 	}

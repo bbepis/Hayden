@@ -83,7 +83,7 @@ namespace Hayden.Consumers
 			ThreadCounters[threadNumber] = thread.Posts.Length;
 		}
 
-		public Task ThreadUntracked(ulong threadId, string board)
+		public Task ThreadUntracked(ulong threadId, string board, bool deleted)
 		{
 			ThreadCounters.TryRemove(threadId, out _);
 

@@ -28,19 +28,19 @@ namespace Hayden
 
 			string backendType = rawConfigFile["backend"]["type"].Value<string>();
 
+			var yotsubaConfig = rawConfigFile["source"].ToObject<YotsubaConfig>();
+
 			switch (backendType)
 			{
 				case "Asagi":
 					var asagiConfig = rawConfigFile["backend"].ToObject<AsagiConfig>();
 
-					consumer = new AsagiThreadConsumer(asagiConfig);
+					consumer = new AsagiThreadConsumer(asagiConfig, yotsubaConfig.Boards);
 					break;
 
 				default:
 					throw new ArgumentException($"Unknown backend type {backendType}");
 			}
-
-			var yotsubaConfig = rawConfigFile["source"].ToObject<YotsubaConfig>();
 
 			Log("Initialized.");
 

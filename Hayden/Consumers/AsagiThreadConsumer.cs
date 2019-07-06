@@ -6,6 +6,7 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Web;
 using Hayden.Config;
 using Hayden.Contract;
 using Hayden.Models;
@@ -20,12 +21,18 @@ namespace Hayden.Consumers
 		private string ThumbDownloadLocation { get; }
 		private string ImageDownloadLocation { get; }
 
+		private SqlConnectionPool ConnectionPool { get; }
+
 		private ConcurrentDictionary<string, DatabaseCommands> PreparedStatements { get; } = new ConcurrentDictionary<string, DatabaseCommands>();
 
-		public AsagiThreadConsumer(AsagiConfig config)
+		public AsagiThreadConsumer(AsagiConfig config, string[] boards)
 		{
 			Config = config;
-			
+			ConnectionPool = new SqlConnectionPool(config.ConnectionString, config.SqlConnectionPoolSize);
+
+			foreach (string board in boards)
+				ConnectionPool.ForEachConnection(async connection => GetPreparedStatements(board).PrepareConnection(connection)).Wait();
+
 			ThumbDownloadLocation = Path.Combine(Config.DownloadLocation, "thumb");
 			ImageDownloadLocation = Path.Combine(Config.DownloadLocation, "images");
 
@@ -38,10 +45,7 @@ namespace Hayden.Consumers
 		private DatabaseCommands GetPreparedStatements(string board)
 			=> PreparedStatements.GetOrAdd(board, b =>
 			{
-				var connection = new MySqlConnection(Config.ConnectionString);
-				connection.Open();
-
-				return new DatabaseCommands(connection, b);
+				return new DatabaseCommands(ConnectionPool, b);
 			});
 
 		public async Task ConsumeThread(Thread thread, string board)
@@ -50,19 +54,19 @@ namespace Hayden.Consumers
 
 			var hashObject = new ThreadHashObject(board, thread.OriginalPost.PostNumber);
 
-			var threadHashes = ThreadHashes.GetOrAdd(hashObject, x =>
+			if (!ThreadHashes.TryGetValue(hashObject, out var threadHashes))
 			{
 				// Rebuild hashes from database, if they exist
 
-				var hashes = dbCommands.WithAccess(async connection => dbCommands.GetHashesOfThread(x.ThreadId)).Result;
+				var hashes = await dbCommands.WithAccess(connection => dbCommands.GetHashesOfThread(hashObject.ThreadId));
 
-				var sortedList = new SortedList<ulong, int>();
+				threadHashes = new SortedList<ulong, int>();
 
 				foreach (var hashPair in hashes)
-					sortedList.Add(hashPair.Key, hashPair.Value);
+					threadHashes.Add(hashPair.Key, hashPair.Value);
+			}
 
-				return sortedList;
-			});
+			List<Post> postsToAdd = new List<Post>(thread.Posts.Length);
 
 			foreach (var post in thread.Posts)
 			{
@@ -74,7 +78,7 @@ namespace Hayden.Consumers
 
 						Program.Log($"[Asagi] Post /{board}/{post.PostNumber} has been modified");
 
-						await dbCommands.WithAccess(connection => dbCommands.UpdatePost(post, false));
+						await dbCommands.WithAccess(() => dbCommands.UpdatePost(post, false));
 
 						threadHashes[post.PostNumber] = post.GenerateAsagiHash();
 					}
@@ -101,7 +105,7 @@ namespace Hayden.Consumers
 
 							await DownloadFile(fullImageUrl, fullImageFilename);
 						}
-						
+
 						if (Config.ThumbnailsEnabled)
 						{
 							Directory.CreateDirectory(Path.Combine(ThumbDownloadLocation, board, radixString));
@@ -113,13 +117,28 @@ namespace Hayden.Consumers
 						}
 					}
 
-					await dbCommands.WithAccess(connection => dbCommands.InsertPost(post));
-
-					threadHashes[post.PostNumber] = post.GenerateAsagiHash();
+					postsToAdd.Add(post);
 				}
 			}
 
-			List<ulong> postNumbersToDelete = new List<ulong>();
+			if (threadHashes.Count == 0)
+			{
+				// We are inserting the thread for the first time.
+
+				await dbCommands.WithAccess(() => dbCommands.InsertPosts(thread.Posts));
+			}
+			else
+			{
+				if (postsToAdd.Count > 0)
+					await dbCommands.WithAccess(() => dbCommands.InsertPosts(postsToAdd));
+			}
+
+			foreach (var post in postsToAdd)
+				threadHashes[post.PostNumber] = post.GenerateAsagiHash();
+
+			Program.Log($"[Asagi] {postsToAdd.Count} posts have been inserted from thread /{board}/{thread.OriginalPost.PostNumber}");
+
+			List<ulong> postNumbersToDelete = new List<ulong>(thread.Posts.Length);
 
 			foreach (var postNumber in threadHashes.Keys)
 			{
@@ -129,7 +148,7 @@ namespace Hayden.Consumers
 
 					Program.Log($"[Asagi] Post /{board}/{postNumber} has been deleted");
 
-					await dbCommands.WithAccess(connection => dbCommands.DeletePost(postNumber));
+					await dbCommands.WithAccess(() => dbCommands.DeletePostOrThread(postNumber));
 
 					postNumbersToDelete.Add(postNumber);
 				}
@@ -149,8 +168,13 @@ namespace Hayden.Consumers
 			}
 		}
 
-		public async Task ThreadUntracked(ulong threadId, string board)
+		public async Task ThreadUntracked(ulong threadId, string board, bool deleted)
 		{
+			if (deleted)
+			{
+				await GetPreparedStatements(board).DeletePostOrThread(threadId);
+			}
+
 			ThreadHashes.TryRemove(new ThreadHashObject(board, threadId), out _);
 		}
 
@@ -164,7 +188,7 @@ namespace Hayden.Consumers
 			{
 				string checkQuery = $"SELECT num FROM `{board}` WHERE op = 1 AND (locked = {archivedInt} OR deleted = {archivedInt}) AND num IN ({string.Join(',', threadIdsToCheck)});";
 
-				var command = new MySqlCommand(checkQuery, connection);
+				using (var command = new MySqlCommand(checkQuery, connection))
 				using (var reader = await command.ExecuteReaderAsync())
 				{
 					return (from IDataRecord record in reader
@@ -190,7 +214,7 @@ namespace Hayden.Consumers
 				return;
 
 			Program.Log($"Downloading image {Path.GetFileName(downloadPath)}");
-			
+
 			using (var webStream = await YotsubaApi.HttpClient.GetStreamAsync(imageUrl))
 			using (var fileStream = new FileStream(downloadPath, FileMode.Create))
 			{
@@ -202,7 +226,9 @@ namespace Hayden.Consumers
 		{
 			public SemaphoreSlim AccessSemaphore { get; } = new SemaphoreSlim(1);
 
-			private MySqlConnection Connection { get; }
+			private SqlConnectionPool ConnectionPool { get; }
+
+			private string Board { get; }
 
 			private MySqlCommand InsertQuery { get; }
 			private MySqlCommand UpdateQuery { get; }
@@ -215,51 +241,56 @@ namespace Hayden.Consumers
 												   + "  (poster_ip, num, subnum, thread_num, op, timestamp, timestamp_expired, preview_orig, preview_w, preview_h,"
 												   + "  media_filename, media_w, media_h, media_size, media_hash, media_orig, spoiler, deleted,"
 												   + "  capcode, email, name, trip, title, comment, delpass, sticky, locked, poster_hash, poster_country, exif)"
-												   + "    SELECT 0, @post_no, 0, @thread_no, @is_op, @timestamp, @timestamp_expired, @preview_orig, @preview_w, @preview_h,"
+												   + "    VALUES (0, @num, 0, @thread_num, @op, @timestamp, @timestamp_expired, @preview_orig, @preview_w, @preview_h,"
 												   + "      @media_filename, @media_w, @media_h, @media_size, @media_hash, @media_orig, @spoiler, @deleted,"
-												   + "      @capcode, @email, @name, @trip, @title, @comment, NULL, @sticky, @locked, @poster_hash, @poster_country, NULL"
-												   + "    FROM DUAL WHERE NOT EXISTS (SELECT 1 FROM `{0}` WHERE num = @post_no AND subnum = 0)"
-												   + "      AND NOT EXISTS (SELECT 1 FROM `{0}_deleted` WHERE num = @post_no AND subnum = 0);";
+												   + "      @capcode, @email, @name, @trip, @title, @comment, NULL, @sticky, @locked, @poster_hash, @poster_country, NULL);";
 
-			public DatabaseCommands(MySqlConnection connection, string board)
+			private readonly DataTable postDataTable;
+
+			public DatabaseCommands(SqlConnectionPool connectionPool, string board)
 			{
-				Connection = connection;
+				ConnectionPool = connectionPool;
+				Board = board;
 
 				CreateTables(board);
 
-				InsertQuery = new MySqlCommand(string.Format(BaseInsertQuery, board), connection);
-				InsertQuery.Parameters.Add("@post_no", MySqlDbType.UInt32);
-				InsertQuery.Parameters.Add("@thread_no", MySqlDbType.UInt32);
-				InsertQuery.Parameters.Add("@is_op", MySqlDbType.Byte);
-				InsertQuery.Parameters.Add("@timestamp", MySqlDbType.UInt32);
-				InsertQuery.Parameters.Add("@timestamp_expired", MySqlDbType.UInt32);
-				InsertQuery.Parameters.Add("@preview_orig", MySqlDbType.VarChar, 20);
-				InsertQuery.Parameters.Add("@preview_w", MySqlDbType.UInt16);
-				InsertQuery.Parameters.Add("@preview_h", MySqlDbType.UInt16);
-				InsertQuery.Parameters.Add("@media_filename", MySqlDbType.Text);
-				InsertQuery.Parameters.Add("@media_w", MySqlDbType.UInt16);
-				InsertQuery.Parameters.Add("@media_h", MySqlDbType.UInt16);
-				InsertQuery.Parameters.Add("@media_size", MySqlDbType.UInt32);
-				InsertQuery.Parameters.Add("@media_hash", MySqlDbType.VarChar, 25);
-				InsertQuery.Parameters.Add("@media_orig", MySqlDbType.VarChar, 20);
-				InsertQuery.Parameters.Add("@spoiler", MySqlDbType.Byte);
-				InsertQuery.Parameters.Add("@deleted", MySqlDbType.Byte);
-				InsertQuery.Parameters.Add("@capcode", MySqlDbType.VarChar, 1);
-				InsertQuery.Parameters.Add("@email", MySqlDbType.VarChar, 100);
-				InsertQuery.Parameters.Add("@name", MySqlDbType.VarChar, 100);
-				InsertQuery.Parameters.Add("@trip", MySqlDbType.VarChar, 25);
-				InsertQuery.Parameters.Add("@title", MySqlDbType.VarChar, 100);
-				InsertQuery.Parameters.Add("@comment", MySqlDbType.Text);
+				InsertQuery = new MySqlCommand(string.Format(BaseInsertQuery, board));
+				InsertQuery.Parameters.Add("@num", MySqlDbType.UInt32, -1, "num");
+				InsertQuery.Parameters.Add("@thread_num", MySqlDbType.UInt32, -1, "thread_num");
+				InsertQuery.Parameters.Add("@op", MySqlDbType.Byte, -1, "op");
+				InsertQuery.Parameters.Add("@timestamp", MySqlDbType.UInt32, -1, "timestamp");
+				InsertQuery.Parameters.Add("@timestamp_expired", MySqlDbType.UInt32, -1, "timestamp_expired");
+				InsertQuery.Parameters.Add("@preview_orig", MySqlDbType.VarChar, 20, "preview_orig");
+				InsertQuery.Parameters.Add("@preview_w", MySqlDbType.UInt16, -1, "preview_w");
+				InsertQuery.Parameters.Add("@preview_h", MySqlDbType.UInt16, -1, "preview_h");
+				InsertQuery.Parameters.Add("@media_filename", MySqlDbType.Text, -1, "media_filename");
+				InsertQuery.Parameters.Add("@media_w", MySqlDbType.UInt16, -1, "media_w");
+				InsertQuery.Parameters.Add("@media_h", MySqlDbType.UInt16, -1, "media_h");
+				InsertQuery.Parameters.Add("@media_size", MySqlDbType.UInt32, -1, "media_size");
+				InsertQuery.Parameters.Add("@media_hash", MySqlDbType.VarChar, 25, "media_hash");
+				InsertQuery.Parameters.Add("@media_orig", MySqlDbType.VarChar, 20, "media_orig");
+				InsertQuery.Parameters.Add("@spoiler", MySqlDbType.Byte, -1, "spoiler");
+				InsertQuery.Parameters.Add("@deleted", MySqlDbType.Byte, -1, "deleted");
+				InsertQuery.Parameters.Add("@capcode", MySqlDbType.VarChar, 1, "capcode");
+				InsertQuery.Parameters.Add("@email", MySqlDbType.VarChar, 100, "email");
+				InsertQuery.Parameters.Add("@name", MySqlDbType.VarChar, 100, "name");
+				InsertQuery.Parameters.Add("@trip", MySqlDbType.VarChar, 25, "trip");
+				InsertQuery.Parameters.Add("@title", MySqlDbType.VarChar, 100, "title");
+				InsertQuery.Parameters.Add("@comment", MySqlDbType.Text, -1, "comment");
 				//InsertQuery.Parameters.Add("@delpass", MySqlDbType.TinyText);
-				InsertQuery.Parameters.Add("@sticky", MySqlDbType.Byte);
-				InsertQuery.Parameters.Add("@locked", MySqlDbType.Byte);
-				InsertQuery.Parameters.Add("@poster_hash", MySqlDbType.VarChar, 8);
-				InsertQuery.Parameters.Add("@poster_country", MySqlDbType.VarChar, 2);
+				InsertQuery.Parameters.Add("@sticky", MySqlDbType.Byte, -1, "sticky");
+				InsertQuery.Parameters.Add("@locked", MySqlDbType.Byte, -1, "locked");
+				InsertQuery.Parameters.Add("@poster_hash", MySqlDbType.VarChar, 8, "poster_hash");
+				InsertQuery.Parameters.Add("@poster_country", MySqlDbType.VarChar, 2, "poster_country");
 				//InsertQuery.Parameters.Add("@exif", MySqlDbType.Text);
-				InsertQuery.Prepare();
 				
+				postDataTable = new DataTable();
+				foreach (MySqlParameter param in InsertQuery.Parameters)
+				{
+					postDataTable.Columns.Add(param.ParameterName.Substring(1));
+				}
 
-				UpdateQuery = new MySqlCommand($"UPDATE `{board}` SET comment = @comment, deleted = @deleted, media_filename = COALESCE(@media_filename, media_filename), sticky = (@sticky OR sticky), locked = (@locked or locked) WHERE num = @thread_no AND subnum = @subnum", connection);
+				UpdateQuery = new MySqlCommand($"UPDATE `{board}` SET comment = @comment, deleted = @deleted, media_filename = COALESCE(@media_filename, media_filename), sticky = (@sticky OR sticky), locked = (@locked or locked) WHERE num = @thread_no AND subnum = @subnum");
 				UpdateQuery.Parameters.Add("@comment", MySqlDbType.Text);
 				UpdateQuery.Parameters.Add("@deleted", MySqlDbType.Byte);
 				UpdateQuery.Parameters.Add("@media_filename", MySqlDbType.Text);
@@ -267,120 +298,204 @@ namespace Hayden.Consumers
 				UpdateQuery.Parameters.Add("@locked", MySqlDbType.Byte);
 				UpdateQuery.Parameters.Add("@thread_no", MySqlDbType.UInt32);
 				UpdateQuery.Parameters.Add("@subnum", MySqlDbType.UInt32);
-				UpdateQuery.Prepare();
 
-				DeleteQuery = new MySqlCommand($"UPDATE `{board}` SET deleted = 1, timestamp_expired = @timestamp_expired WHERE num = @thread_no AND subnum = 0", connection);
+				DeleteQuery = new MySqlCommand($"UPDATE `{board}` SET deleted = 1, timestamp_expired = @timestamp_expired WHERE num = @thread_no AND subnum = 0");
 				DeleteQuery.Parameters.Add("@timestamp_expired", MySqlDbType.UInt32);
 				DeleteQuery.Parameters.Add("@thread_no", MySqlDbType.UInt32);
-				DeleteQuery.Prepare();
 
-				SelectHashQuery = new MySqlCommand($"SELECT num, locked, sticky, comment, media_filename FROM `{board}` WHERE deleted = 0 AND (num = @thread_no OR thread_num = @thread_no)", connection);
+				SelectHashQuery = new MySqlCommand($"SELECT num, locked, sticky, comment, media_filename FROM `{board}` WHERE deleted = 0 AND (num = @thread_no OR thread_num = @thread_no)");
 				SelectHashQuery.Parameters.Add("@thread_no", MySqlDbType.UInt32);
-				SelectHashQuery.Prepare();
 			}
 
 			private void CreateTables(string board)
 			{
-				var command = new MySqlCommand($"SHOW TABLES LIKE '{board}_%';", Connection);
-				DataTable tables = new DataTable();
-
-				using (var reader = command.ExecuteReader())
-					tables.Load(reader);
-				
-				if (tables.Rows.Count == 0)
+				using (var rentedConnection = ConnectionPool.RentConnection())
 				{
-					Program.Log($"[Asagi] Creating tables for board /{board}/");
+					var command = new MySqlCommand($"SHOW TABLES LIKE '{board}\\_%';", rentedConnection.Object);
+					DataTable tables = new DataTable();
 
-					string formattedQuery = string.Format(CreateTablesQuery, board);
+					using (var reader = command.ExecuteReader())
+						tables.Load(reader);
 
-					foreach (var splitString in formattedQuery.Split('$'))
+					if (tables.Rows.Count == 0)
 					{
-						command = new MySqlCommand(splitString, Connection);
-						command.ExecuteNonQuery();
+						Program.Log($"[Asagi] Creating tables for board /{board}/");
+
+						string formattedQuery = string.Format(CreateTablesQuery, board);
+
+						foreach (var splitString in formattedQuery.Split('$'))
+						{
+							command = new MySqlCommand(splitString, rentedConnection.Object);
+							command.ExecuteNonQuery();
+						}
 					}
+
+					command.Dispose();
 				}
 			}
 
-			public Task InsertPost(Post post)
+			public async Task InsertPost(Post post)
 			{
-				InsertQuery.Parameters["@post_no"].Value = post.PostNumber;
-				InsertQuery.Parameters["@thread_no"].Value = post.ReplyPostNumber != 0 ? post.ReplyPostNumber : post.PostNumber;
-				InsertQuery.Parameters["@is_op"].Value = post.ReplyPostNumber == 0 ? 1 : 0;
-				InsertQuery.Parameters["@timestamp"].Value = post.UnixTimestamp;
-				InsertQuery.Parameters["@timestamp_expired"].Value = 0;
-				InsertQuery.Parameters["@preview_orig"].Value = post.TimestampedFilename.HasValue ? $"{post.TimestampedFilename}s.jpg" : null;
-				InsertQuery.Parameters["@preview_w"].Value = post.ThumbnailWidth ?? 0;
-				InsertQuery.Parameters["@preview_h"].Value = post.ThumbnailHeight ?? 0;
-				InsertQuery.Parameters["@media_filename"].Value = post.OriginalFilenameFull;
-				InsertQuery.Parameters["@media_w"].Value = post.ImageWidth ?? 0;
-				InsertQuery.Parameters["@media_h"].Value = post.ImageHeight ?? 0;
-				InsertQuery.Parameters["@media_size"].Value = post.FileSize ?? 0;
-				InsertQuery.Parameters["@media_hash"].Value = post.FileMd5;
-				InsertQuery.Parameters["@media_orig"].Value = post.TimestampedFilenameFull;
-				InsertQuery.Parameters["@spoiler"].Value = post.SpoilerImage == true ? 1 : 0;
-				InsertQuery.Parameters["@deleted"].Value = 0;
-				InsertQuery.Parameters["@capcode"].Value = post.Capcode?.Substring(0, 1).ToUpperInvariant() ?? "N";
-				InsertQuery.Parameters["@email"].Value = null; // 4chan api doesn't supply this????
-				InsertQuery.Parameters["@name"].Value = post.Name;
-				InsertQuery.Parameters["@trip"].Value = post.Trip;
-				InsertQuery.Parameters["@title"].Value = post.Subject;
-				InsertQuery.Parameters["@comment"].Value = post.Comment;
-				InsertQuery.Parameters["@sticky"].Value = post.Sticky == true ? 1 : 0;
-				InsertQuery.Parameters["@locked"].Value = post.Closed == true ? 1 : 0;
-				InsertQuery.Parameters["@poster_hash"].Value = post.PosterID == "Developer" ? "Dev" : post.PosterID;
-				InsertQuery.Parameters["@poster_country"].Value = post.CountryCode;
-
-				return InsertQuery.ExecuteNonQueryAsync();
-			}
-
-			public Task UpdatePost(Post post, bool deleted)
-			{
-				UpdateQuery.Parameters["@comment"].Value = post.Comment;
-				UpdateQuery.Parameters["@deleted"].Value = 0;
-				UpdateQuery.Parameters["@media_filename"].Value = post.OriginalFilenameFull;
-				UpdateQuery.Parameters["@sticky"].Value = post.Sticky == true ? 1 : 0;
-				UpdateQuery.Parameters["@locked"].Value = post.Closed == true ? 1 : 0;
-				UpdateQuery.Parameters["@thread_no"].Value = post.ReplyPostNumber != 0 ? post.ReplyPostNumber : post.PostNumber;
-				UpdateQuery.Parameters["@subnum"].Value = 0;
-
-				return UpdateQuery.ExecuteNonQueryAsync();
-			}
-
-			public Task DeletePost(ulong theadNumber)
-			{
-				var currentNewYorkTime = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, TimeZoneInfo.FindSystemTimeZoneById("US Eastern Standard Time"));
-
-				int currentTimestamp = (int)(currentNewYorkTime - DateTime.UnixEpoch).TotalSeconds;
-
-				DeleteQuery.Parameters["@timestamp_expired"].Value = currentTimestamp;
-				DeleteQuery.Parameters["@thread_no"].Value = theadNumber;
-
-				return DeleteQuery.ExecuteNonQueryAsync();
-			}
-
-			public IEnumerable<KeyValuePair<ulong, int>> GetHashesOfThread(ulong theadNumber)
-			{
-				SelectHashQuery.Parameters["@thread_no"].Value = theadNumber;
-
-				var threadHashes = new List<KeyValuePair<ulong, int>>();
-				using (var reader = SelectHashQuery.ExecuteReader())
+				using (var rentedConnection = await ConnectionPool.RentConnectionAsync())
 				{
-					Post tempPost = new Post();
+					InsertQuery.Connection = rentedConnection;
 
-					while (reader.Read())
+					InsertQuery.Parameters["@post_no"].Value = post.PostNumber;
+					InsertQuery.Parameters["@thread_no"].Value = post.ReplyPostNumber != 0 ? post.ReplyPostNumber : post.PostNumber;
+					InsertQuery.Parameters["@is_op"].Value = post.ReplyPostNumber == 0 ? 1 : 0;
+					InsertQuery.Parameters["@timestamp"].Value = post.UnixTimestamp;
+					InsertQuery.Parameters["@timestamp_expired"].Value = 0;
+					InsertQuery.Parameters["@preview_orig"].Value = post.TimestampedFilename.HasValue ? $"{post.TimestampedFilename}s.jpg" : null;
+					InsertQuery.Parameters["@preview_w"].Value = post.ThumbnailWidth ?? 0;
+					InsertQuery.Parameters["@preview_h"].Value = post.ThumbnailHeight ?? 0;
+					InsertQuery.Parameters["@media_filename"].Value = post.OriginalFilenameFull;
+					InsertQuery.Parameters["@media_w"].Value = post.ImageWidth ?? 0;
+					InsertQuery.Parameters["@media_h"].Value = post.ImageHeight ?? 0;
+					InsertQuery.Parameters["@media_size"].Value = post.FileSize ?? 0;
+					InsertQuery.Parameters["@media_hash"].Value = post.FileMd5;
+					InsertQuery.Parameters["@media_orig"].Value = post.TimestampedFilenameFull;
+					InsertQuery.Parameters["@spoiler"].Value = post.SpoilerImage == true ? 1 : 0;
+					InsertQuery.Parameters["@deleted"].Value = 0;
+					InsertQuery.Parameters["@capcode"].Value = post.Capcode?.Substring(0, 1).ToUpperInvariant() ?? "N";
+					InsertQuery.Parameters["@email"].Value = null; // 4chan api doesn't supply this????
+					InsertQuery.Parameters["@name"].Value = HttpUtility.HtmlDecode(post.Name);
+					InsertQuery.Parameters["@trip"].Value = post.Trip;
+					InsertQuery.Parameters["@title"].Value = HttpUtility.HtmlDecode(post.Subject);
+					InsertQuery.Parameters["@comment"].Value = post.Comment;
+					InsertQuery.Parameters["@sticky"].Value = post.Sticky == true ? 1 : 0;
+					InsertQuery.Parameters["@locked"].Value = post.Closed == true ? 1 : 0;
+					InsertQuery.Parameters["@poster_hash"].Value = post.PosterID == "Developer" ? "Dev" : post.PosterID;
+					InsertQuery.Parameters["@poster_country"].Value = post.CountryCode;
+
+					await InsertQuery.ExecuteNonQueryAsync();
+				}
+			}
+
+			public async Task InsertPosts(IEnumerable<Post> posts)
+			{
+				using (var rentedConnection = await ConnectionPool.RentConnectionAsync())
+				using (var clonedCommand = (MySqlCommand)InsertQuery.Clone())
+				using (var transaction = await rentedConnection.Object.BeginTransactionAsync())
+				using (var clonedSet = postDataTable.Clone())
+				using (var adapter = new MySqlDataAdapter($"SELECT * FROM {Board} WHERE 1 = 0", rentedConnection.Object))
+				{
+					clonedCommand.Connection = rentedConnection;
+					clonedCommand.Transaction = transaction;
+
+					clonedCommand.UpdatedRowSource = UpdateRowSource.None;
+					
+
+					foreach (var post in posts)
 					{
-						tempPost.PostNumber = reader.GetUInt32("num");
-						tempPost.Closed = reader.GetBoolean("locked") ? (bool?)true : null;
-						tempPost.Sticky = reader.GetBoolean("sticky") ? (bool?)true : null;
-						tempPost.Comment = reader["comment"] == DBNull.Value ? null : (string)reader["comment"];
-						tempPost.OriginalFilename = reader["media_filename"] == DBNull.Value ? null
-							: ((string)reader["media_filename"]).Substring(0, ((string)reader["media_filename"]).LastIndexOf('.'));
+						var row = clonedSet.NewRow();
+						row["num"] = post.PostNumber;
+						row["thread_num"] = post.ReplyPostNumber != 0 ? post.ReplyPostNumber : post.PostNumber;
+						row["op"] = post.ReplyPostNumber == 0 ? 1 : 0;
+						row["timestamp"] = post.UnixTimestamp;
+						row["timestamp_expired"] = 0;
+						row["preview_orig"] = post.TimestampedFilename.HasValue ? $"{post.TimestampedFilename}s.jpg" : null;
+						row["preview_w"] = post.ThumbnailWidth ?? 0;
+						row["preview_h"] = post.ThumbnailHeight ?? 0;
+						row["media_filename"] = post.OriginalFilenameFull;
+						row["media_w"] = post.ImageWidth ?? 0;
+						row["media_h"] = post.ImageHeight ?? 0;
+						row["media_size"] = post.FileSize ?? 0;
+						row["media_hash"] = post.FileMd5;
+						row["media_orig"] = post.TimestampedFilenameFull;
+						row["spoiler"] = post.SpoilerImage == true ? 1 : 0;
+						row["deleted"] = 0;
+						row["capcode"] = post.Capcode?.Substring(0, 1).ToUpperInvariant() ?? "N";
+						row["email"] = null; // 4chan api doesn't supply this????
+						row["name"] = HttpUtility.HtmlDecode(post.Name);
+						row["trip"] = post.Trip;
+						row["title"] = HttpUtility.HtmlDecode(post.Subject);
+						row["comment"] = post.Comment;
+						row["sticky"] = post.Sticky == true ? 1 : 0;
+						row["locked"] = post.Closed == true ? 1 : 0;
+						row["poster_hash"] = post.PosterID == "Developer" ? "Dev" : post.PosterID;
+						row["poster_country"] = post.CountryCode;
 
-						threadHashes.Add(new KeyValuePair<ulong, int>(tempPost.PostNumber, tempPost.GenerateAsagiHash()));
+						clonedSet.Rows.Add(row);
+					}
+
+					adapter.InsertCommand = clonedCommand;
+					adapter.UpdateBatchSize = 100;
+
+					await adapter.UpdateAsync(clonedSet);
+
+					transaction.Commit();
+				}
+			}
+
+			public async Task UpdatePost(Post post, bool deleted)
+			{
+				using (var rentedConnection = await ConnectionPool.RentConnectionAsync())
+				{
+					UpdateQuery.Connection = rentedConnection;
+
+					UpdateQuery.Parameters["@comment"].Value = post.Comment;
+					UpdateQuery.Parameters["@deleted"].Value = deleted ? 1 : 0;
+					UpdateQuery.Parameters["@media_filename"].Value = post.OriginalFilenameFull;
+					UpdateQuery.Parameters["@sticky"].Value = post.Sticky == true ? 1 : 0;
+					UpdateQuery.Parameters["@locked"].Value = post.Closed == true ? 1 : 0;
+					UpdateQuery.Parameters["@thread_no"].Value = post.ReplyPostNumber != 0 ? post.ReplyPostNumber : post.PostNumber;
+					UpdateQuery.Parameters["@subnum"].Value = 0;
+
+					await UpdateQuery.ExecuteNonQueryAsync();
+				}
+			}
+
+			public async Task DeletePostOrThread(ulong theadNumber)
+			{
+				uint currentTimestamp = Utility.GetNewYorkTimestamp(DateTimeOffset.Now);
+
+				using (var rentedConnection = await ConnectionPool.RentConnectionAsync())
+				{
+					DeleteQuery.Connection = rentedConnection;
+
+					DeleteQuery.Parameters["@timestamp_expired"].Value = currentTimestamp;
+					DeleteQuery.Parameters["@thread_no"].Value = theadNumber;
+
+					await DeleteQuery.ExecuteNonQueryAsync();
+				}
+			}
+
+			public async Task<IEnumerable<KeyValuePair<ulong, int>>> GetHashesOfThread(ulong theadNumber)
+			{
+				var threadHashes = new List<KeyValuePair<ulong, int>>();
+
+				using (var rentedConnection = await ConnectionPool.RentConnectionAsync())
+				{
+					SelectHashQuery.Connection = rentedConnection;
+
+					SelectHashQuery.Parameters["@thread_no"].Value = theadNumber;
+
+					using (var reader = (MySqlDataReader)await SelectHashQuery.ExecuteReaderAsync())
+					{
+						Post tempPost = new Post();
+
+						while (reader.Read())
+						{
+							tempPost.PostNumber = reader.GetUInt32("num");
+							tempPost.Closed = reader.GetBoolean("locked") ? (bool?)true : null;
+							tempPost.Sticky = reader.GetBoolean("sticky") ? (bool?)true : null;
+							tempPost.Comment = reader["comment"] == DBNull.Value ? null : (string)reader["comment"];
+							tempPost.OriginalFilename = reader["media_filename"] == DBNull.Value
+								? null
+								: ((string)reader["media_filename"]).Substring(0, ((string)reader["media_filename"]).LastIndexOf('.'));
+
+							threadHashes.Add(new KeyValuePair<ulong, int>(tempPost.PostNumber, tempPost.GenerateAsagiHash()));
+						}
 					}
 				}
 
 				return threadHashes;
+			}
+
+			public void PrepareConnection(MySqlConnection connection)
+			{
+				InsertQuery.Connection = connection;
+				InsertQuery.Prepare();
 			}
 
 			public async Task<T> WithAccess<T>(Func<MySqlConnection, Task<T>> taskFunc)
@@ -389,7 +504,8 @@ namespace Hayden.Consumers
 
 				try
 				{
-					return await taskFunc(Connection);
+					using (var rentedConnection = await ConnectionPool.RentConnectionAsync())
+						return await taskFunc(rentedConnection.Object);
 				}
 				finally
 				{
@@ -403,18 +519,32 @@ namespace Hayden.Consumers
 
 				try
 				{
-					await taskFunc(Connection);
+					using (var rentedConnection = await ConnectionPool.RentConnectionAsync())
+						await taskFunc(rentedConnection.Object);
 				}
 				finally
 				{
 					AccessSemaphore.Release();
 				}
 			}
-			
+
+			public async Task WithAccess(Func<Task> taskFunc)
+			{
+				await AccessSemaphore.WaitAsync();
+
+				try
+				{
+					await taskFunc();
+				}
+				finally
+				{
+					AccessSemaphore.Release();
+				}
+			}
+
 			private void Dispose(bool disposing)
 			{
 				AccessSemaphore?.Dispose();
-				Connection?.Dispose();
 				InsertQuery?.Dispose();
 				UpdateQuery?.Dispose();
 				DeleteQuery?.Dispose();
@@ -427,7 +557,8 @@ namespace Hayden.Consumers
 				GC.SuppressFinalize(this);
 			}
 
-			~DatabaseCommands() {
+			~DatabaseCommands()
+			{
 				Dispose(false);
 			}
 		}
