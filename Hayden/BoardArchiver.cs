@@ -1,10 +1,12 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using Hayden.Config;
 using Hayden.Contract;
+using Hayden.Proxy;
 
 namespace Hayden
 {
@@ -13,6 +15,7 @@ namespace Hayden
 		public YotsubaConfig Config { get; }
 
 		protected IThreadConsumer ThreadConsumer { get; }
+		protected ProxyProvider ProxyProvider { get; }
 
 		public TimeSpan BoardUpdateTimespan { get; set; }
 
@@ -20,12 +23,13 @@ namespace Hayden
 
 		private FifoSemaphore APISemaphore { get; }
 
-		public BoardArchiver(YotsubaConfig config, IThreadConsumer threadConsumer, FifoSemaphore apiSemaphore = null)
+		public BoardArchiver(YotsubaConfig config, IThreadConsumer threadConsumer, ProxyProvider proxyProvider = null)
 		{
 			Config = config;
 			ThreadConsumer = threadConsumer;
+			ProxyProvider = proxyProvider;
 
-			APISemaphore = apiSemaphore ?? new FifoSemaphore(1);
+			APISemaphore = new FifoSemaphore(1);
 
 			ApiCooldownTimespan = TimeSpan.FromSeconds(config.ApiDelay ?? 1);
 			BoardUpdateTimespan = TimeSpan.FromSeconds(config.BoardDelay ?? 30);
@@ -33,9 +37,7 @@ namespace Hayden
 
 		public async Task Execute(CancellationToken token)
 		{
-			var semaphoreTask = SemaphoreUpdateTask(token);
-
-			var threadSemaphore = new SemaphoreSlim(20);
+			var concurrentSempahore = new SemaphoreSlim(20);
 			bool firstRun = true;
 
 			HashSet<(string board, ulong threadNumber)> threadQueue = new HashSet<(string board, ulong threadNumber)>();
@@ -51,11 +53,11 @@ namespace Hayden
 
 					uint lastCheckTimestamp = firstRun
 						? 0
-						: Utility.GetNewYorkTimestamp(lastDateTimeCheck);
+						: Utility.GetGMTTimestamp(lastDateTimeCheck);
 
 					DateTimeOffset beforeCheckTime = DateTimeOffset.Now;
 
-					await APISemaphore.WaitAsync(token);
+					await Task.Delay(ApiCooldownTimespan);
 
 					var pagesRequest = await YotsubaApi.GetBoard(board, lastDateTimeCheck, token);
 
@@ -90,7 +92,7 @@ namespace Hayden
 
 					if (firstRun)
 					{
-						await APISemaphore.WaitAsync(token);
+						await Task.Delay(ApiCooldownTimespan);
 
 						var archiveRequest = await YotsubaApi.GetArchive(board, lastDateTimeCheck, token);
 						switch (archiveRequest.ResponseType)
@@ -148,17 +150,35 @@ namespace Hayden
 						Program.Log($" --> Completed {completedCount} / {threadQueue.Count}. {threadQueue.Count - completedCount} to go");
 					}
 
-					await threadSemaphore.WaitAsync();
+					await concurrentSempahore.WaitAsync();
 
 					weakReferences.Add(new WeakReference<Task>(Task.Run(async () =>
+					{
+						PoolObject<HttpClient> client = null;
+
+						Task threadWaitTask = null;
+
+						if (ProxyProvider != null)
 						{
-							bool success = await ThreadUpdateTask(CancellationToken.None, thread.board, thread.threadNumber);
+							client = await ProxyProvider.RentHttpClient();
+							threadWaitTask = Task.Delay(ApiCooldownTimespan);
+						}
 
-							if (!success)
-								requeuedThreads.Add(thread);
+						bool success = await ThreadUpdateTask(CancellationToken.None, thread.board, thread.threadNumber, client?.Object);
 
-							threadSemaphore.Release();
-						})));
+						if (!success)
+							requeuedThreads.Add(thread);
+
+						concurrentSempahore.Release();
+
+						if (threadWaitTask != null)
+							await threadWaitTask;
+
+						client?.Dispose();
+					})));
+
+					if (ProxyProvider == null)
+						await Task.Delay(ApiCooldownTimespan);
 
 					completedCount++;
 				}
@@ -184,15 +204,13 @@ namespace Hayden
 			}
 		}
 
-		private async Task<bool> ThreadUpdateTask(CancellationToken token, string board, ulong threadNumber)
+		private async Task<bool> ThreadUpdateTask(CancellationToken token, string board, ulong threadNumber, HttpClient client)
 		{
 			try
 			{
-				await APISemaphore.WaitAsync(token);
-
 				Program.Log($"Polling thread /{board}/{threadNumber}");
 
-				var response = await YotsubaApi.GetThread(board, threadNumber, null, token);
+				var response = await YotsubaApi.GetThread(board, threadNumber, null, token, client);
 
 				switch (response.ResponseType)
 				{
@@ -228,17 +246,6 @@ namespace Hayden
 				Program.Log($"ERROR: Could not poll or update thread /{board}/{threadNumber}. Will try again next board update\nException: {exception}");
 
 				return false;
-			}
-		}
-
-		private async Task SemaphoreUpdateTask(CancellationToken token)
-		{
-			while (!token.IsCancellationRequested)
-			{
-				if (APISemaphore.CurrentCount < 1)
-					APISemaphore.Release();
-
-				await Task.Delay(ApiCooldownTimespan, token);
 			}
 		}
 	}

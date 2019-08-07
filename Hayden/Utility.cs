@@ -1,5 +1,6 @@
 ﻿using System;
 using System.IO;
+using System.Net;
 using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
@@ -77,6 +78,14 @@ namespace Hayden
 		{
 			return (uint)(ZonedDateTime.FromDateTimeOffset(offset)
 									   .WithZone(EasternTimeZone)
+									   .ToDateTimeUnspecified()
+						  - DateTime.UnixEpoch).TotalSeconds;
+		}
+
+		public static uint GetGMTTimestamp(DateTimeOffset offset)
+		{
+			return (uint)(ZonedDateTime.FromDateTimeOffset(offset)
+									   .WithZone(DateTimeZone.Utc)
 									   .ToDateTimeUnspecified()
 						  - DateTime.UnixEpoch).TotalSeconds;
 		}

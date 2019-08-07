@@ -255,33 +255,33 @@ namespace Hayden.Consumers
 				CreateTables(board);
 
 				InsertQuery = new MySqlCommand(string.Format(BaseInsertQuery, board));
-				InsertQuery.Parameters.Add("@num", MySqlDbType.UInt32, -1, "num");
-				InsertQuery.Parameters.Add("@thread_num", MySqlDbType.UInt32, -1, "thread_num");
-				InsertQuery.Parameters.Add("@op", MySqlDbType.Byte, -1, "op");
-				InsertQuery.Parameters.Add("@timestamp", MySqlDbType.UInt32, -1, "timestamp");
-				InsertQuery.Parameters.Add("@timestamp_expired", MySqlDbType.UInt32, -1, "timestamp_expired");
-				InsertQuery.Parameters.Add("@preview_orig", MySqlDbType.VarChar, 20, "preview_orig");
-				InsertQuery.Parameters.Add("@preview_w", MySqlDbType.UInt16, -1, "preview_w");
-				InsertQuery.Parameters.Add("@preview_h", MySqlDbType.UInt16, -1, "preview_h");
-				InsertQuery.Parameters.Add("@media_filename", MySqlDbType.Text, -1, "media_filename");
-				InsertQuery.Parameters.Add("@media_w", MySqlDbType.UInt16, -1, "media_w");
-				InsertQuery.Parameters.Add("@media_h", MySqlDbType.UInt16, -1, "media_h");
-				InsertQuery.Parameters.Add("@media_size", MySqlDbType.UInt32, -1, "media_size");
-				InsertQuery.Parameters.Add("@media_hash", MySqlDbType.VarChar, 25, "media_hash");
-				InsertQuery.Parameters.Add("@media_orig", MySqlDbType.VarChar, 20, "media_orig");
-				InsertQuery.Parameters.Add("@spoiler", MySqlDbType.Byte, -1, "spoiler");
-				InsertQuery.Parameters.Add("@deleted", MySqlDbType.Byte, -1, "deleted");
-				InsertQuery.Parameters.Add("@capcode", MySqlDbType.VarChar, 1, "capcode");
-				InsertQuery.Parameters.Add("@email", MySqlDbType.VarChar, 100, "email");
-				InsertQuery.Parameters.Add("@name", MySqlDbType.VarChar, 100, "name");
-				InsertQuery.Parameters.Add("@trip", MySqlDbType.VarChar, 25, "trip");
-				InsertQuery.Parameters.Add("@title", MySqlDbType.VarChar, 100, "title");
-				InsertQuery.Parameters.Add("@comment", MySqlDbType.Text, -1, "comment");
+				InsertQuery.Parameters.Add(new MySqlParameter("@num", MySqlDbType.UInt32, -1, "num"));
+				InsertQuery.Parameters.Add(new MySqlParameter("@thread_num", MySqlDbType.UInt32, -1, "thread_num"));
+				InsertQuery.Parameters.Add(new MySqlParameter("@op", MySqlDbType.Byte, -1, "op"));
+				InsertQuery.Parameters.Add(new MySqlParameter("@timestamp", MySqlDbType.UInt32, -1, "timestamp"));
+				InsertQuery.Parameters.Add(new MySqlParameter("@timestamp_expired", MySqlDbType.UInt32, -1, "timestamp_expired"));
+				InsertQuery.Parameters.Add(new MySqlParameter("@preview_orig", MySqlDbType.VarChar, 20, "preview_orig"));
+				InsertQuery.Parameters.Add(new MySqlParameter("@preview_w", MySqlDbType.UInt16, -1, "preview_w"));
+				InsertQuery.Parameters.Add(new MySqlParameter("@preview_h", MySqlDbType.UInt16, -1, "preview_h"));
+				InsertQuery.Parameters.Add(new MySqlParameter("@media_filename", MySqlDbType.Text, -1, "media_filename"));
+				InsertQuery.Parameters.Add(new MySqlParameter("@media_w", MySqlDbType.UInt16, -1, "media_w"));
+				InsertQuery.Parameters.Add(new MySqlParameter("@media_h", MySqlDbType.UInt16, -1, "media_h"));
+				InsertQuery.Parameters.Add(new MySqlParameter("@media_size", MySqlDbType.UInt32, -1, "media_size"));
+				InsertQuery.Parameters.Add(new MySqlParameter("@media_hash", MySqlDbType.VarChar, 25, "media_hash"));
+				InsertQuery.Parameters.Add(new MySqlParameter("@media_orig", MySqlDbType.VarChar, 20, "media_orig"));
+				InsertQuery.Parameters.Add(new MySqlParameter("@spoiler", MySqlDbType.Byte, -1, "spoiler"));
+				InsertQuery.Parameters.Add(new MySqlParameter("@deleted", MySqlDbType.Byte, -1, "deleted"));
+				InsertQuery.Parameters.Add(new MySqlParameter("@capcode", MySqlDbType.VarChar, 1, "capcode"));
+				InsertQuery.Parameters.Add(new MySqlParameter("@email", MySqlDbType.VarChar, 100, "email"));
+				InsertQuery.Parameters.Add(new MySqlParameter("@name", MySqlDbType.VarChar, 100, "name"));
+				InsertQuery.Parameters.Add(new MySqlParameter("@trip", MySqlDbType.VarChar, 25, "trip"));
+				InsertQuery.Parameters.Add(new MySqlParameter("@title", MySqlDbType.VarChar, 100, "title"));
+				InsertQuery.Parameters.Add(new MySqlParameter("@comment", MySqlDbType.Text, -1, "comment"));
 				//InsertQuery.Parameters.Add("@delpass", MySqlDbType.TinyText);
-				InsertQuery.Parameters.Add("@sticky", MySqlDbType.Byte, -1, "sticky");
-				InsertQuery.Parameters.Add("@locked", MySqlDbType.Byte, -1, "locked");
-				InsertQuery.Parameters.Add("@poster_hash", MySqlDbType.VarChar, 8, "poster_hash");
-				InsertQuery.Parameters.Add("@poster_country", MySqlDbType.VarChar, 2, "poster_country");
+				InsertQuery.Parameters.Add(new MySqlParameter("@sticky", MySqlDbType.Byte, -1, "sticky"));
+				InsertQuery.Parameters.Add(new MySqlParameter("@locked", MySqlDbType.Byte, -1, "locked"));
+				InsertQuery.Parameters.Add(new MySqlParameter("@poster_hash", MySqlDbType.VarChar, 8, "poster_hash"));
+				InsertQuery.Parameters.Add(new MySqlParameter("@poster_country", MySqlDbType.VarChar, 2, "poster_country"));
 				//InsertQuery.Parameters.Add("@exif", MySqlDbType.Text);
 				
 				postDataTable = new DataTable();
@@ -303,7 +303,7 @@ namespace Hayden.Consumers
 				DeleteQuery.Parameters.Add("@timestamp_expired", MySqlDbType.UInt32);
 				DeleteQuery.Parameters.Add("@thread_no", MySqlDbType.UInt32);
 
-				SelectHashQuery = new MySqlCommand($"SELECT num, locked, sticky, comment, media_filename FROM `{board}` WHERE deleted = 0 AND (num = @thread_no OR thread_num = @thread_no)");
+				SelectHashQuery = new MySqlCommand($"SELECT num, locked, sticky, comment, media_filename FROM `{board}` WHERE thread_num = @thread_no");
 				SelectHashQuery.Parameters.Add("@thread_no", MySqlDbType.UInt32);
 			}
 
@@ -421,7 +421,7 @@ namespace Hayden.Consumers
 					adapter.InsertCommand = clonedCommand;
 					adapter.UpdateBatchSize = 100;
 
-					await adapter.UpdateAsync(clonedSet);
+					adapter.Update(clonedSet);
 
 					transaction.Commit();
 				}
@@ -465,12 +465,13 @@ namespace Hayden.Consumers
 				var threadHashes = new List<KeyValuePair<ulong, int>>();
 
 				using (var rentedConnection = await ConnectionPool.RentConnectionAsync())
+				using (var clonedConnection = (MySqlCommand)SelectHashQuery.Clone())
 				{
-					SelectHashQuery.Connection = rentedConnection;
+					clonedConnection.Connection = rentedConnection;
 
-					SelectHashQuery.Parameters["@thread_no"].Value = theadNumber;
+					clonedConnection.Parameters["@thread_no"].Value = theadNumber; 
 
-					using (var reader = (MySqlDataReader)await SelectHashQuery.ExecuteReaderAsync())
+					using (var reader = (MySqlDataReader)await clonedConnection.ExecuteReaderAsync())
 					{
 						Post tempPost = new Post();
 
@@ -494,8 +495,10 @@ namespace Hayden.Consumers
 
 			public void PrepareConnection(MySqlConnection connection)
 			{
-				InsertQuery.Connection = connection;
-				InsertQuery.Prepare();
+				//InsertQuery.Connection = connection;
+				//InsertQuery.Prepare();
+				//SelectHashQuery.Connection = connection;
+				//SelectHashQuery.Prepare();
 			}
 
 			public async Task<T> WithAccess<T>(Func<MySqlConnection, Task<T>> taskFunc)

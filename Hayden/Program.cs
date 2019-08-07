@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using Hayden.Config;
 using Hayden.Consumers;
 using Hayden.Contract;
+using Hayden.Proxy;
 using Newtonsoft.Json.Linq;
 
 namespace Hayden
@@ -42,22 +43,37 @@ namespace Hayden
 					throw new ArgumentException($"Unknown backend type {backendType}");
 			}
 
+			ProxyProvider proxyProvider = null;
+
+			if (rawConfigFile["proxies"] != null)
+				proxyProvider = new ConfigProxyProvider((JArray)rawConfigFile["proxies"]);
+
 			Log("Initialized.");
 
 			//Log($"Downloading from board /{board}/ to directory {downloadDir}");
 			Log("Press Q to stop archival.");
 			
-			var boardArchiver = new BoardArchiver(yotsubaConfig, consumer);
+			var boardArchiver = new BoardArchiver(yotsubaConfig, consumer, proxyProvider);
 
 			var tokenSource = new CancellationTokenSource();
 
-			var archivalTask = boardArchiver.Execute(tokenSource.Token);
+			var archivalTask = boardArchiver.Execute(tokenSource.Token)
+				.ContinueWith(task =>
+				{
+					if (task.IsFaulted)
+					{
+						Log("!! FATAL EXCEPTION !!");
+						Log(task.Exception.ToString());
+					}
+
+					tokenSource.Cancel();
+				});
 
 			while (true)
 			{
 				try
 				{
-					var readKey = await Utility.ReadKeyAsync(CancellationToken.None, true);
+					var readKey = await Utility.ReadKeyAsync(tokenSource.Token, true);
 
 					if (readKey.Key == ConsoleKey.Q)
 						break;
@@ -70,7 +86,8 @@ namespace Hayden
 
 			Log("Shutting down...");
 
-			tokenSource.Cancel();
+			if (!tokenSource.IsCancellationRequested)
+				tokenSource.Cancel();
 
 			await archivalTask;
 		}
