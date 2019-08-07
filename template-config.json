@@ -1,0 +1,101 @@
+{
+	"source" : {
+		"type" : "4chan",
+		"boards" : [
+			"pol"
+			"3",
+			"a",
+			"aco",
+			"adv",
+			"asp",
+			"b",
+			"bant",
+			"biz",
+			"c",
+			"cgl",
+			"ck",
+			"cm",
+			"co",
+			"d",
+			"diy",
+			"e",
+			"f",
+			"fa",
+			"fit",
+			"g",
+			"gd",
+			"gif",
+			"h",
+			"hc",
+			"his",
+			"hm",
+			"hr",
+			"i",
+			"ic",
+			"int",
+			"jp",
+			"k",
+			"lgbt",
+			"lit",
+			"m",
+			"mlp",
+			"mu",
+			"n",
+			"news",
+			"o",
+			"out",
+			"p",
+			"po",
+			"pol",
+			"qa",
+			"qst",
+			"r",
+			"r9k",
+			"s",
+			"s4s",
+			"sci",
+			"soc",
+			"sp",
+			"t",
+			"tg",
+			"toy",
+			"trash",
+			"trv",
+			"u",
+			"vg",
+			"vip",
+			"vp",
+			"vr",
+			"wg",
+			"wsg",
+			"wsr",
+			"x",
+			"y"
+		],
+		
+		"apiDelay" : 0.8,
+		"boardDelay" : 30
+	},
+	
+	"proxies" : [
+		{
+			"type" : "socks",
+			"url" : "http://au393.nordvpn.com:1080",
+			"username" : "bane@gmail.com",
+			"password" : "bigguy4u"
+		}
+	],
+	
+	"backend" : {
+		"type" : "Asagi",
+		
+		"connectionString" : "Server=localhost; Port=3360; Database=asagi_arc;Uid=hayden;Pwd=hayden7;CharSet=utf8mb4;IgnorePrepare=false",
+		
+		"downloadLocation" : "g:\\gtest-asagi",
+		
+		"fullImagesEnabled" : false,
+		"thumbnailsEnabled" : false,
+		
+		"sqlConnectionPoolSize" : 12
+	}
+}
