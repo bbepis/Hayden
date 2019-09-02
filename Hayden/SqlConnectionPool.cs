@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.Data;
 using System.Threading.Tasks;
 using MySql.Data.MySqlClient;
@@ -28,7 +27,7 @@ namespace Hayden
 			=> poolObject.Object;
 	}
 
-	public class SqlConnectionPool : IDisposable
+	public class MySqlConnectionPool : IDisposable
 	{
 		public AsyncCollection<MySqlConnection> Connections { get; }
 
@@ -36,7 +35,7 @@ namespace Hayden
 
 		protected int PoolSize { get; }
 
-		public SqlConnectionPool(string connectionString, int poolSize)
+		public MySqlConnectionPool(string connectionString, int poolSize)
 		{
 			PoolSize = poolSize;
 			ConnectionString = connectionString;
@@ -51,23 +50,6 @@ namespace Hayden
 
 				Connections.Add(connection);
 			}
-		}
-
-		public async Task ForEachConnection(Func<MySqlConnection, Task> taskFunc)
-		{
-			List<MySqlConnection> connections = new List<MySqlConnection>();
-
-			for (int i = 0; i < PoolSize; i++)
-			{
-				var currentConnection = await Connections.TakeAsync();
-
-				await taskFunc(currentConnection);
-
-				connections.Add(currentConnection);
-			}
-
-			foreach (var connection in connections)
-				Connections.Add(connection);
 		}
 
 		public async Task<PoolObject<MySqlConnection>> RentConnectionAsync()
@@ -106,7 +88,7 @@ namespace Hayden
 			GC.SuppressFinalize(this);
 		}
 
-		~SqlConnectionPool() {
+		~MySqlConnectionPool() {
 			ReleaseUnmanagedResources();
 		}
 	}

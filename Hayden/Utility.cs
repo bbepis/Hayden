@@ -1,9 +1,9 @@
 ﻿using System;
 using System.IO;
-using System.Net;
 using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
+using MySql.Data.MySqlClient;
 using NodaTime;
 
 namespace Hayden
@@ -88,6 +88,16 @@ namespace Hayden
 									   .WithZone(DateTimeZone.Utc)
 									   .ToDateTimeUnspecified()
 						  - DateTime.UnixEpoch).TotalSeconds;
+		}
+
+		public static T GetValue<T>(this MySqlDataReader dataReader, string column)
+		{
+			object value = dataReader[column];
+
+			if (value == null || value == DBNull.Value)
+				return default;
+
+			return (T)value;
 		}
 	}
 }

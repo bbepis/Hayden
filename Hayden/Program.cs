@@ -14,7 +14,7 @@ namespace Hayden
 	{
 		static async Task Main(string[] args)
 		{
-			Console.WriteLine("Hayden v0.4.0");
+			Console.WriteLine("Hayden v0.5.0");
 			Console.WriteLine("By Bepis");
 
 			if (args.Length != 1)

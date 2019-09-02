@@ -6,6 +6,9 @@ namespace Hayden.Models
 {
 	public class Post
 	{
+		// I comment out properties that are part of the API spec, but not used by Hayden.
+		// I don't leave them in anyway, since we get a performance benefit by not having to deserialize them and keep them loaded in memory.
+
 		[JsonProperty("no")]
 		public ulong PostNumber { get; set; }
 
@@ -24,12 +27,12 @@ namespace Hayden.Models
 		[JsonProperty("archived")]
 		public bool? Archived { get; set; }
 		
-		[JsonProperty("archived_on")]
-		public uint? ArchivedOn { get; set; }
+		//[JsonProperty("archived_on")]
+		//public uint? ArchivedOn { get; set; }
 		
-		[JsonConverter(typeof(YotsubaDateConverter))]
-		[JsonProperty("now")]
-		public DateTime? PostTime { get; set; }
+		//[JsonConverter(typeof(YotsubaDateConverter))]
+		//[JsonProperty("now")]
+		//public DateTime? PostTime { get; set; }
 		
 		[JsonProperty("time")]
 		public uint UnixTimestamp { get; set; }
@@ -49,8 +52,8 @@ namespace Hayden.Models
 		[JsonProperty("country")]
 		public string CountryCode { get; set; }
 		
-		[JsonProperty("country_name")]
-		public string CountryName { get; set; }
+		//[JsonProperty("country_name")]
+		//public string CountryName { get; set; }
 		
 		[JsonProperty("sub")]
 		public string Subject { get; set; }
@@ -102,43 +105,48 @@ namespace Hayden.Models
 		//[JsonProperty("omitted_images")]
 		//public ushort? OmittedImages { get; set; }
 		
-		[JsonProperty("replies")]
-		public uint? TotalReplies { get; set; }
+		//[JsonProperty("replies")]
+		//public uint? TotalReplies { get; set; }
 		
-		[JsonProperty("images")]
-		public ushort? TotalImages { get; set; }
+		//[JsonProperty("images")]
+		//public ushort? TotalImages { get; set; }
 
-		[JsonConverter(typeof(BoolIntConverter))]
-		[JsonProperty("bumplimit")]
-		public bool? BumpLimit { get; set; }
+		//[JsonConverter(typeof(BoolIntConverter))]
+		//[JsonProperty("bumplimit")]
+		//public bool? BumpLimit { get; set; }
 
-		[JsonConverter(typeof(BoolIntConverter))]
-		[JsonProperty("imagelimit")]
-		public bool? ImageLimit { get; set; }
+		//[JsonConverter(typeof(BoolIntConverter))]
+		//[JsonProperty("imagelimit")]
+		//public bool? ImageLimit { get; set; }
 
-		[JsonProperty("capcode_replies")]
-		public Dictionary<string, int[]> CapcodeReplies { get; set; }
+		//[JsonProperty("capcode_replies")]
+		//public Dictionary<string, int[]> CapcodeReplies { get; set; }
 
 		//[JsonProperty("last_modified")]
 		//public uint? LastModified { get; set; }
 
-		[JsonProperty("tag")]
-		public string Tag { get; set; }
+		//[JsonProperty("tag")]
+		//public string Tag { get; set; }
 
-		[JsonProperty("semantic_url")]
-		public string SemanticUrl { get; set; }
+		//[JsonProperty("semantic_url")]
+		//public string SemanticUrl { get; set; }
 
 		[JsonProperty("since4pass")]
 		public ushort? Since4Pass { get; set; }
 
+		[JsonProperty("unique_ips")]
+		public int? UniqueIps { get; set; }
+
+		[JsonProperty("troll_country")]
+		public string TrollCountry { get; set; }
 
 
 
 		[JsonIgnore]
-		public string OriginalFilenameFull => FileMd5 != null ? $"{OriginalFilename}{FileExtension}" : null;
+		public string OriginalFilenameFull => FileMd5 != null ? OriginalFilename + FileExtension : null;
 
 		[JsonIgnore]
-		public string TimestampedFilenameFull => FileMd5 != null ? $"{TimestampedFilename}{FileExtension}" : null;
+		public string TimestampedFilenameFull => FileMd5 != null ? TimestampedFilename + FileExtension : null;
 		
 		public int GenerateAsagiHash()
 		{

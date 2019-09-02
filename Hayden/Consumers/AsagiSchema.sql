@@ -115,11 +115,12 @@ CREATE TABLE IF NOT EXISTS `{0}_daily` (
 
   PRIMARY KEY (`day`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-$
-
-DROP PROCEDURE IF EXISTS `update_thread_{0}`;
 
 $
+
+DROP PROCEDURE IF EXISTS `update_thread_{0}`; $
+
+
 CREATE PROCEDURE `update_thread_{0}` (tnum INT)
 BEGIN
   UPDATE
