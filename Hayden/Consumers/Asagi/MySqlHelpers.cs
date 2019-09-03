@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Data;
 using System.Threading.Tasks;
 using MySql.Data.MySqlClient;
@@ -6,27 +7,6 @@ using Nito.AsyncEx;
 
 namespace Hayden
 {
-	public class PoolObject<T> : IDisposable
-	{
-		public T Object { get; }
-
-		private Action<T> ReturnAction { get; }
-
-		public PoolObject(T o, Action<T> returnAction)
-		{
-			Object = o;
-			ReturnAction = returnAction;
-		}
-
-		public void Dispose()
-		{
-			ReturnAction(Object);
-		}
-
-		public static implicit operator T(PoolObject<T> poolObject)
-			=> poolObject.Object;
-	}
-
 	public class MySqlConnectionPool : IDisposable
 	{
 		public AsyncCollection<MySqlConnection> Connections { get; }
@@ -90,6 +70,49 @@ namespace Hayden
 
 		~MySqlConnectionPool() {
 			ReleaseUnmanagedResources();
+		}
+	}
+
+	public static class MySqlExtensions
+	{
+		//public static async Task<IEnumerable<DataRow>> ExecuteReader(this MySqlConnection connection, string sqlQuery)
+		//{
+			
+		//	using (var command = new MySqlCommand(sqlQuery, connection))
+		//	using (var reader = await command.ExecuteReaderAsync())
+		//	{
+		//		object[] rowObjects = new object[reader.FieldCount];
+
+		//		var table = reader.GetSchemaTable();
+
+		//		while (await reader.ReadAsync())
+		//		{
+		//			var row = table.NewRow();
+
+		//			reader.GetValues(row.ItemArray);
+
+		//			yield return row;
+		//		}
+				
+
+		//		((IDataRecord)reader).
+		//	}
+		//}
+
+		public static async Task<IList<T>> ExecuteOrdinalList<T>(this MySqlConnection connection, string sqlQuery, int ordinal = 0)
+		{
+			using (var command = new MySqlCommand(sqlQuery, connection))
+			using (var reader = await command.ExecuteReaderAsync())
+			{
+				List<T> objects = new List<T>();
+
+				while (await reader.ReadAsync())
+				{
+					objects.Add((T)reader[0]);
+				}
+
+				return objects;
+			}
 		}
 	}
 }

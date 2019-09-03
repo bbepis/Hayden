@@ -58,7 +58,7 @@ namespace Hayden.Consumers
 			{
 				// Rebuild hashes from database, if they exist
 
-				var hashes = await dbCommands.WithAccess(connection => dbCommands.GetHashesOfThread(hashObject.ThreadId));
+				var hashes = await dbCommands.GetHashesOfThread(hashObject.ThreadId);
 
 				threadHashes = new SortedList<ulong, int>();
 
@@ -72,15 +72,17 @@ namespace Hayden.Consumers
 			{
 				if (threadHashes.TryGetValue(post.PostNumber, out int existingHash))
 				{
-					if (post.GenerateAsagiHash() != existingHash)
+					int hash = CalculateAsagiHash(post, true);
+
+					if (hash != existingHash)
 					{
 						// Post has changed since we last saved it to the database
 
 						Program.Log($"[Asagi] Post /{board}/{post.PostNumber} has been modified");
 
-						await dbCommands.WithAccess(() => dbCommands.UpdatePost(post, false));
+						await dbCommands.UpdatePost(post, false);
 
-						threadHashes[post.PostNumber] = post.GenerateAsagiHash();
+						threadHashes[post.PostNumber] = hash;
 					}
 					else
 					{
@@ -98,7 +100,7 @@ namespace Hayden.Consumers
 
 					if (post.FileMd5 != null)
 					{
-						MediaInfo mediaInfo =  await dbCommands.WithAccess(() => dbCommands.GetMediaInfo(post.FileMd5));
+						MediaInfo mediaInfo =  await dbCommands.GetMediaInfo(post.FileMd5);
 
 						if (mediaInfo?.Banned == true)
 						{
@@ -146,16 +148,16 @@ namespace Hayden.Consumers
 			{
 				// We are inserting the thread for the first time.
 
-				await dbCommands.WithAccess(() => dbCommands.InsertPosts(thread.Posts));
+				await dbCommands.InsertPosts(thread.Posts);
 			}
 			else
 			{
 				if (postsToAdd.Count > 0)
-					await dbCommands.WithAccess(() => dbCommands.InsertPosts(postsToAdd));
+					await dbCommands.InsertPosts(postsToAdd);
 			}
 
 			foreach (var post in postsToAdd)
-				threadHashes[post.PostNumber] = post.GenerateAsagiHash();
+				threadHashes[post.PostNumber] = CalculateAsagiHash(post, true);
 
 			Program.Log($"[Asagi] {postsToAdd.Count} posts have been inserted from thread /{board}/{thread.OriginalPost.PostNumber}");
 
@@ -169,7 +171,7 @@ namespace Hayden.Consumers
 
 					Program.Log($"[Asagi] Post /{board}/{postNumber} has been deleted");
 
-					await dbCommands.WithAccess(() => dbCommands.DeletePostOrThread(postNumber));
+					await dbCommands.DeletePostOrThread(postNumber);
 
 					postNumbersToDelete.Add(postNumber);
 				}
@@ -203,19 +205,80 @@ namespace Hayden.Consumers
 		{
 			var dbCommands = GetPreparedStatements(board);
 
-			int archivedInt = archivedOnly ? 1 : 0;
+			return await dbCommands.CheckExistingThreads(threadIdsToCheck, archivedOnly);
+		}
 
-			return await dbCommands.WithAccess(async connection =>
+		public static int CalculateAsagiHash(bool? sticky, bool? closed, string comment, string originalFilename)
+		{
+			unchecked
 			{
-				string checkQuery = $"SELECT num FROM `{board}` WHERE op = 1 AND (locked = {archivedInt} OR deleted = {archivedInt}) AND num IN ({string.Join(',', threadIdsToCheck)});";
+				int hashCode = sticky == true ? 2 : 1;
+				hashCode = (hashCode * 397) ^ (closed == true ? 2 : 1);
+				hashCode = (hashCode * 397) ^ (comment?.GetHashCode() ?? 0);
+				hashCode = (hashCode * 397) ^ (originalFilename?.GetHashCode() ?? 0);
+				return hashCode;
+			}
+		}
 
-				using (var command = new MySqlCommand(checkQuery, connection))
-				using (var reader = await command.ExecuteReaderAsync())
-				{
-					return (from IDataRecord record in reader
-						select (ulong)(uint)record[0]).ToArray();
-				}
-			});
+		public static int CalculateAsagiHash(Post post, bool cleanComment)
+		{
+			string comment = cleanComment ? CleanComment(post.Comment) : post.Comment;
+
+			return CalculateAsagiHash(post.Sticky, post.Closed, comment, post.OriginalFilename);
+		}
+
+		public static string CleanComment(string inputComment)
+		{
+			// Copied wholesale from https://github.com/bibanon/asagi/blob/master/src/main/java/net/easymodo/asagi/YotsubaAbstract.java
+
+			if (string.IsNullOrWhiteSpace(inputComment))
+				return string.Empty;
+
+			// SOPA spoilers
+			//text = text.replaceAll("<span class=\"spoiler\"[^>]*>(.*?)</spoiler>(</span>)?", "$1");
+
+			// Admin-Mod-Dev quotelinks
+			inputComment = Regex.Replace(inputComment, @"<span class=""capcodeReplies""><span style=""font-size: smaller;""><span style=""font-weight: bold;"">(?:Administrator|Moderator|Developer) Repl(?:y|ies):<\/span>.*?<\/span><br><\/span>", "");
+			// Non-public tags
+			inputComment = Regex.Replace(inputComment, @"\[(\/?(banned|moot|spoiler|code))]", "[$1:lit]");
+			// Comment too long, also EXIF tag toggle
+			inputComment = Regex.Replace(inputComment, @"<span class=""abbr"">.*?<\/span>", "");
+			// EXIF data
+			inputComment = Regex.Replace(inputComment, @"<table class=""exif""[^>]*>.*?<\/table>", "");
+			// DRAW data
+			inputComment = Regex.Replace(inputComment, "<br><br><small><b>Oekaki Post</b>.*?</small>", "");
+			// Banned/Warned text
+			inputComment = Regex.Replace(inputComment, @"<(?:b|strong) style=""color:\s*red;"">(.*?)<\/(?:b|strong)>", "[banned]$1[/banned]");
+			// moot inputComment
+			inputComment = Regex.Replace(inputComment, @"<div style=""padding: 5px;margin-left: \.5em;border-color: #faa;border: 2px dashed rgba\(255,0,0,\.1\);border-radius: 2px"">(.*?)</div>", "[moot]$1[/moot]");
+			// fortune inputComment
+			inputComment = Regex.Replace(inputComment, @"<span class=""fortune"" style=""color:(.*?)""><br><br><b>(.*?)<\/b><\/span>", "\n\n[fortune color=\"$1\"]$2[/fortune]");
+			// bold inputComment
+			inputComment = Regex.Replace(inputComment, @"<(?:b|strong)>(.*?)<\/(?:b|strong)>", "[b]$1[/b]");
+			// code tags
+			inputComment = Regex.Replace(inputComment, "<pre[^>]*>", "[code]");
+			inputComment = inputComment.Replace("</pre>", "[/code]");
+			// math tags
+			inputComment = Regex.Replace(inputComment, @"<span class=""math"">(.*?)<\/span>", "[math]$1[/math]");
+			inputComment = Regex.Replace(inputComment, @"<div class=""math"">(.*?)<\/div>", "[eqn]$1[/eqn]");
+			// > implying I'm quoting someone
+			inputComment = Regex.Replace(inputComment, @"<font class=""unkfunc"">(.*?)<\/font>", "$1");
+			inputComment = Regex.Replace(inputComment, @"<span class=""quote"">(.*?)<\/span>", "$1");
+			inputComment = Regex.Replace(inputComment, @"<span class=""(?:[^""]*)?deadlink"">(.*?)<\/span>", "$1");
+			// Links
+			inputComment = Regex.Replace(inputComment, "<a[^>]*>(.*?)</a>", "$1");
+			// old spoilers
+			inputComment = Regex.Replace(inputComment, "<span class=\"spoiler\"[^>]*>(.*?)</span>", "[spoiler]$1[/spoiler]");
+			// ShiftJIS
+			inputComment = Regex.Replace(inputComment, "<span class=\"sjis\">(.*?)</span>", "[shiftjis]$1[/shiftjis]");
+			// new spoilers
+			inputComment = inputComment.Replace("<s>", "[spoiler]");
+			inputComment = inputComment.Replace("</s>", "[/spoiler]");
+			// new line/wbr
+			inputComment = Regex.Replace(inputComment, "<br\\s*/?>", "\n");
+			inputComment = inputComment.Replace("<wbr>", "");
+
+			return HttpUtility.HtmlDecode(inputComment).Trim();
 		}
 
 		public void Dispose()
@@ -259,7 +322,7 @@ namespace Hayden.Consumers
 			private MySqlCommand SelectPostHashQuery { get; }
 			private MySqlCommand SelectMediaHashQuery { get; }
 
-			private static readonly string CreateTablesQuery = Utility.GetEmbeddedText("Hayden.Consumers.AsagiSchema.sql");
+			private static readonly string CreateTablesQuery = Utility.GetEmbeddedText("Hayden.Consumers.Asagi.AsagiSchema.sql");
 
 			private const string BaseInsertQuery = "INSERT INTO `{0}`"
 												   + "  (poster_ip, num, subnum, thread_num, op, timestamp, timestamp_expired, preview_orig, preview_w, preview_h,"
@@ -362,150 +425,100 @@ namespace Hayden.Consumers
 
 			public async Task InsertPost(Post post)
 			{
+				using (var clonedCommand = InsertQuery.Clone())
 				using (var rentedConnection = await ConnectionPool.RentConnectionAsync())
-				{
-					InsertQuery.Connection = rentedConnection;
-
-					InsertQuery.Parameters["@post_no"].Value = post.PostNumber;
-					InsertQuery.Parameters["@thread_no"].Value = post.ReplyPostNumber != 0 ? post.ReplyPostNumber : post.PostNumber;
-					InsertQuery.Parameters["@is_op"].Value = post.ReplyPostNumber == 0 ? 1 : 0;
-					InsertQuery.Parameters["@timestamp"].Value = post.UnixTimestamp;
-					InsertQuery.Parameters["@timestamp_expired"].Value = 0;
-					InsertQuery.Parameters["@preview_orig"].Value = post.TimestampedFilename.HasValue ? $"{post.TimestampedFilename}s.jpg" : null;
-					InsertQuery.Parameters["@preview_w"].Value = post.ThumbnailWidth ?? 0;
-					InsertQuery.Parameters["@preview_h"].Value = post.ThumbnailHeight ?? 0;
-					InsertQuery.Parameters["@media_filename"].Value = post.OriginalFilenameFull;
-					InsertQuery.Parameters["@media_w"].Value = post.ImageWidth ?? 0;
-					InsertQuery.Parameters["@media_h"].Value = post.ImageHeight ?? 0;
-					InsertQuery.Parameters["@media_size"].Value = post.FileSize ?? 0;
-					InsertQuery.Parameters["@media_hash"].Value = post.FileMd5;
-					InsertQuery.Parameters["@media_orig"].Value = post.TimestampedFilenameFull;
-					InsertQuery.Parameters["@spoiler"].Value = post.SpoilerImage == true ? 1 : 0;
-					InsertQuery.Parameters["@deleted"].Value = 0;
-					InsertQuery.Parameters["@capcode"].Value = post.Capcode?.Substring(0, 1).ToUpperInvariant() ?? "N";
-					InsertQuery.Parameters["@email"].Value = null; // 4chan api doesn't supply this????
-					InsertQuery.Parameters["@name"].Value = HttpUtility.HtmlDecode(post.Name)?.Trim();
-					InsertQuery.Parameters["@trip"].Value = post.Trip;
-					InsertQuery.Parameters["@title"].Value = HttpUtility.HtmlDecode(post.Subject)?.Trim();
-					InsertQuery.Parameters["@comment"].Value = CleanComment(post.Comment);
-					InsertQuery.Parameters["@sticky"].Value = post.Sticky == true ? 1 : 0;
-					InsertQuery.Parameters["@locked"].Value = post.Closed == true ? 1 : 0;
-					InsertQuery.Parameters["@poster_hash"].Value = post.PosterID == "Developer" ? "Dev" : post.PosterID;
-					InsertQuery.Parameters["@poster_country"].Value = post.CountryCode;
-					InsertQuery.Parameters["@exif"].Value = GenerateExifColumnData(post);
-
-					await InsertQuery.ExecuteNonQueryAsync();
-				}
-			}
-
-			public async Task InsertPosts(IEnumerable<Post> posts)
-			{
-				using (var rentedConnection = await ConnectionPool.RentConnectionAsync())
-				using (var clonedCommand = (MySqlCommand)InsertQuery.Clone())
-				using (var transaction = await rentedConnection.Object.BeginTransactionAsync())
-				using (var clonedSet = postDataTable.Clone())
-				using (var adapter = new MySqlDataAdapter($"SELECT * FROM {Board} WHERE 1 = 0", rentedConnection.Object))
 				{
 					clonedCommand.Connection = rentedConnection;
-					clonedCommand.Transaction = transaction;
 
-					clonedCommand.UpdatedRowSource = UpdateRowSource.None;
-					
-					foreach (var post in posts)
-					{
-						var row = clonedSet.NewRow();
-						row["num"] = post.PostNumber;
-						row["thread_num"] = post.ReplyPostNumber != 0 ? post.ReplyPostNumber : post.PostNumber;
-						row["op"] = post.ReplyPostNumber == 0 ? 1 : 0;
-						row["timestamp"] = post.UnixTimestamp;
-						row["timestamp_expired"] = 0;
-						row["preview_orig"] = post.TimestampedFilename.HasValue ? $"{post.TimestampedFilename}s.jpg" : null;
-						row["preview_w"] = post.ThumbnailWidth ?? 0;
-						row["preview_h"] = post.ThumbnailHeight ?? 0;
-						row["media_filename"] = post.OriginalFilenameFull;
-						row["media_w"] = post.ImageWidth ?? 0;
-						row["media_h"] = post.ImageHeight ?? 0;
-						row["media_size"] = post.FileSize ?? 0;
-						row["media_hash"] = post.FileMd5;
-						row["media_orig"] = post.TimestampedFilenameFull;
-						row["spoiler"] = post.SpoilerImage == true ? 1 : 0;
-						row["deleted"] = 0;
-						row["capcode"] = post.Capcode?.Substring(0, 1).ToUpperInvariant() ?? "N";
-						row["email"] = null; // 4chan api doesn't supply this????
-						row["name"] = HttpUtility.HtmlDecode(post.Name)?.Trim();
-						row["trip"] = post.Trip;
-						row["title"] = HttpUtility.HtmlDecode(post.Subject)?.Trim();
-						row["comment"] = CleanComment(post.Comment);
-						row["sticky"] = post.Sticky == true ? 1 : 0;
-						row["locked"] = post.Closed == true ? 1 : 0;
-						row["poster_hash"] = post.PosterID == "Developer" ? "Dev" : post.PosterID;
-						row["poster_country"] = post.CountryCode;
-						row["exif"] = GenerateExifColumnData(post);
+					clonedCommand.Parameters["@post_no"].Value = post.PostNumber;
+					clonedCommand.Parameters["@thread_no"].Value = post.ReplyPostNumber != 0 ? post.ReplyPostNumber : post.PostNumber;
+					clonedCommand.Parameters["@is_op"].Value = post.ReplyPostNumber == 0 ? 1 : 0;
+					clonedCommand.Parameters["@timestamp"].Value = post.UnixTimestamp;
+					clonedCommand.Parameters["@timestamp_expired"].Value = 0;
+					clonedCommand.Parameters["@preview_orig"].Value = post.TimestampedFilename.HasValue ? $"{post.TimestampedFilename}s.jpg" : null;
+					clonedCommand.Parameters["@preview_w"].Value = post.ThumbnailWidth ?? 0;
+					clonedCommand.Parameters["@preview_h"].Value = post.ThumbnailHeight ?? 0;
+					clonedCommand.Parameters["@media_filename"].Value = post.OriginalFilenameFull;
+					clonedCommand.Parameters["@media_w"].Value = post.ImageWidth ?? 0;
+					clonedCommand.Parameters["@media_h"].Value = post.ImageHeight ?? 0;
+					clonedCommand.Parameters["@media_size"].Value = post.FileSize ?? 0;
+					clonedCommand.Parameters["@media_hash"].Value = post.FileMd5;
+					clonedCommand.Parameters["@media_orig"].Value = post.TimestampedFilenameFull;
+					clonedCommand.Parameters["@spoiler"].Value = post.SpoilerImage == true ? 1 : 0;
+					clonedCommand.Parameters["@deleted"].Value = 0;
+					clonedCommand.Parameters["@capcode"].Value = post.Capcode?.Substring(0, 1).ToUpperInvariant() ?? "N";
+					clonedCommand.Parameters["@email"].Value = null; // 4chan api doesn't supply this????
+					clonedCommand.Parameters["@name"].Value = HttpUtility.HtmlDecode(post.Name)?.Trim();
+					clonedCommand.Parameters["@trip"].Value = post.Trip;
+					clonedCommand.Parameters["@title"].Value = HttpUtility.HtmlDecode(post.Subject)?.Trim();
+					clonedCommand.Parameters["@comment"].Value = CleanComment(post.Comment);
+					clonedCommand.Parameters["@sticky"].Value = post.Sticky == true ? 1 : 0;
+					clonedCommand.Parameters["@locked"].Value = post.Closed == true ? 1 : 0;
+					clonedCommand.Parameters["@poster_hash"].Value = post.PosterID == "Developer" ? "Dev" : post.PosterID;
+					clonedCommand.Parameters["@poster_country"].Value = post.CountryCode;
+					clonedCommand.Parameters["@exif"].Value = GenerateExifColumnData(post);
 
-						clonedSet.Rows.Add(row);
-					}
-
-					adapter.InsertCommand = clonedCommand;
-					adapter.UpdateBatchSize = 100;
-
-					adapter.Update(clonedSet);
-
-					transaction.Commit();
+					await clonedCommand.ExecuteNonQueryAsync();
 				}
 			}
 
-			private static string CleanComment(string inputComment)
+			public async Task InsertPosts(ICollection<Post> posts)
 			{
-				// Copied wholesale from https://github.com/bibanon/asagi/blob/master/src/main/java/net/easymodo/asagi/YotsubaAbstract.java
+				using (var rentedConnection = await ConnectionPool.RentConnectionAsync())
+				{
+					IList<uint> bannedPosts = await rentedConnection.Object.ExecuteOrdinalList<uint>($"SELECT num FROM {Board} WHERE num NOT IN ({string.Join(',', posts.Select(x => x.PostNumber.ToString()))})");
 
-				if (string.IsNullOrWhiteSpace(inputComment))
-					return string.Empty;
+					using (var clonedCommand = InsertQuery.Clone())
+					using (var clonedSet = postDataTable.Clone())
+					using (var adapter = new MySqlDataAdapter($"SELECT * FROM {Board} WHERE 1 = 0", rentedConnection.Object))
+					{
+						clonedCommand.Connection = rentedConnection;
 
-				// SOPA spoilers
-				//text = text.replaceAll("<span class=\"spoiler\"[^>]*>(.*?)</spoiler>(</span>)?", "$1");
+						clonedCommand.UpdatedRowSource = UpdateRowSource.None;
 
-				// Admin-Mod-Dev quotelinks
-				inputComment = Regex.Replace(inputComment, @"<span class=""capcodeReplies""><span style=""font-size: smaller;""><span style=""font-weight: bold;"">(?:Administrator|Moderator|Developer) Repl(?:y|ies):<\/span>.*?<\/span><br><\/span>", "");
-				// Non-public tags
-				inputComment = Regex.Replace(inputComment, @"\[(\/?(banned|moot|spoiler|code))]", "[$1:lit]");
-				// Comment too long, also EXIF tag toggle
-				inputComment = Regex.Replace(inputComment, @"<span class=""abbr"">.*?<\/span>", "");
-				// EXIF data
-				inputComment = Regex.Replace(inputComment, @"<table class=""exif""[^>]*>.*?<\/table>", "");
-				// DRAW data
-				inputComment = Regex.Replace(inputComment, "<br><br><small><b>Oekaki Post</b>.*?</small>", "");
-				// Banned/Warned text
-				inputComment = Regex.Replace(inputComment, @"<(?:b|strong) style=""color:\s*red;"">(.*?)<\/(?:b|strong)>", "[banned]$1[/banned]");
-				// moot inputComment
-				inputComment = Regex.Replace(inputComment, @"<div style=""padding: 5px;margin-left: \.5em;border-color: #faa;border: 2px dashed rgba\(255,0,0,\.1\);border-radius: 2px"">(.*?)</div>", "[moot]$1[/moot]");
-				// fortune inputComment
-				inputComment = Regex.Replace(inputComment, @"<span class=""fortune"" style=""color:(.*?)""><br><br><b>(.*?)<\/b><\/span>", "\n\n[fortune color=\"$1\"]$2[/fortune]");
-				// bold inputComment
-				inputComment = Regex.Replace(inputComment, @"<(?:b|strong)>(.*?)<\/(?:b|strong)>", "[b]$1[/b]");
-				// code tags
-				inputComment = Regex.Replace(inputComment, "<pre[^>]*>", "[code]");
-				inputComment = inputComment.Replace("</pre>", "[/code]");
-				// math tags
-				inputComment = Regex.Replace(inputComment, @"<span class=""math"">(.*?)<\/span>", "[math]$1[/math]");
-				inputComment = Regex.Replace(inputComment, @"<div class=""math"">(.*?)<\/div>", "[eqn]$1[/eqn]");
-				// > implying I'm quoting someone
-				inputComment = Regex.Replace(inputComment, @"<font class=""unkfunc"">(.*?)<\/font>", "$1");
-				inputComment = Regex.Replace(inputComment, @"<span class=""quote"">(.*?)<\/span>", "$1");
-				inputComment = Regex.Replace(inputComment, @"<span class=""(?:[^""]*)?deadlink"">(.*?)<\/span>", "$1");
-				// Links
-				inputComment = Regex.Replace(inputComment, "<a[^>]*>(.*?)</a>", "$1");
-				// old spoilers
-				inputComment = Regex.Replace(inputComment, "<span class=\"spoiler\"[^>]*>(.*?)</span>", "[spoiler]$1[/spoiler]");
-				// ShiftJIS
-				inputComment = Regex.Replace(inputComment, "<span class=\"sjis\">(.*?)</span>", "[shiftjis]$1[/shiftjis]");
-				// new spoilers
-				inputComment = inputComment.Replace("<s>", "[spoiler]");
-				inputComment = inputComment.Replace("</s>", "[/spoiler]");
-				// new line/wbr
-				inputComment = Regex.Replace(inputComment, "<br\\s*/?>", "\n");
-				inputComment = inputComment.Replace("<wbr>", "");
+						foreach (var post in posts)
+						{
+							if (bannedPosts.Contains((uint)post.PostNumber))
+								continue;
 
-				return HttpUtility.HtmlDecode(inputComment).Trim();
+							var row = clonedSet.NewRow();
+							row["num"] = post.PostNumber;
+							row["thread_num"] = post.ReplyPostNumber != 0 ? post.ReplyPostNumber : post.PostNumber;
+							row["op"] = post.ReplyPostNumber == 0 ? 1 : 0;
+							row["timestamp"] = post.UnixTimestamp;
+							row["timestamp_expired"] = 0;
+							row["preview_orig"] = post.TimestampedFilename.HasValue ? $"{post.TimestampedFilename}s.jpg" : null;
+							row["preview_w"] = post.ThumbnailWidth ?? 0;
+							row["preview_h"] = post.ThumbnailHeight ?? 0;
+							row["media_filename"] = post.OriginalFilenameFull;
+							row["media_w"] = post.ImageWidth ?? 0;
+							row["media_h"] = post.ImageHeight ?? 0;
+							row["media_size"] = post.FileSize ?? 0;
+							row["media_hash"] = post.FileMd5;
+							row["media_orig"] = post.TimestampedFilenameFull;
+							row["spoiler"] = post.SpoilerImage == true ? 1 : 0;
+							row["deleted"] = 0;
+							row["capcode"] = post.Capcode?.Substring(0, 1).ToUpperInvariant() ?? "N";
+							row["email"] = null; // 4chan api doesn't supply this????
+							row["name"] = HttpUtility.HtmlDecode(post.Name)?.Trim();
+							row["trip"] = post.Trip;
+							row["title"] = HttpUtility.HtmlDecode(post.Subject)?.Trim();
+							row["comment"] = CleanComment(post.Comment);
+							row["sticky"] = post.Sticky == true ? 1 : 0;
+							row["locked"] = post.Closed == true ? 1 : 0;
+							row["poster_hash"] = post.PosterID == "Developer" ? "Dev" : post.PosterID;
+							row["poster_country"] = post.CountryCode;
+							row["exif"] = GenerateExifColumnData(post);
+
+							clonedSet.Rows.Add(row);
+						}
+
+						adapter.InsertCommand = clonedCommand;
+						adapter.UpdateBatchSize = 100;
+
+						adapter.Update(clonedSet);
+					}
+				}
 			}
 
 			private static readonly Regex DrawRegex = new Regex(@"<small><b>Oekaki \s Post<\/b> \s \(Time: \s (.*?), \s Painter: \s (.*?)(?:, \s Source: \s (?<source>.*?))?(?:, \s Animation: \s (?<animation>.*?))?\)<\/small>", RegexOptions.IgnorePatternWhitespace | RegexOptions.Singleline | RegexOptions.Compiled);
@@ -561,18 +574,19 @@ namespace Hayden.Consumers
 			public async Task UpdatePost(Post post, bool deleted)
 			{
 				using (var rentedConnection = await ConnectionPool.RentConnectionAsync())
+				using (var clonedCommand = UpdateQuery.Clone())
 				{
-					UpdateQuery.Connection = rentedConnection;
+					clonedCommand.Connection = rentedConnection;
 
-					UpdateQuery.Parameters["@comment"].Value = post.Comment;
-					UpdateQuery.Parameters["@deleted"].Value = deleted ? 1 : 0;
-					UpdateQuery.Parameters["@media_filename"].Value = post.OriginalFilenameFull;
-					UpdateQuery.Parameters["@sticky"].Value = post.Sticky == true ? 1 : 0;
-					UpdateQuery.Parameters["@locked"].Value = post.Closed == true ? 1 : 0;
-					UpdateQuery.Parameters["@thread_no"].Value = post.ReplyPostNumber != 0 ? post.ReplyPostNumber : post.PostNumber;
-					UpdateQuery.Parameters["@subnum"].Value = 0;
+					clonedCommand.Parameters["@comment"].Value = post.Comment;
+					clonedCommand.Parameters["@deleted"].Value = deleted ? 1 : 0;
+					clonedCommand.Parameters["@media_filename"].Value = post.OriginalFilenameFull;
+					clonedCommand.Parameters["@sticky"].Value = post.Sticky == true ? 1 : 0;
+					clonedCommand.Parameters["@locked"].Value = post.Closed == true ? 1 : 0;
+					clonedCommand.Parameters["@thread_no"].Value = post.ReplyPostNumber != 0 ? post.ReplyPostNumber : post.PostNumber;
+					clonedCommand.Parameters["@subnum"].Value = 0;
 
-					await UpdateQuery.ExecuteNonQueryAsync();
+					await clonedCommand.ExecuteNonQueryAsync();
 				}
 			}
 
@@ -581,13 +595,14 @@ namespace Hayden.Consumers
 				uint currentTimestamp = Utility.GetNewYorkTimestamp(DateTimeOffset.Now);
 
 				using (var rentedConnection = await ConnectionPool.RentConnectionAsync())
+				using (var clonedQuery = DeleteQuery.Clone())
 				{
-					DeleteQuery.Connection = rentedConnection;
+					clonedQuery.Connection = rentedConnection;
 
-					DeleteQuery.Parameters["@timestamp_expired"].Value = currentTimestamp;
-					DeleteQuery.Parameters["@thread_no"].Value = theadNumber;
+					clonedQuery.Parameters["@timestamp_expired"].Value = currentTimestamp;
+					clonedQuery.Parameters["@thread_no"].Value = theadNumber;
 
-					await DeleteQuery.ExecuteNonQueryAsync();
+					await clonedQuery.ExecuteNonQueryAsync();
 				}
 			}
 
@@ -596,7 +611,7 @@ namespace Hayden.Consumers
 				var threadHashes = new List<KeyValuePair<ulong, int>>();
 
 				using (var rentedConnection = await ConnectionPool.RentConnectionAsync())
-				using (var clonedQuery = (MySqlCommand)SelectPostHashQuery.Clone())
+				using (var clonedQuery = SelectPostHashQuery.Clone())
 				{
 					clonedQuery.Connection = rentedConnection;
 
@@ -604,19 +619,17 @@ namespace Hayden.Consumers
 
 					using (var reader = (MySqlDataReader)await clonedQuery.ExecuteReaderAsync())
 					{
-						Post tempPost = new Post();
-
 						while (await reader.ReadAsync())
 						{
-							tempPost.PostNumber = reader.GetUInt32("num");
-							tempPost.Closed = reader.GetBoolean("locked") ? (bool?)true : null;
-							tempPost.Sticky = reader.GetBoolean("sticky") ? (bool?)true : null;
-							tempPost.Comment = reader["comment"] == DBNull.Value ? null : (string)reader["comment"];
-							tempPost.OriginalFilename = reader["media_filename"] == DBNull.Value
+							uint postNumber = reader.GetUInt32("num");
+							bool? closed = reader.GetValue<bool?>("locked");
+							bool? sticky = reader.GetValue<bool?>("sticky");
+							string comment = reader.GetValue<string>("comment");
+							string originalFilename = reader["media_filename"] == DBNull.Value
 								? null
 								: ((string)reader["media_filename"]).Substring(0, ((string)reader["media_filename"]).LastIndexOf('.'));
 
-							threadHashes.Add(new KeyValuePair<ulong, int>(tempPost.PostNumber, tempPost.GenerateAsagiHash()));
+							threadHashes.Add(new KeyValuePair<ulong, int>(postNumber, AsagiThreadConsumer.CalculateAsagiHash(sticky, closed, comment, originalFilename)));
 						}
 					}
 				}
@@ -627,7 +640,7 @@ namespace Hayden.Consumers
 			public async Task<MediaInfo> GetMediaInfo(string md5Hash)
 			{
 				using (var rentedConnection = await ConnectionPool.RentConnectionAsync())
-				using (var clonedQuery = (MySqlCommand)SelectMediaHashQuery.Clone())
+				using (var clonedQuery = SelectMediaHashQuery.Clone())
 				{
 					clonedQuery.Connection = rentedConnection;
 
@@ -639,66 +652,28 @@ namespace Hayden.Consumers
 							//throw new DataException("Expecting image data in database to be created by trigger");
 							return null;
 
-						return new MediaInfo(reader.GetValue<string>("media"), reader.GetValue<string>("preview_op"), reader.GetValue<string>("preview_reply"), reader.GetBoolean("banned"));
+						return new MediaInfo(reader.GetValue<string>("media"),
+							reader.GetValue<string>("preview_op"),
+							reader.GetValue<string>("preview_reply"),
+							reader.GetBoolean("banned"));
 					}
 				}
 			}
 
-			public async Task<T> WithAccess<T>(Func<MySqlConnection, Task<T>> taskFunc)
+			public async Task<ulong[]> CheckExistingThreads(IEnumerable<ulong> threadIdsToCheck, bool archivedOnly)
 			{
-				await AccessSemaphore.WaitAsync();
+				int archivedInt = archivedOnly ? 1 : 0;
 
-				try
+				using (var rentedConnection = await ConnectionPool.RentConnectionAsync())
 				{
-					using (var rentedConnection = await ConnectionPool.RentConnectionAsync())
-						return await taskFunc(rentedConnection.Object);
-				}
-				finally
-				{
-					AccessSemaphore.Release();
-				}
-			}
+					string checkQuery = $"SELECT num FROM `{Board}` WHERE op = 1 AND (locked = {archivedInt} OR deleted = {archivedInt}) AND num IN ({string.Join(',', threadIdsToCheck)});";
 
-			public async Task WithAccess(Func<MySqlConnection, Task> taskFunc)
-			{
-				await AccessSemaphore.WaitAsync();
-
-				try
-				{
-					using (var rentedConnection = await ConnectionPool.RentConnectionAsync())
-						await taskFunc(rentedConnection.Object);
-				}
-				finally
-				{
-					AccessSemaphore.Release();
-				}
-			}
-
-			public async Task WithAccess(Func<Task> taskFunc)
-			{
-				await AccessSemaphore.WaitAsync();
-
-				try
-				{
-					await taskFunc();
-				}
-				finally
-				{
-					AccessSemaphore.Release();
-				}
-			}
-
-			public async Task<T> WithAccess<T>(Func<Task<T>> taskFunc)
-			{
-				await AccessSemaphore.WaitAsync();
-
-				try
-				{
-					return await taskFunc();
-				}
-				finally
-				{
-					AccessSemaphore.Release();
+					using (var command = new MySqlCommand(checkQuery, rentedConnection))
+					using (var reader = await command.ExecuteReaderAsync())
+					{
+						return (from IDataRecord record in reader
+							select (ulong)(uint)record[0]).ToArray();
+					}
 				}
 			}
 

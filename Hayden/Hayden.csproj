@@ -15,7 +15,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <EmbeddedResource Include="Consumers\AsagiSchema.sql" />
+    <EmbeddedResource Include="Consumers\Asagi\AsagiSchema.sql" />
   </ItemGroup>
 
   <ItemGroup>

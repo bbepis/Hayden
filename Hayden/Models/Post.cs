@@ -147,17 +147,5 @@ namespace Hayden.Models
 
 		[JsonIgnore]
 		public string TimestampedFilenameFull => FileMd5 != null ? TimestampedFilename + FileExtension : null;
-		
-		public int GenerateAsagiHash()
-		{
-			unchecked
-			{
-				int hashCode = Sticky.GetHashCode();
-				hashCode = (hashCode * 397) ^ Closed.GetHashCode();
-				hashCode = (hashCode * 397) ^ (Comment?.GetHashCode() ?? 0);
-				hashCode = (hashCode * 397) ^ (OriginalFilename?.GetHashCode() ?? 0);
-				return hashCode;
-			}
-		}
 	}
 }
