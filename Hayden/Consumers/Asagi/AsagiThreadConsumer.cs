@@ -341,7 +341,7 @@ namespace Hayden.Consumers
 			using (var chainedQuery = rentedConnection.Object.CreateQuery(insertQuerySql, true))
 			{
 				var bannedPosts = await rentedConnection.Object
-														.CreateQuery($"SELECT num FROM {board} WHERE num NOT IN ({string.Join(',', posts.Select(post => post.PostNumber.ToString()))})")
+														.CreateQuery($"SELECT num FROM `{board}` WHERE num NOT IN ({string.Join(',', posts.Select(post => post.PostNumber.ToString()))})")
 														.ExecuteScalarListAsync<uint>();
 				
 				foreach (var post in posts)
