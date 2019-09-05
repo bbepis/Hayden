@@ -40,7 +40,7 @@ namespace Hayden
 			var concurrentSempahore = new SemaphoreSlim(20);
 			bool firstRun = true;
 
-			HashSet<(string board, ulong threadNumber)> threadQueue = new HashSet<(string board, ulong threadNumber)>();
+			List<(string board, ulong threadNumber)> threadQueue = new List<(string board, ulong threadNumber)>();
 
 			SortedList<string, DateTimeOffset> lastBoardCheckTimes = new SortedList<string, DateTimeOffset>(Config.Boards.Length);
 
@@ -128,20 +128,20 @@ namespace Hayden
 					lastBoardCheckTimes[board] = beforeCheckTime;
 				}
 
+				threadQueue = threadQueue.Distinct().ToList();
+
 				Program.Log($"{threadQueue.Count} threads have been queued total");
+				threadQueue.TrimExcess();
 
 				var waitTask = Task.Delay(BoardUpdateTimespan, token);
 
 				var weakReferences = new List<WeakReference<Task>>();
 
-				var requeuedThreads = new HashSet<(string board, ulong threadNumber)>();
+				var requeuedThreads = new List<(string board, ulong threadNumber)>();
 
 				int completedCount = 0;
 
-				var roundRobinQueue = threadQueue.GroupBy(s => s.board)
-										 .SelectMany(grp => grp.Select((str, idx) => new { Index = idx, Value = str }))
-										 .OrderBy(v => v.Index).ThenBy(v => v.Value.board)
-										 .Select(v => v.Value);
+				var roundRobinQueue = threadQueue.RoundRobin(x => x.board);
 
 				foreach (var thread in roundRobinQueue)
 				{
@@ -167,7 +167,8 @@ namespace Hayden
 						bool success = await ThreadUpdateTask(CancellationToken.None, thread.board, thread.threadNumber, client?.Object);
 
 						if (!success)
-							requeuedThreads.Add(thread);
+							lock (requeuedThreads)
+								requeuedThreads.Add(thread);
 
 						concurrentSempahore.Release();
 
