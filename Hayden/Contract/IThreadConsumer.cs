@@ -11,6 +11,6 @@ namespace Hayden.Contract
 
 		Task ThreadUntracked(ulong threadId, string board, bool deleted);
 
-		Task<ulong[]> CheckExistingThreads(IEnumerable<ulong> threadIdsToCheck, string board, bool archivedOnly);
+		Task<ICollection<ulong>> CheckExistingThreads(IEnumerable<ulong> threadIdsToCheck, string board, bool archivedOnly);
 	}
 }

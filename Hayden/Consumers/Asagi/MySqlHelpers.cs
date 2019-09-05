@@ -46,73 +46,129 @@ namespace Hayden
 			});
 		}
 
-		public PoolObject<MySqlConnection> RentConnection()
+		public void Dispose()
 		{
-			return new PoolObject<MySqlConnection>(Connections.Take(), obj =>
+			for (int i = 0; i < PoolSize; i++)
 			{
-				if (obj.State != ConnectionState.Open)
-					throw new Exception("MySqlConnection state has broken");
+				var connection = Connections.Take();
 
-				Connections.Add(obj);
-			});
+				connection.Dispose();
+			}
+		}
+	}
+
+	public class ChainedQuery : IDisposable
+	{
+		public MySqlCommand Command { get; }
+		protected bool Reuse { get; }
+
+		public ChainedQuery(MySqlCommand command, bool reuse = false)
+		{
+			Command = command;
+			Reuse = reuse;
 		}
 
-		private void ReleaseUnmanagedResources()
+		public ChainedQuery SetParam(string parameter, object value)
 		{
-			// TODO release unmanaged resources here
+			if (Command.Parameters.Contains(parameter))
+			{
+				Command.Parameters[parameter].Value = value;
+			}
+			else
+			{
+				Command.Parameters.AddWithValue(parameter, value);
+			}
+
+			return this;
+		}
+
+		public async Task<IList<T>> ExecuteScalarListAsync<T>(int ordinal = 0)
+		{
+			try
+			{
+				using (var reader = await Command.ExecuteReaderAsync())
+				{
+					List<T> objects = new List<T>();
+
+					while (await reader.ReadAsync())
+					{
+						objects.Add((T)reader[0]);
+					}
+
+					return objects;
+				}
+			}
+			finally
+			{
+				if (!Reuse)
+					Command.Dispose();
+			}
+		}
+
+		public async Task<DataTable> ExecuteTableAsync()
+		{
+			try
+			{
+				using (var reader = await Command.ExecuteReaderAsync())
+				{
+					DataTable table = new DataTable();
+
+					table.Load(reader);
+
+					return table;
+				}
+			}
+			finally
+			{
+				if (!Reuse)
+					Command.Dispose();
+			}
+		}
+
+		public async Task ExecuteNonQueryAsync()
+		{
+			try
+			{
+				await Command.ExecuteNonQueryAsync();
+			}
+			finally
+			{
+				if (!Reuse)
+					Command.Dispose();
+			}
 		}
 
 		public void Dispose()
 		{
-			ReleaseUnmanagedResources();
-			GC.SuppressFinalize(this);
-		}
-
-		~MySqlConnectionPool() {
-			ReleaseUnmanagedResources();
+			Command.Dispose();
 		}
 	}
 
 	public static class MySqlExtensions
 	{
-		//public static async Task<IEnumerable<DataRow>> ExecuteReader(this MySqlConnection connection, string sqlQuery)
-		//{
-			
-		//	using (var command = new MySqlCommand(sqlQuery, connection))
-		//	using (var reader = await command.ExecuteReaderAsync())
-		//	{
-		//		object[] rowObjects = new object[reader.FieldCount];
-
-		//		var table = reader.GetSchemaTable();
-
-		//		while (await reader.ReadAsync())
-		//		{
-		//			var row = table.NewRow();
-
-		//			reader.GetValues(row.ItemArray);
-
-		//			yield return row;
-		//		}
-				
-
-		//		((IDataRecord)reader).
-		//	}
-		//}
-
-		public static async Task<IList<T>> ExecuteOrdinalList<T>(this MySqlConnection connection, string sqlQuery, int ordinal = 0)
+		public static ChainedQuery CreateQuery(this MySqlConnection connection, string sql, bool reuse = false)
 		{
-			using (var command = new MySqlCommand(sqlQuery, connection))
-			using (var reader = await command.ExecuteReaderAsync())
-			{
-				List<T> objects = new List<T>();
+			return new ChainedQuery(new MySqlCommand(sql, connection), reuse);
+		}
+		
+		public static T GetValue<T>(this IDataRecord row, string column)
+		{
+			object value = row[column];
 
-				while (await reader.ReadAsync())
-				{
-					objects.Add((T)reader[0]);
-				}
+			if (value == null || value == DBNull.Value)
+				return default;
 
-				return objects;
-			}
+			return (T)value;
+		}
+		
+		public static T GetValue<T>(this DataRow row, string column)
+		{
+			object value = row[column];
+
+			if (value == null || value == DBNull.Value)
+				return default;
+
+			return (T)value;
 		}
 	}
 }

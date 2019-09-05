@@ -89,15 +89,5 @@ namespace Hayden
 									   .ToDateTimeUnspecified()
 						  - DateTime.UnixEpoch).TotalSeconds;
 		}
-
-		public static T GetValue<T>(this MySqlDataReader dataReader, string column)
-		{
-			object value = dataReader[column];
-
-			if (value == null || value == DBNull.Value)
-				return default;
-
-			return (T)value;
-		}
 	}
 }

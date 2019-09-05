@@ -101,7 +101,7 @@ namespace Hayden
 
 								var existingArchivedThreads = await ThreadConsumer.CheckExistingThreads(archiveRequest.ThreadIds, board, true);
 
-								Program.Log($"Found {existingArchivedThreads.Length} existing archived threads for board /{board}/");
+								Program.Log($"Found {existingArchivedThreads.Count} existing archived threads for board /{board}/");
 
 								int count = 0;
 
@@ -147,7 +147,7 @@ namespace Hayden
 				{
 					if (completedCount % 50 == 0)
 					{
-						Program.Log($" --> Completed {completedCount} / {threadQueue.Count}. {threadQueue.Count - completedCount} to go");
+						Program.Log($" --> Completed {completedCount} / {threadQueue.Count} : {threadQueue.Count - completedCount} to go");
 					}
 
 					await concurrentSempahore.WaitAsync();
@@ -188,6 +188,8 @@ namespace Hayden
 					if (updateTask.TryGetTarget(out var task))
 						await task;
 				}
+
+				Program.Log($" --> Completed {completedCount} / {threadQueue.Count} : Waiting for next board update interval");
 
 				firstRun = false;
 
