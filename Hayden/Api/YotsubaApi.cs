@@ -4,6 +4,7 @@ using System.Net;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
+using Hayden.Api;
 using Hayden.Models;
 using Newtonsoft.Json;
 using Thread = Hayden.Models.Thread;
@@ -64,7 +65,7 @@ namespace Hayden
 			client = client ?? HttpClient;
 
 			using (var request = CreateRequest(uri, modifiedSince))
-			using (var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken))
+			using (var response = await NetworkPolicies.HttpApiPolicy.ExecuteAsync(() => client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken)))
 			{
 				if (response.StatusCode == HttpStatusCode.NotModified)
 					return (default, YotsubaResponseType.NotModified);
