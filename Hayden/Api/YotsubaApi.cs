@@ -20,21 +20,6 @@ namespace Hayden
 
 	public static class YotsubaApi
 	{
-		public static HttpClient HttpClient { get; set; }
-
-		static YotsubaApi()
-		{
-			HttpClient = new HttpClient(new HttpClientHandler
-			{
-				MaxConnectionsPerServer = 24,
-				UseCookies = false,
-				AutomaticDecompression = DecompressionMethods.Deflate | DecompressionMethods.GZip
-			}, false);
-			
-			HttpClient.DefaultRequestHeaders.UserAgent.ParseAdd("Hayden/0.5.0");
-			HttpClient.DefaultRequestHeaders.AcceptEncoding.ParseAdd("gzip, deflate");
-		}
-
 		private static HttpRequestMessage CreateRequest(Uri uri, DateTimeOffset? modifiedSince)
 		{
 			var request = new HttpRequestMessage(HttpMethod.Get, uri);
@@ -44,26 +29,24 @@ namespace Hayden
 			return request;
 		}
 
-		public static Task<(Thread Thread, YotsubaResponseType ResponseType)> GetThread(string board, ulong threadNumber, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default(CancellationToken), HttpClient client = null)
+		public static Task<(Thread Thread, YotsubaResponseType ResponseType)> GetThread(string board, ulong threadNumber, HttpClient client, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default)
 		{
-			return MakeYotsubaApiCall<Thread>(new Uri($"https://a.4cdn.org/{board}/thread/{threadNumber}.json"), modifiedSince, cancellationToken, client);
+			return MakeYotsubaApiCall<Thread>(new Uri($"https://a.4cdn.org/{board}/thread/{threadNumber}.json"), client, modifiedSince, cancellationToken);
 		}
 
-		public static Task<(Page[] Pages, YotsubaResponseType ResponseType)> GetBoard(string board, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default, HttpClient client = null)
+		public static Task<(Page[] Pages, YotsubaResponseType ResponseType)> GetBoard(string board, HttpClient client, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default)
 		{
-			return MakeYotsubaApiCall<Page[]>(new Uri($"https://a.4cdn.org/{board}/threads.json"), modifiedSince, cancellationToken, client);
+			return MakeYotsubaApiCall<Page[]>(new Uri($"https://a.4cdn.org/{board}/threads.json"), client, modifiedSince, cancellationToken);
 		}
 
-		public static Task<(ulong[] ThreadIds, YotsubaResponseType ResponseType)> GetArchive(string board, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default, HttpClient client = null)
+		public static Task<(ulong[] ThreadIds, YotsubaResponseType ResponseType)> GetArchive(string board, HttpClient client, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default)
 		{
-			return MakeYotsubaApiCall<ulong[]>(new Uri($"https://a.4cdn.org/{board}/archive.json"), modifiedSince, cancellationToken, client);
+			return MakeYotsubaApiCall<ulong[]>(new Uri($"https://a.4cdn.org/{board}/archive.json"), client, modifiedSince, cancellationToken);
 		}
 
 		private static readonly JsonSerializer jsonSerializer = JsonSerializer.Create();
-		private static async Task<(T, YotsubaResponseType)> MakeYotsubaApiCall<T>(Uri uri, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default, HttpClient client = null)
+		private static async Task<(T, YotsubaResponseType)> MakeYotsubaApiCall<T>(Uri uri, HttpClient client, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default)
 		{
-			client = client ?? HttpClient;
-
 			using (var request = CreateRequest(uri, modifiedSince))
 			using (var response = await NetworkPolicies.HttpApiPolicy.ExecuteAsync(() => client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken)))
 			{

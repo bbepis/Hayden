@@ -43,20 +43,80 @@ namespace Hayden.Consumers
 
 		private ConcurrentDictionary<ThreadHashObject, SortedList<ulong, int>> ThreadHashes { get; } = new ConcurrentDictionary<ThreadHashObject, SortedList<ulong, int>>();
 
-		public async Task ConsumeThread(Thread thread, string board)
+		public async Task<IList<QueuedImageDownload>> ConsumeThread(Thread thread, string board)
 		{
 			var hashObject = new ThreadHashObject(board, thread.OriginalPost.PostNumber);
+			List<QueuedImageDownload> imageDownloads = new List<QueuedImageDownload>(thread.Posts.Length);
+
+			async Task ProcessImages(Post post)
+			{
+				if (!Config.FullImagesEnabled && !Config.ThumbnailsEnabled)
+					return; // skip the DB check since we're not even bothering with images
+
+				if (post.FileMd5 != null)
+				{
+					MediaInfo mediaInfo = await GetMediaInfo(post.FileMd5, board);
+
+					if (mediaInfo?.Banned == true)
+					{
+						Program.Log($"[Asagi] Post /{board}/{post.PostNumber} contains a banned image; skipping");
+						return;
+					}
+
+					if (Config.FullImagesEnabled)
+					{
+						string fullImageName = mediaInfo?.MediaFilename ?? post.TimestampedFilenameFull;
+
+						string radixString = Path.Combine(fullImageName.Substring(0, 4), fullImageName.Substring(4, 2));
+						string radixDirectory = Path.Combine(ImageDownloadLocation, board, radixString);
+						Directory.CreateDirectory(radixDirectory);
+
+						string fullImageFilename = Path.Combine(radixDirectory, fullImageName);
+						string fullImageUrl = $"https://i.4cdn.org/{board}/{post.TimestampedFilenameFull}";
+
+						imageDownloads.Add(new QueuedImageDownload(new Uri(fullImageUrl), fullImageFilename));
+					}
+
+					if (Config.ThumbnailsEnabled)
+					{
+						string thumbImageName;
+
+						if (post.ReplyPostNumber == 0) // is OP
+							thumbImageName = mediaInfo?.PreviewOpFilename ?? $"{post.TimestampedFilename}s.jpg";
+						else
+							thumbImageName = mediaInfo?.PreviewReplyFilename ?? $"{post.TimestampedFilename}s.jpg";
+
+						string radixString = Path.Combine(thumbImageName.Substring(0, 4), thumbImageName.Substring(4, 2));
+						string radixDirectory = Path.Combine(ThumbDownloadLocation, board, radixString);
+						Directory.CreateDirectory(radixDirectory);
+
+						string thumbFilename = Path.Combine(radixDirectory, thumbImageName);
+						string thumbUrl = $"https://i.4cdn.org/{board}/{post.TimestampedFilename}s.jpg";
+
+						imageDownloads.Add(new QueuedImageDownload(new Uri(thumbUrl), thumbFilename));
+					}
+				}
+			}
 
 			if (!ThreadHashes.TryGetValue(hashObject, out var threadHashes))
 			{
 				// Rebuild hashes from database, if they exist
-
+				
 				var hashes = await GetHashesOfThread(hashObject.ThreadId, board);
-
+				
 				threadHashes = new SortedList<ulong, int>();
 
 				foreach (var hashPair in hashes)
+				{
 					threadHashes.Add(hashPair.Key, hashPair.Value);
+
+					var currentPost = thread.Posts.FirstOrDefault(post => post.PostNumber == hashPair.Key);
+
+					if (currentPost != null)
+						await ProcessImages(currentPost);
+				}
+
+				ThreadHashes.TryAdd(hashObject, threadHashes);
 			}
 
 			List<Post> postsToAdd = new List<Post>(thread.Posts.Length);
@@ -88,52 +148,7 @@ namespace Hayden.Consumers
 
 					postsToAdd.Add(post);
 
-					if (!Config.FullImagesEnabled && !Config.ThumbnailsEnabled)
-						continue; // skip the DB check since we're not even bothering with images
-
-					if (post.FileMd5 != null)
-					{
-						MediaInfo mediaInfo = await GetMediaInfo(post.FileMd5, board);
-
-						if (mediaInfo?.Banned == true)
-						{
-							Program.Log($"[Asagi] Post /{board}/{post.PostNumber} contains a banned image; skipping");
-							continue;
-						}
-
-						if (Config.FullImagesEnabled)
-						{
-							string fullImageName = mediaInfo?.MediaFilename ?? post.TimestampedFilenameFull;
-
-							string radixString = Path.Combine(fullImageName.Substring(0, 4), fullImageName.Substring(4, 2));
-							string radixDirectory = Path.Combine(ImageDownloadLocation, board, radixString);
-							Directory.CreateDirectory(radixDirectory);
-
-							string fullImageFilename = Path.Combine(radixDirectory, fullImageName);
-							string fullImageUrl = $"https://i.4cdn.org/{board}/{post.TimestampedFilenameFull}";
-
-							await DownloadFile(fullImageUrl, fullImageFilename);
-						}
-
-						if (Config.ThumbnailsEnabled)
-						{
-							string thumbImageName;
-
-							if (post.ReplyPostNumber == 0) // is OP
-								thumbImageName = mediaInfo?.PreviewOpFilename ?? $"{post.TimestampedFilename}s.jpg";
-							else
-								thumbImageName = mediaInfo?.PreviewReplyFilename ?? $"{post.TimestampedFilename}s.jpg";
-
-							string radixString = Path.Combine(thumbImageName.Substring(0, 4), thumbImageName.Substring(4, 2));
-							string radixDirectory = Path.Combine(ThumbDownloadLocation, board, radixString);
-							Directory.CreateDirectory(radixDirectory);
-
-							string thumbFilename = Path.Combine(radixDirectory, thumbImageName);
-							string thumbUrl = $"https://i.4cdn.org/{board}/{post.TimestampedFilename}s.jpg";
-
-							await DownloadFile(thumbUrl, thumbFilename);
-						}
-					}
+					await ProcessImages(post);
 				}
 			}
 
@@ -175,6 +190,8 @@ namespace Hayden.Consumers
 				threadHashes.Remove(postNumber, out _);
 
 
+			threadHashes.TrimExcess();
+
 			if (thread.OriginalPost.Archived == true)
 			{
 				// We don't need the hashes if the thread is archived, since it will never change
@@ -182,6 +199,8 @@ namespace Hayden.Consumers
 
 				ThreadHashes.TryRemove(hashObject, out _);
 			}
+
+			return imageDownloads;
 		}
 
 		public async Task ThreadUntracked(ulong threadId, string board, bool deleted)
@@ -285,22 +304,6 @@ namespace Hayden.Consumers
 			inputComment = inputComment.Replace("<wbr>", "");
 
 			return HttpUtility.HtmlDecode(inputComment).Trim();
-		}
-
-		private async Task DownloadFile(string imageUrl, string downloadPath)
-		{
-			if (File.Exists(downloadPath))
-				return;
-
-			Program.Log($"Downloading image {Path.GetFileName(downloadPath)}");
-
-			using (var webStream = await YotsubaApi.HttpClient.GetStreamAsync(imageUrl))
-			using (var fileStream = new FileStream(downloadPath + ".part", FileMode.Create))
-			{
-				await webStream.CopyToAsync(fileStream);
-			}
-
-			File.Move(downloadPath + ".part", downloadPath);
 		}
 
 		#region Sql
@@ -515,7 +518,8 @@ namespace Hayden.Consumers
 				return new MediaInfo(row.GetValue<string>("media"),
 					row.GetValue<string>("preview_op"),
 					row.GetValue<string>("preview_reply"),
-					row.GetValue<bool>("banned"));
+					//row.GetValue<bool>("banned"));
+					row.GetValue<ushort>("banned") > 0); // Why is this column SMALLINT and not TINYINT
 			}
 		}
 

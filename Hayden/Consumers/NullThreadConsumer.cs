@@ -7,8 +7,8 @@ namespace Hayden.Consumers
 {
 	public class NullThreadConsumer : IThreadConsumer
 	{
-		public Task ConsumeThread(Thread thread, string board)
-			=> Task.CompletedTask;
+		public Task<IList<QueuedImageDownload>> ConsumeThread(Thread thread, string board)
+			=> Task.FromResult((IList<QueuedImageDownload>)new QueuedImageDownload[0]);
 
 		public Task ThreadUntracked(ulong threadId, string board, bool deleted)
 			=> Task.CompletedTask;

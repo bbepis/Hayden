@@ -7,7 +7,7 @@ namespace Hayden.Contract
 {
 	public interface IThreadConsumer : IDisposable
 	{
-		Task ConsumeThread(Thread thread, string board);
+		Task<IList<QueuedImageDownload>> ConsumeThread(Thread thread, string board);
 
 		Task ThreadUntracked(ulong threadId, string board, bool deleted);
 

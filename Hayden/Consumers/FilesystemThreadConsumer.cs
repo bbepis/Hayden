@@ -1,8 +1,8 @@
-﻿using System.Collections.Concurrent;
+﻿using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Threading;
 using System.Threading.Tasks;
 using Hayden.Contract;
 using Newtonsoft.Json;
@@ -26,9 +26,7 @@ namespace Hayden.Consumers
 			NullValueHandling = NullValueHandling.Ignore
 		};
 
-		private readonly SemaphoreSlim DownloadSemaphore = new SemaphoreSlim(10);
-
-		public async Task ConsumeThread(Thread thread, string board)
+		public async Task<IList<QueuedImageDownload>> ConsumeThread(Thread thread, string board)
 		{
 			ulong threadNumber = thread.OriginalPost.PostNumber;
 
@@ -65,22 +63,25 @@ namespace Hayden.Consumers
 										.Skip(ThreadCounters[threadNumber])
 										.Where(x => x.TimestampedFilename != null);
 
+			List<QueuedImageDownload> imageDownloads = new List<QueuedImageDownload>();
 
 			await Task.WhenAll(filesToDownload.Select(async x =>
 			{
 				string fullImageFilename = Path.Combine(threadDirectory, $"{x.TimestampedFilename}{x.FileExtension}");
 				string fullImageUrl = $"https://i.4cdn.org/{board}/{x.TimestampedFilename}{x.FileExtension}";
 
-				await DownloadFile(fullImageUrl, fullImageFilename);
+				imageDownloads.Add(new QueuedImageDownload(new Uri(fullImageUrl), fullImageFilename));
 
 
 				string thumbFilename = Path.Combine(threadThumbsDirectory, $"{x.TimestampedFilename}s.jpg");
 				string thumbUrl = $"https://i.4cdn.org/{board}/{x.TimestampedFilename}s.jpg";
 
-				await DownloadFile(thumbUrl, thumbFilename);
+				imageDownloads.Add(new QueuedImageDownload(new Uri(thumbUrl), thumbFilename));
 			}));
 
 			ThreadCounters[threadNumber] = thread.Posts.Length;
+
+			return imageDownloads;
 		}
 
 		public Task ThreadUntracked(ulong threadId, string board, bool deleted)
@@ -93,29 +94,6 @@ namespace Hayden.Consumers
 		public Task<ICollection<ulong>> CheckExistingThreads(IEnumerable<ulong> threadIdsToCheck, string board, bool archivedOnly)
 		{
 			throw new System.NotImplementedException();
-		}
-
-		private async Task DownloadFile(string imageUrl, string downloadPath)
-		{
-			if (File.Exists(downloadPath))
-				return;
-
-			await DownloadSemaphore.WaitAsync();
-
-			Program.Log($"Downloading image {Path.GetFileName(downloadPath)}");
-
-			try
-			{
-				using (var webStream = await YotsubaApi.HttpClient.GetStreamAsync(imageUrl))
-				using (var fileStream = new FileStream(downloadPath, FileMode.Create))
-				{
-					await webStream.CopyToAsync(fileStream);
-				}
-			}
-			finally
-			{
-				DownloadSemaphore.Release();
-			}
 		}
 
 		public void Dispose() { }
