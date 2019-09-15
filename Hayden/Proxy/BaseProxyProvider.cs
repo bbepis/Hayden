@@ -36,7 +36,7 @@ namespace Hayden.Proxy
 
 			var httpClient = new HttpClient(handler, true);
 
-			httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("Hayden/0.5.0");
+			httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("Hayden/0.6.0");
 			httpClient.DefaultRequestHeaders.AcceptEncoding.ParseAdd("gzip, deflate");
 
 			return httpClient;
