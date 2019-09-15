@@ -28,13 +28,22 @@ namespace Hayden
 		/// or when cancellation is signalled via
 		/// the passed <paramred name="cancellationToken"/>.
 		/// </exception>
-		public static async Task<ConsoleKeyInfo> ReadKeyAsync(CancellationToken cancellationToken, bool intercept = false, int responsiveness = 100)
+		public static async Task<ConsoleKeyInfo> ReadKeyAsync(CancellationToken cancellationToken = default, bool intercept = false, bool handleConsoleCancel = true, int responsiveness = 100)
 		{
 			var cancelPressed = false;
-			var cancelWatcher = new ConsoleCancelEventHandler((sender, args) => { cancelPressed = true; });
+			ConsoleCancelEventHandler cancelWatcher = null;
 
-			Console.CancelKeyPress += cancelWatcher;
+			if (handleConsoleCancel)
+			{
+				cancelWatcher = (sender, args) =>
+				{
+					args.Cancel = false;
+					cancelPressed = true;
+				};
 
+				Console.CancelKeyPress += cancelWatcher;
+			}
+			
 			try
 			{
 				while (!cancelPressed && !cancellationToken.IsCancellationRequested)
@@ -58,7 +67,8 @@ namespace Hayden
 			}
 			finally
 			{
-				Console.CancelKeyPress -= cancelWatcher;
+				if (handleConsoleCancel)
+					Console.CancelKeyPress -= cancelWatcher;
 			}
 		}
 
