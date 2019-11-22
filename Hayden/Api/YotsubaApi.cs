@@ -44,11 +44,18 @@ namespace Hayden
 			return MakeYotsubaApiCall<ulong[]>(new Uri($"https://a.4cdn.org/{board}/archive.json"), client, modifiedSince, cancellationToken);
 		}
 
+		private static async Task<HttpResponseMessage> DoCall(Uri uri, HttpClient client, DateTimeOffset? modifiedSince, CancellationToken cancellationToken)
+		{
+			using (var request = CreateRequest(uri, modifiedSince))
+			{
+				return await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+			}
+		}
+
 		private static readonly JsonSerializer jsonSerializer = JsonSerializer.Create();
 		private static async Task<(T, YotsubaResponseType)> MakeYotsubaApiCall<T>(Uri uri, HttpClient client, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default)
 		{
-			using (var request = CreateRequest(uri, modifiedSince))
-			using (var response = await NetworkPolicies.HttpApiPolicy.ExecuteAsync(() => client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken)))
+			using (var response = await NetworkPolicies.HttpApiPolicy.ExecuteAsync(() => DoCall(uri, client, modifiedSince, cancellationToken)))
 			{
 				if (response.StatusCode == HttpStatusCode.NotModified)
 					return (default, YotsubaResponseType.NotModified);
