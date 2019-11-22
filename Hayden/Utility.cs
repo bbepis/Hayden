@@ -136,8 +136,8 @@ namespace Hayden
 
 					if (index == source.Count)
 						queueIndices.Remove(key);
-
-					queueIndices[key] = index;
+					else
+						queueIndices[key] = index;
 				}
 			}
 		}
