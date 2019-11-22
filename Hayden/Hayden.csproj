@@ -19,13 +19,13 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="HttpToSocks5Proxy" Version="1.2.1" />
+    <PackageReference Include="HttpToSocks5Proxy" Version="1.4.0" />
     <PackageReference Include="Mono.Posix.NETStandard" Version="1.0.0" />
-    <PackageReference Include="MySqlConnector" Version="0.56.0" />
-    <PackageReference Include="Newtonsoft.Json" Version="12.0.2" />
+    <PackageReference Include="MySqlConnector" Version="0.61.0" />
+    <PackageReference Include="Newtonsoft.Json" Version="12.0.3" />
     <PackageReference Include="Nito.AsyncEx.Coordination" Version="5.0.0" />
     <PackageReference Include="Nito.AsyncEx.Interop.WaitHandles" Version="5.0.0" />
-    <PackageReference Include="NodaTime" Version="2.4.6" />
+    <PackageReference Include="NodaTime" Version="2.4.7" />
     <PackageReference Include="Polly" Version="7.1.1" />
   </ItemGroup>
 
