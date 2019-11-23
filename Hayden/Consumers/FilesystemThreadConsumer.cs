@@ -91,7 +91,7 @@ namespace Hayden.Consumers
 			return Task.CompletedTask;
 		}
 
-		public Task<ICollection<ulong>> CheckExistingThreads(IEnumerable<ulong> threadIdsToCheck, string board, bool archivedOnly)
+		public Task<ICollection<(ulong threadId, DateTime lastPostTime)>> CheckExistingThreads(IEnumerable<ulong> threadIdsToCheck, string board, bool archivedOnly, bool getTimestamps = true)
 		{
 			throw new System.NotImplementedException();
 		}

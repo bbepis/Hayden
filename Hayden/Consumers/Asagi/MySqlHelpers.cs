@@ -86,17 +86,14 @@ namespace Hayden
 		{
 			try
 			{
-				using (var reader = await Command.ExecuteReaderAsync())
+				List<T> objects = new List<T>();
+
+				await foreach (var row in ExecuteRowsAsync())
 				{
-					List<T> objects = new List<T>();
-
-					while (await reader.ReadAsync())
-					{
-						objects.Add((T)reader[0]);
-					}
-
-					return objects;
+					objects.Add((T)row[0]);
 				}
+
+				return objects;
 			}
 			finally
 			{
@@ -109,13 +106,30 @@ namespace Hayden
 		{
 			try
 			{
-				using (var reader = await Command.ExecuteReaderAsync())
+				await using var reader = await Command.ExecuteReaderAsync();
+
+				DataTable table = new DataTable();
+
+				table.Load(reader);
+
+				return table;
+			}
+			finally
+			{
+				if (!Reuse)
+					Command.Dispose();
+			}
+		}
+
+		public async IAsyncEnumerable<IDataRecord> ExecuteRowsAsync()
+		{
+			try
+			{
+				await using var reader = await Command.ExecuteReaderAsync();
+
+				while (await reader.ReadAsync())
 				{
-					DataTable table = new DataTable();
-
-					table.Load(reader);
-
-					return table;
+					yield return reader;
 				}
 			}
 			finally

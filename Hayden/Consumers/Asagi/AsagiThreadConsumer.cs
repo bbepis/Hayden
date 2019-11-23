@@ -462,7 +462,7 @@ namespace Hayden.Consumers
 
 		public async Task DeletePostOrThread(ulong theadNumber, string board)
 		{
-			uint currentTimestamp = Utility.GetNewYorkTimestamp(DateTimeOffset.Now);
+			uint currentTimestamp = Utility.GetGMTTimestamp(DateTimeOffset.Now);
 
 			using (var rentedConnection = await ConnectionPool.RentConnectionAsync())
 			{
@@ -523,20 +523,40 @@ namespace Hayden.Consumers
 			}
 		}
 
-		public async Task<ICollection<ulong>> CheckExistingThreads(IEnumerable<ulong> threadIdsToCheck, string board, bool archivedOnly)
+		public async Task<ICollection<(ulong threadId, DateTime lastPostTime)>> CheckExistingThreads(IEnumerable<ulong> threadIdsToCheck, string board, bool archivedOnly, bool getTimestamps = true)
 		{
 			int archivedInt = archivedOnly ? 1 : 0;
 
-			using (var rentedConnection = await ConnectionPool.RentConnectionAsync())
-			{
-				var chainedQuery = rentedConnection.Object.CreateQuery($"SELECT num FROM `{board}` WHERE op = 1 AND (locked = {archivedInt} OR deleted = {archivedInt}) AND num IN ({string.Join(',', threadIdsToCheck)});");
+			using var rentedConnection = await ConnectionPool.RentConnectionAsync();
 
-				return (await chainedQuery.ExecuteScalarListAsync<uint>())
-				       .Select(num => (ulong)num)
-					   .ToArray();
+			string query;
+
+			if (getTimestamps)
+			{
+				query = $@"
+				SELECT TABLE1.num, MAX(TABLE2.timestamp)
+				FROM `{board}` TABLE1
+					INNER JOIN `{board}` TABLE2 ON TABLE2.thread_num = TABLE1.num
+				WHERE TABLE1.op = 1 AND(TABLE1.locked = {archivedInt} OR TABLE1.deleted = {archivedInt}) AND TABLE1.num IN({string.Join(',', threadIdsToCheck)})
+				GROUP BY TABLE1.num";
 			}
+			else
+			{
+				query = $"SELECT num, CAST(0 AS UNSIGNED) FROM `{board}` WHERE op = 1 AND (locked = {archivedInt} OR deleted = {archivedInt}) AND num IN ({string.Join(',', threadIdsToCheck)})";
+			}
+
+			var chainedQuery = rentedConnection.Object.CreateQuery(query);
+
+			List<(ulong threadId, DateTime lastPostTime)> items = new List<(ulong threadId, DateTime lastPostTime)>();
+
+			await foreach (var row in chainedQuery.ExecuteRowsAsync())
+			{
+				items.Add(((ulong)(uint)row[0], Utility.ConvertGMTTimestamp((uint)row[1]).UtcDateTime));
+			}
+
+			return items;
 		}
-		
+
 		#endregion
 
 		public void Dispose()

@@ -68,7 +68,24 @@ namespace Hayden
 
 								int newCount = 0;
 
-								foreach (var thread in pagesRequest.Pages.SelectMany(x => x.Threads).ToArray())
+								var threadList = pagesRequest.Pages.SelectMany(x => x.Threads).ToList();
+
+								if (firstRun)
+								{
+									var existingThreads = await ThreadConsumer.CheckExistingThreads(threadList.Select(x => x.ThreadNumber), board, false, true);
+
+									foreach (var existingThread in existingThreads)
+									{
+										var thread = threadList.First(x => x.ThreadNumber == existingThread.threadId);
+
+										if (thread.LastModified <= Utility.GetGMTTimestamp(new DateTimeOffset(existingThread.lastPostTime, TimeSpan.Zero)))
+										{
+											threadList.Remove(thread);
+										}
+									}
+								}
+
+								foreach (var thread in threadList)
 								{
 									if (thread.LastModified > lastCheckTimestamp)
 									{
@@ -100,13 +117,13 @@ namespace Hayden
 							{
 								case YotsubaResponseType.Ok:
 
-									var existingArchivedThreads = await ThreadConsumer.CheckExistingThreads(archiveRequest.ThreadIds, board, true);
+									var existingArchivedThreads = await ThreadConsumer.CheckExistingThreads(archiveRequest.ThreadIds, board, true, false);
 
 									Program.Log($"Found {existingArchivedThreads.Count} existing archived threads for board /{board}/");
 
 									int count = 0;
 
-									foreach (ulong nonExistingThreadId in archiveRequest.ThreadIds.Except(existingArchivedThreads))
+									foreach (ulong nonExistingThreadId in archiveRequest.ThreadIds.Except(existingArchivedThreads.Select(x => x.threadId)))
 									{
 										threadQueue.Add((board, nonExistingThreadId));
 										count++;
@@ -146,14 +163,13 @@ namespace Hayden
 				{
 					var task = Task.Run(async () =>
 					{
-						using (var client = await ProxyProvider.RentHttpClient())
-						{
-							var threadWaitTask = Task.Delay(ApiCooldownTimespan);
+						await using var client = await ProxyProvider.RentHttpClient();
 
-							await action(client);
+						var threadWaitTask = Task.Delay(ApiCooldownTimespan);
 
-							await threadWaitTask;
-						}
+						await action(client);
+
+						await threadWaitTask;
 					});
 
 					lock (threadTasks)
