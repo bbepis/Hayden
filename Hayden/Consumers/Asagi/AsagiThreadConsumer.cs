@@ -254,10 +254,22 @@ namespace Hayden.Consumers
 		private static readonly Regex newLineRegex = new Regex(@"<br\s*\/?>", RegexOptions.Compiled);
 		public static string CleanComment(string inputComment)
 		{
-			// Copied wholesale from https://github.com/bibanon/asagi/blob/master/src/main/java/net/easymodo/asagi/YotsubaAbstract.java
-
 			if (string.IsNullOrWhiteSpace(inputComment))
 				return string.Empty;
+
+			if (!inputComment.Contains('<'))
+			{
+				if (!inputComment.Contains('&'))
+				{
+					// No HTML encoding has been done at all
+					return inputComment.Trim();
+				}
+
+				// Only escaping has been done
+				return HttpUtility.HtmlDecode(inputComment).Trim();
+			}
+
+			// Copied wholesale from https://github.com/bibanon/asagi/blob/master/src/main/java/net/easymodo/asagi/YotsubaAbstract.java
 
 			// SOPA spoilers
 			//text = text.replaceAll("<span class=\"spoiler\"[^>]*>(.*?)</spoiler>(</span>)?", "$1");
