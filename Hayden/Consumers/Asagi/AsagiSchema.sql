@@ -1,4 +1,10 @@
-﻿CREATE TABLE IF NOT EXISTS `{0}` (
+﻿CREATE TABLE IF NOT EXISTS `index_counters` (
+  `id` varchar(50) NOT NULL,
+  `val` int(10) NOT NULL,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8; $
+
+CREATE TABLE IF NOT EXISTS `{0}` (
   `doc_id` int unsigned NOT NULL auto_increment,
   `media_id` int unsigned NOT NULL DEFAULT '0',
   `poster_ip` decimal(39,0) unsigned NOT NULL DEFAULT '0',
