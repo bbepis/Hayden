@@ -448,19 +448,21 @@ namespace Hayden.Consumers
 			using (var rentedConnection = await ConnectionPool.RentConnectionAsync())
 			{
 				string sql = $"UPDATE `{board}` SET "
+								+ "comment = @comment, "
 								+ "deleted = @deleted, "
 								+ "media_filename = COALESCE(@media_filename, media_filename), "
-								+ "sticky = (@sticky OR sticky), locked = (@locked or locked) "
-							 + "WHERE num = @thread_no "
+								+ "sticky = @sticky, "
+								+ "locked = @locked "
+							 + "WHERE num = @no "
 								+ "AND subnum = @subnum";
 
 				await rentedConnection.Object.CreateQuery(sql)
-									  .SetParam("@comment", post.Comment)
+									  .SetParam("@comment", CleanComment(post.Comment))
 									  .SetParam("@deleted", deleted ? 1 : 0)
 									  .SetParam("@media_filename", post.OriginalFilenameFull)
 									  .SetParam("@sticky", post.Sticky == true ? 1 : 0)
 									  .SetParam("@locked", post.Closed == true ? 1 : 0)
-									  .SetParam("@thread_no", post.ReplyPostNumber != 0 ? post.ReplyPostNumber : post.PostNumber)
+									  .SetParam("@no", post.PostNumber)
 									  .SetParam("@subnum", 0)
 									  .ExecuteNonQueryAsync();
 			}
