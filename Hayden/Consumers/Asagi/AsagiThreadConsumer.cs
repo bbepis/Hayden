@@ -185,7 +185,7 @@ namespace Hayden.Consumers
 
 					Program.Log($"[Asagi] Post /{board}/{postNumber} has been deleted");
 
-					await DeletePostOrThread(postNumber, board);
+					await SetDeletedAndLocked(postNumber, board, true, false);
 
 					postNumbersToDelete.Add(postNumber);
 				}
@@ -211,10 +211,7 @@ namespace Hayden.Consumers
 
 		public async Task ThreadUntracked(ulong threadId, string board, bool deleted)
 		{
-			if (deleted)
-			{
-				await DeletePostOrThread(threadId, board);
-			}
+			await SetDeletedAndLocked(threadId, board, deleted, true);
 
 			ThreadHashes.TryRemove(new ThreadHashObject(board, threadId), out _);
 		}
@@ -484,15 +481,17 @@ namespace Hayden.Consumers
 			}
 		}
 
-		public async Task DeletePostOrThread(ulong theadNumber, string board)
+		public async Task SetDeletedAndLocked(ulong postNumber, string board, bool deleted, bool locked)
 		{
 			uint currentTimestamp = Utility.GetGMTTimestamp(DateTimeOffset.Now);
 
 			using (var rentedConnection = await ConnectionPool.RentConnectionAsync())
 			{
-				await rentedConnection.Object.CreateQuery($"UPDATE `{board}` SET deleted = 1, timestamp_expired = @timestamp_expired WHERE num = @thread_no AND subnum = 0")
+				await rentedConnection.Object.CreateQuery($"UPDATE `{board}` SET deleted = @deleted, locked = @locked, timestamp_expired = @timestamp_expired WHERE num = @post_no AND subnum = 0")
 									  .SetParam("@timestamp_expired", currentTimestamp)
-									  .SetParam("@thread_no", theadNumber)
+									  .SetParam("@post_no", postNumber)
+									  .SetParam("@deleted", deleted ? 1 : 0)
+									  .SetParam("@locked", locked ? 1 : 0)
 									  .ExecuteNonQueryAsync();
 			}
 		}
