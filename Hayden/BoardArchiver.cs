@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -9,6 +8,7 @@ using System.Threading.Tasks;
 using Hayden.Api;
 using Hayden.Config;
 using Hayden.Contract;
+using Hayden.Models;
 using Hayden.Proxy;
 
 namespace Hayden
@@ -45,56 +45,107 @@ namespace Hayden
 
 			while (!token.IsCancellationRequested)
 			{
-				using (var boardClient = await ProxyProvider.RentHttpClient())
+				await Config.Boards.ForEachAsync(4, async board =>
 				{
-					foreach (string board in Config.Boards)
-					{
-						if (!lastBoardCheckTimes.TryGetValue(board, out DateTimeOffset lastDateTimeCheck))
+					DateTimeOffset lastDateTimeCheck;
+
+					lock (lastBoardCheckTimes)
+						if (!lastBoardCheckTimes.TryGetValue(board, out lastDateTimeCheck))
 							lastDateTimeCheck = DateTimeOffset.MinValue;
 
-						uint lastCheckTimestamp = firstRun
-							? 0
-							: Utility.GetGMTTimestamp(lastDateTimeCheck);
+					uint lastCheckTimestamp = firstRun
+						? 0
+						: Utility.GetGMTTimestamp(lastDateTimeCheck);
 
-						DateTimeOffset beforeCheckTime = DateTimeOffset.Now;
+					DateTimeOffset beforeCheckTime = DateTimeOffset.Now;
 
+					await Task.Delay(ApiCooldownTimespan);
+
+
+					var pagesRequest = await NetworkPolicies.GenericRetryPolicy<(Page[] Pages, YotsubaResponseType ResponseType)>(12).ExecuteAsync(async () =>
+					{
+						Program.Log($"Requesting threads from board /{board}/...");
+						await using var boardClient = await ProxyProvider.RentHttpClient();
+						return await YotsubaApi.GetBoard(board, boardClient.Object, lastDateTimeCheck, token);
+					});
+
+					switch (pagesRequest.ResponseType)
+					{
+						case YotsubaResponseType.Ok:
+
+							int newCount = 0;
+
+							var threadList = pagesRequest.Pages.SelectMany(x => x.Threads).ToList();
+
+							if (firstRun)
+							{
+								var existingThreads = await ThreadConsumer.CheckExistingThreads(threadList.Select(x => x.ThreadNumber), board, false, true);
+
+								foreach (var existingThread in existingThreads)
+								{
+									var thread = threadList.First(x => x.ThreadNumber == existingThread.threadId);
+
+									if (thread.LastModified <= Utility.GetGMTTimestamp(new DateTimeOffset(existingThread.lastPostTime, TimeSpan.Zero)))
+									{
+										threadList.Remove(thread);
+									}
+								}
+							}
+
+							foreach (var thread in threadList)
+							{
+								if (thread.LastModified > lastCheckTimestamp)
+								{
+									lock (threadQueue)
+										threadQueue.Add((board, thread.ThreadNumber));
+									
+									newCount++;
+								}
+							}
+
+							Program.Log($"Enqueued {newCount} threads from board /{board}/ past timestamp {lastCheckTimestamp}");
+
+							break;
+
+						case YotsubaResponseType.NotModified:
+							break;
+
+						case YotsubaResponseType.NotFound:
+						default:
+							Program.Log($"Unable to index board /{board}/, is there a connection error?");
+							break;
+					}
+
+
+					if (firstRun)
+					{
 						await Task.Delay(ApiCooldownTimespan);
 
-						var pagesRequest = await YotsubaApi.GetBoard(board, boardClient.Object, lastDateTimeCheck, token);
+						var archiveRequest = await NetworkPolicies.GenericRetryPolicy<(ulong[] ThreadIds, YotsubaResponseType ResponseType)>(12).ExecuteAsync(async () =>
+						{
+							await using var boardClient = await ProxyProvider.RentHttpClient();
+							return await YotsubaApi.GetArchive(board, boardClient.Object, lastDateTimeCheck, token);
+						});
 
-						switch (pagesRequest.ResponseType)
+						switch (archiveRequest.ResponseType)
 						{
 							case YotsubaResponseType.Ok:
 
-								int newCount = 0;
+								var existingArchivedThreads = await ThreadConsumer.CheckExistingThreads(archiveRequest.ThreadIds, board, true, false);
 
-								var threadList = pagesRequest.Pages.SelectMany(x => x.Threads).ToList();
+								Program.Log($"Found {existingArchivedThreads.Count} existing archived threads for board /{board}/");
 
-								if (firstRun)
+								int count = 0;
+
+								foreach (ulong nonExistingThreadId in archiveRequest.ThreadIds.Except(existingArchivedThreads.Select(x => x.threadId)))
 								{
-									var existingThreads = await ThreadConsumer.CheckExistingThreads(threadList.Select(x => x.ThreadNumber), board, false, true);
+									lock (threadQueue)
+										threadQueue.Add((board, nonExistingThreadId));
 
-									foreach (var existingThread in existingThreads)
-									{
-										var thread = threadList.First(x => x.ThreadNumber == existingThread.threadId);
-
-										if (thread.LastModified <= Utility.GetGMTTimestamp(new DateTimeOffset(existingThread.lastPostTime, TimeSpan.Zero)))
-										{
-											threadList.Remove(thread);
-										}
-									}
+									count++;
 								}
 
-								foreach (var thread in threadList)
-								{
-									if (thread.LastModified > lastCheckTimestamp)
-									{
-										threadQueue.Add((board, thread.ThreadNumber));
-										newCount++;
-									}
-								}
-
-								Program.Log($"Enqueued {newCount} threads from board /{board}/ past timestamp {lastCheckTimestamp}");
+								Program.Log($"Enqueued {count} threads from board archive /{board}/");
 
 								break;
 
@@ -103,49 +154,14 @@ namespace Hayden
 
 							case YotsubaResponseType.NotFound:
 							default:
-								Program.Log($"Unable to index board /{board}/, is there a connection error?");
+								Program.Log($"Unable to index the archive of board /{board}/, is there a connection error?");
 								break;
 						}
-
-
-						if (firstRun)
-						{
-							await Task.Delay(ApiCooldownTimespan);
-
-							var archiveRequest = await YotsubaApi.GetArchive(board, boardClient.Object, lastDateTimeCheck, token);
-							switch (archiveRequest.ResponseType)
-							{
-								case YotsubaResponseType.Ok:
-
-									var existingArchivedThreads = await ThreadConsumer.CheckExistingThreads(archiveRequest.ThreadIds, board, true, false);
-
-									Program.Log($"Found {existingArchivedThreads.Count} existing archived threads for board /{board}/");
-
-									int count = 0;
-
-									foreach (ulong nonExistingThreadId in archiveRequest.ThreadIds.Except(existingArchivedThreads.Select(x => x.threadId)))
-									{
-										threadQueue.Add((board, nonExistingThreadId));
-										count++;
-									}
-
-									Program.Log($"Enqueued {count} threads from board archive /{board}/");
-
-									break;
-
-								case YotsubaResponseType.NotModified:
-									break;
-
-								case YotsubaResponseType.NotFound:
-								default:
-									Program.Log($"Unable to index the archive of board /{board}/, is there a connection error?");
-									break;
-							}
-						}
-
-						lastBoardCheckTimes[board] = beforeCheckTime;
 					}
-				}
+
+					lock (lastBoardCheckTimes)
+						lastBoardCheckTimes[board] = beforeCheckTime;
+				});
 
 				threadQueue = threadQueue.Distinct().ToList();
 
