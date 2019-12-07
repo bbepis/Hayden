@@ -185,7 +185,7 @@ namespace Hayden.Consumers
 
 					Program.Log($"[Asagi] Post /{board}/{postNumber} has been deleted");
 
-					await SetDeletedAndLocked(postNumber, board, true, false);
+					await SetUntracked(postNumber, board, true);
 
 					postNumbersToDelete.Add(postNumber);
 				}
@@ -211,7 +211,7 @@ namespace Hayden.Consumers
 
 		public async Task ThreadUntracked(ulong threadId, string board, bool deleted)
 		{
-			await SetDeletedAndLocked(threadId, board, deleted, true);
+			await SetUntracked(threadId, board, deleted);
 
 			ThreadHashes.TryRemove(new ThreadHashObject(board, threadId), out _);
 		}
@@ -481,17 +481,16 @@ namespace Hayden.Consumers
 			}
 		}
 
-		public async Task SetDeletedAndLocked(ulong postNumber, string board, bool deleted, bool locked)
+		public async Task SetUntracked(ulong postNumber, string board, bool deleted)
 		{
 			uint currentTimestamp = Utility.GetNewYorkTimestamp(DateTimeOffset.Now);
 
 			using (var rentedConnection = await ConnectionPool.RentConnectionAsync())
 			{
-				await rentedConnection.Object.CreateQuery($"UPDATE `{board}` SET deleted = @deleted, locked = @locked, timestamp_expired = @timestamp_expired WHERE num = @post_no AND subnum = 0")
+				await rentedConnection.Object.CreateQuery($"UPDATE `{board}` SET deleted = @deleted, timestamp_expired = @timestamp_expired WHERE num = @post_no AND subnum = 0")
 									  .SetParam("@timestamp_expired", currentTimestamp)
 									  .SetParam("@post_no", postNumber)
 									  .SetParam("@deleted", deleted ? 1 : 0)
-									  .SetParam("@locked", locked ? 1 : 0)
 									  .ExecuteNonQueryAsync();
 			}
 		}
@@ -560,12 +559,26 @@ namespace Hayden.Consumers
 				SELECT TABLE1.num, MAX(TABLE2.timestamp)
 				FROM `{board}` TABLE1
 					INNER JOIN `{board}` TABLE2 ON TABLE2.thread_num = TABLE1.num
-				WHERE TABLE1.op = 1 AND(TABLE1.locked = {archivedInt} OR TABLE1.deleted = {archivedInt}) AND TABLE1.num IN({string.Join(',', threadIdsToCheck)})
+				WHERE TABLE1.op = 1
+					AND (
+						({archivedInt} = 1 AND TABLE1.timestamp_expired != 0)
+						OR ({archivedInt} = 0 AND TABLE1.timestamp_expired = 0)
+						OR TABLE1.deleted = {archivedInt}
+					)
+					AND TABLE1.num IN ({string.Join(',', threadIdsToCheck)})
 				GROUP BY TABLE1.num";
 			}
 			else
 			{
-				query = $"SELECT num, CAST(0 AS UNSIGNED) FROM `{board}` WHERE op = 1 AND (locked = {archivedInt} OR deleted = {archivedInt}) AND num IN ({string.Join(',', threadIdsToCheck)})";
+				query = $@"SELECT num, CAST(0 AS UNSIGNED)
+						   FROM `{board}`
+						   WHERE op = 1
+							 AND (
+							 	({archivedInt} = 1 AND timestamp_expired != 0)
+							 	OR ({archivedInt} = 0 AND timestamp_expired = 0)
+							 	OR deleted = {archivedInt}
+							 )
+							 AND num IN ({string.Join(',', threadIdsToCheck)})";
 			}
 
 			var chainedQuery = rentedConnection.Object.CreateQuery(query);
