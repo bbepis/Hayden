@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 using NodaTime;
@@ -153,6 +154,36 @@ namespace Hayden
 						queueIndices[key] = index;
 				}
 			}
+		}
+
+		public static int FNV1aHash32(string input)
+		{
+			const int FNV32Offset = -2128831035;
+
+			return FNV1aHash32(input, FNV32Offset);
+		}
+
+		[MethodImpl(MethodImplOptions.AggressiveInlining)]
+		public static int FNV1aHash32(int input, int state)
+		{
+			const int FNV32Prime = 0x1000193;
+
+			state = state ^ input;
+			return state * FNV32Prime;
+		}
+
+		[MethodImpl(MethodImplOptions.AggressiveInlining)]
+		public static int FNV1aHash32(string input, int state)
+		{
+			for (int i = 0; i < input.Length; i++)
+			{
+				short charValue = (short)input[i];
+
+				state = FNV1aHash32(charValue >> 8, state);
+				state = FNV1aHash32(charValue & 0xFF, state);
+			}
+
+			return state;
 		}
 	}
 }

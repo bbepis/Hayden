@@ -218,14 +218,11 @@ namespace Hayden.Consumers
 
 		public static int CalculateAsagiHash(bool? sticky, bool? closed, string comment, string originalFilename)
 		{
-			unchecked
-			{
-				int hashCode = sticky == true ? 2 : 1;
-				hashCode = (hashCode * 397) ^ (closed == true ? 2 : 1);
-				hashCode = (hashCode * 397) ^ (comment?.GetHashCode() ?? 0);
-				hashCode = (hashCode * 397) ^ (originalFilename?.GetHashCode() ?? 0);
-				return hashCode;
-			}
+			int hashCode = Utility.FNV1aHash32(comment ?? "u\0001");
+			hashCode = Utility.FNV1aHash32(sticky == true ? 2 : 1, hashCode);
+			hashCode = Utility.FNV1aHash32(closed == true ? 2 : 1, hashCode);
+			hashCode = Utility.FNV1aHash32(originalFilename ?? "u\0001", hashCode);
+			return hashCode;
 		}
 
 		public static int CalculateAsagiHash(Post post, bool cleanComment)
