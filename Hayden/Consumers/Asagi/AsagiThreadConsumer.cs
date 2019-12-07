@@ -140,6 +140,12 @@ namespace Hayden.Consumers
 					else
 					{
 						// Post has not changed
+
+						if (post.ReplyPostNumber == 0)
+						{
+							// OP post
+							await UpdatePostExif(post, board);
+						}
 					}
 				}
 				else
@@ -456,6 +462,22 @@ namespace Hayden.Consumers
 									  .SetParam("@locked", post.Closed == true ? 1 : 0)
 									  .SetParam("@thread_no", post.ReplyPostNumber != 0 ? post.ReplyPostNumber : post.PostNumber)
 									  .SetParam("@subnum", 0)
+									  .ExecuteNonQueryAsync();
+			}
+		}
+
+		public async Task UpdatePostExif(Post post, string board)
+		{
+			using (var rentedConnection = await ConnectionPool.RentConnectionAsync())
+			{
+				string sql = $"UPDATE `{board}` SET "
+								+ "exif = @exif "
+							 + "WHERE num = @post_no "
+								+ "AND subnum = 0";
+
+				await rentedConnection.Object.CreateQuery(sql)
+									  .SetParam("@exif", GenerateExifColumnData(post))
+									  .SetParam("@post_no", post.PostNumber)
 									  .ExecuteNonQueryAsync();
 			}
 		}
