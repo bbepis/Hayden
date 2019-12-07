@@ -458,7 +458,7 @@ namespace Hayden.Consumers
 								+ "deleted = @deleted, "
 								+ "media_filename = COALESCE(@media_filename, media_filename), "
 								+ "sticky = @sticky, "
-								+ "locked = @locked "
+								+ "locked = @locked OR locked "
 							 + "WHERE num = @no "
 								+ "AND subnum = @subnum";
 
@@ -467,7 +467,7 @@ namespace Hayden.Consumers
 									  .SetParam("@deleted", deleted ? 1 : 0)
 									  .SetParam("@media_filename", post.OriginalFilenameFull)
 									  .SetParam("@sticky", post.Sticky == true ? 1 : 0)
-									  .SetParam("@locked", post.Closed == true ? 1 : 0)
+									  .SetParam("@locked", post.Archived != true && post.Closed == true ? 1 : 0)
 									  .SetParam("@no", post.PostNumber)
 									  .SetParam("@subnum", 0)
 									  .ExecuteNonQueryAsync();
