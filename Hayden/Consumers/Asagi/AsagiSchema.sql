@@ -127,52 +127,106 @@ $
 DROP PROCEDURE IF EXISTS `update_thread_{0}`; $
 
 
-CREATE PROCEDURE `update_thread_{0}` (tnum INT)
+CREATE PROCEDURE `update_thread_{0}` (tnum INT, ghost_num INT, p_timestamp INT,
+  p_media_hash VARCHAR(25), p_email VARCHAR(100))
 BEGIN
+  DECLARE d_time_last INT;
+  DECLARE d_time_bump INT;
+  DECLARE d_time_ghost INT;
+  DECLARE d_time_ghost_bump INT;
+  DECLARE d_time_last_modified INT;
+  DECLARE d_image INT;
+
+  SET d_time_last = 0;
+  SET d_time_bump = 0;
+  SET d_time_ghost = 0;
+  SET d_time_ghost_bump = 0;
+  SET d_image = p_media_hash IS NOT NULL;
+
+  IF (ghost_num = 0) THEN
+    SET d_time_last_modified = p_timestamp;
+    SET d_time_last = p_timestamp;
+    IF (p_email <> 'sage' OR p_email IS NULL) THEN
+      SET d_time_bump = p_timestamp;
+    END IF;
+  ELSE
+    SET d_time_last_modified = p_timestamp;
+    SET d_time_ghost = p_timestamp;
+    IF (p_email <> 'sage' OR p_email IS NULL) THEN
+      SET d_time_ghost_bump = p_timestamp;
+    END IF;
+  END IF;
+
   UPDATE
     `{0}_threads` op
   SET
     op.time_last = (
-      COALESCE(GREATEST(
-        op.time_op,
-        (SELECT MAX(timestamp) FROM `{0}` re FORCE INDEX(thread_num_subnum_index) WHERE
-          re.thread_num = tnum AND re.subnum = 0)
-      ), op.time_op)
+      COALESCE(
+        GREATEST(op.time_op, d_time_last),
+        op.time_op
+      )
     ),
     op.time_bump = (
-      COALESCE(GREATEST(
-        op.time_op,
-        (SELECT MAX(timestamp) FROM `{0}` re FORCE INDEX(thread_num_subnum_index) WHERE
-          re.thread_num = tnum AND (re.email <> 'sage' OR re.email IS NULL)
-          AND re.subnum = 0)
-      ), op.time_op)
+      COALESCE(
+        GREATEST(op.time_bump, d_time_bump),
+        op.time_op
+      )
     ),
     op.time_ghost = (
-      SELECT MAX(timestamp) FROM `{0}` re FORCE INDEX(thread_num_subnum_index) WHERE
-        re.thread_num = tnum AND re.subnum <> 0
+      IF (
+        GREATEST(
+          IFNULL(op.time_ghost, 0),
+          d_time_ghost
+        ) <> 0,
+        GREATEST(
+          IFNULL(op.time_ghost, 0),
+          d_time_ghost
+        ),
+        NULL
+      )
     ),
     op.time_ghost_bump = (
-      SELECT MAX(timestamp) FROM `{0}` re FORCE INDEX(thread_num_subnum_index) WHERE
-        re.thread_num = tnum AND re.subnum <> 0 AND (re.email <> 'sage' OR
-          re.email IS NULL)
+      IF(
+        GREATEST(
+          IFNULL(op.time_ghost_bump, 0),
+          d_time_ghost_bump
+        ) <> 0,
+        GREATEST(
+          IFNULL(op.time_ghost_bump, 0),
+          d_time_ghost_bump
+        ),
+        NULL
+      )
     ),
     op.time_last_modified = (
-      COALESCE(GREATEST(
-        op.time_op,
-        (SELECT GREATEST(MAX(timestamp), MAX(timestamp_expired)) FROM `{0}` re FORCE INDEX(thread_num_subnum_index) WHERE
-          re.thread_num = tnum)
-      ), op.time_op)
+      COALESCE(
+        GREATEST(op.time_last_modified, d_time_last_modified),
+        op.time_op
+      )
     ),
     op.nreplies = (
-      SELECT COUNT(*) FROM `{0}` re FORCE INDEX(thread_num_subnum_index) WHERE
-        re.thread_num = tnum
+      op.nreplies + 1
     ),
     op.nimages = (
-      SELECT COUNT(media_hash) FROM `{0}` re FORCE INDEX(thread_num_subnum_index) WHERE
-        re.thread_num = tnum
+      op.nimages + d_image
     )
     WHERE op.thread_num = tnum;
-END $
+END; $
+
+
+DROP PROCEDURE IF EXISTS `update_thread_timestamp_{0}`; $
+
+
+CREATE PROCEDURE `update_thread_timestamp_{0}` (tnum INT, timestamp INT)
+BEGIN
+  UPDATE
+    `{0}_threads` op
+  SET
+    op.time_last_modified = (
+      GREATEST(op.time_last_modified, timestamp)
+    )
+  WHERE op.thread_num = tnum;
+END; $
 
 
 DROP PROCEDURE IF EXISTS `create_thread_{0}`; $
@@ -229,79 +283,6 @@ BEGIN
 END; $
 
 
-DROP PROCEDURE IF EXISTS `insert_post_{0}`; $
-
-
-CREATE PROCEDURE `insert_post_{0}` (p_timestamp INT, p_media_hash VARCHAR(25),
-  p_email VARCHAR(100), p_name VARCHAR(100), p_trip VARCHAR(25))
-BEGIN
-  DECLARE d_day INT;
-  DECLARE d_image INT;
-  DECLARE d_sage INT;
-  DECLARE d_anon INT;
-  DECLARE d_trip INT;
-  DECLARE d_name INT;
-
-  SET d_day = FLOOR(p_timestamp/86400)*86400;
-  SET d_image = p_media_hash IS NOT NULL;
-  SET d_sage = COALESCE(p_email = 'sage', 0);
-  SET d_anon = COALESCE(p_name = 'Anonymous' AND p_trip IS NULL, 0);
-  SET d_trip = p_trip IS NOT NULL;
-  SET d_name = COALESCE(p_name <> 'Anonymous' AND p_trip IS NULL, 1);
-
-  INSERT INTO `{0}_daily` VALUES(d_day, 1, d_image, d_sage, d_anon, d_trip,
-    d_name)
-    ON DUPLICATE KEY UPDATE posts=posts+1, images=images+d_image,
-    sage=sage+d_sage, anons=anons+d_anon, trips=trips+d_trip,
-    names=names+d_name;
-
-  IF (SELECT trip FROM `{0}_users` WHERE trip = p_trip) IS NOT NULL THEN
-    UPDATE `{0}_users` SET postcount=postcount+1,
-        firstseen = LEAST(p_timestamp, firstseen),
-        name = COALESCE(p_name, '')
-      WHERE trip = p_trip;
-  ELSE
-    INSERT INTO `{0}_users` VALUES(
-    NULL, COALESCE(p_name,''), COALESCE(p_trip,''), p_timestamp, 1)
-    ON DUPLICATE KEY UPDATE postcount=postcount+1,
-      firstseen = LEAST(VALUES(firstseen), firstseen),
-      name = COALESCE(p_name, '');
-  END IF;
-END; $
-
-
-DROP PROCEDURE IF EXISTS `delete_post_{0}`; $
-
-
-CREATE PROCEDURE `delete_post_{0}` (p_timestamp INT, p_media_hash VARCHAR(25), p_email VARCHAR(100), p_name VARCHAR(100), p_trip VARCHAR(25))
-BEGIN
-  DECLARE d_day INT;
-  DECLARE d_image INT;
-  DECLARE d_sage INT;
-  DECLARE d_anon INT;
-  DECLARE d_trip INT;
-  DECLARE d_name INT;
-
-  SET d_day = FLOOR(p_timestamp/86400)*86400;
-  SET d_image = p_media_hash IS NOT NULL;
-  SET d_sage = COALESCE(p_email = 'sage', 0);
-  SET d_anon = COALESCE(p_name = 'Anonymous' AND p_trip IS NULL, 0);
-  SET d_trip = p_trip IS NOT NULL;
-  SET d_name = COALESCE(p_name <> 'Anonymous' AND p_trip IS NULL, 1);
-
-  UPDATE `{0}_daily` SET posts=posts-1, images=images-d_image,
-    sage=sage-d_sage, anons=anons-d_anon, trips=trips-d_trip,
-    names=names-d_name WHERE day = d_day;
-
-  IF (SELECT trip FROM `{0}_users` WHERE trip = p_trip) IS NOT NULL THEN
-    UPDATE `{0}_users` SET postcount = postcount-1 WHERE trip = p_trip;
-  ELSE
-    UPDATE `{0}_users` SET postcount = postcount-1 WHERE
-      name = COALESCE(p_name, '') AND trip = COALESCE(p_trip, '');
-  END IF;
-END; $
-
-
 DROP TRIGGER IF EXISTS `before_ins_{0}`; $
 
 
@@ -324,8 +305,7 @@ BEGIN
   IF NEW.op = 1 THEN
     CALL create_thread_{0}(NEW.num, NEW.timestamp);
   END IF;
-  CALL update_thread_{0}(NEW.thread_num);
-  CALL insert_post_{0}(NEW.timestamp, NEW.media_hash, NEW.email, NEW.name, NEW.trip);
+  CALL update_thread_{0}(NEW.thread_num, NEW.subnum, NEW.timestamp, NEW.media_hash, NEW.email);
 END; $
 
 
@@ -335,12 +315,20 @@ DROP TRIGGER IF EXISTS `after_del_{0}`; $
 CREATE TRIGGER `after_del_{0}` AFTER DELETE ON `{0}`
 FOR EACH ROW
 BEGIN
-  CALL update_thread_{0}(OLD.thread_num);
+  CALL update_thread_{0}(OLD.thread_num, OLD.subnum, OLD.timestamp, OLD.media_hash, OLD.email);
   IF OLD.op = 1 THEN
     CALL delete_thread_{0}(OLD.num);
   END IF;
-  CALL delete_post_{0}(OLD.timestamp, OLD.media_hash, OLD.email, OLD.name, OLD.trip);
   IF OLD.media_hash IS NOT NULL THEN
     CALL delete_image_{0}(OLD.media_id);
   END IF;
-END
+END; $
+
+
+CREATE TRIGGER `after_upd_{0}` AFTER UPDATE ON `{0}`
+FOR EACH ROW
+BEGIN
+  IF NEW.timestamp_expired <> 0 THEN
+    CALL update_thread_timestamp_{0}(NEW.thread_num, NEW.timestamp_expired);
+  END IF;
+END;
