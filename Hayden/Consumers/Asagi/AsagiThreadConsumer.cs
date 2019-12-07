@@ -483,7 +483,7 @@ namespace Hayden.Consumers
 
 		public async Task SetDeletedAndLocked(ulong postNumber, string board, bool deleted, bool locked)
 		{
-			uint currentTimestamp = Utility.GetGMTTimestamp(DateTimeOffset.Now);
+			uint currentTimestamp = Utility.GetNewYorkTimestamp(DateTimeOffset.Now);
 
 			using (var rentedConnection = await ConnectionPool.RentConnectionAsync())
 			{
@@ -574,7 +574,7 @@ namespace Hayden.Consumers
 
 			await foreach (var row in chainedQuery.ExecuteRowsAsync())
 			{
-				items.Add(((ulong)(uint)row[0], Utility.ConvertGMTTimestamp((uint)row[1]).UtcDateTime));
+				items.Add(((ulong)(uint)row[0], Utility.ConvertNewYorkTimestamp((uint)row[1]).UtcDateTime));
 			}
 
 			return items;

@@ -101,15 +101,23 @@ namespace Hayden
 						  - DateTime.UnixEpoch).TotalSeconds;
 		}
 
+		public static DateTimeOffset ConvertNewYorkTimestamp(uint timestamp)
+		{
+			return LocalDateTime.FromDateTime(DateTime.UnixEpoch + TimeSpan.FromSeconds(timestamp))
+								.InZoneLeniently(EasternTimeZone)
+								.ToDateTimeOffset();
+		}
+
 		public static DateTimeOffset ConvertGMTTimestamp(uint timestamp)
 		{
-			return Instant.FromUnixTimeSeconds(timestamp).ToDateTimeOffset();
+			return Instant.FromUnixTimeSeconds(timestamp)
+						  .ToDateTimeOffset();
 		}
 
 		public static IEnumerable<TItem> RoundRobin<TItem, TKey>(this IList<TItem> source, Func<TItem, TKey> predicate)
 		{
 			List<TKey> keys = source.Select(predicate)
-			                        .Distinct()
+									.Distinct()
 									.ToList();
 
 			SortedList<TKey, int> queueIndices = new SortedList<TKey, int>();
