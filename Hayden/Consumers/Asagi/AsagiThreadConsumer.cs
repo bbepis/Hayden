@@ -562,7 +562,7 @@ namespace Hayden.Consumers
 			}
 		}
 
-		public async Task<ICollection<(ulong threadId, DateTime lastPostTime)>> CheckExistingThreads(IEnumerable<ulong> threadIdsToCheck, string board, bool archivedOnly, bool getTimestamps = true)
+		public async Task<ICollection<(ulong threadId, DateTimeOffset lastPostTime)>> CheckExistingThreads(IEnumerable<ulong> threadIdsToCheck, string board, bool archivedOnly, bool getTimestamps = true)
 		{
 			int archivedInt = archivedOnly ? 1 : 0;
 
@@ -600,7 +600,7 @@ namespace Hayden.Consumers
 
 			var chainedQuery = rentedConnection.Object.CreateQuery(query);
 
-			List<(ulong threadId, DateTime lastPostTime)> items = new List<(ulong threadId, DateTime lastPostTime)>();
+			List<(ulong threadId, DateTimeOffset lastPostTime)> items = new List<(ulong threadId, DateTimeOffset lastPostTime)>();
 
 			await foreach (var row in chainedQuery.ExecuteRowsAsync())
 			{

@@ -14,8 +14,8 @@ namespace Hayden.Consumers
 		public Task ThreadUntracked(ulong threadId, string board, bool deleted)
 			=> Task.CompletedTask;
 
-		public Task<ICollection<(ulong threadId, DateTime lastPostTime)>> CheckExistingThreads(IEnumerable<ulong> threadIdsToCheck, string board, bool archivedOnly, bool getTimestamps = true)
-			=> Task.FromResult((ICollection<(ulong threadId, DateTime lastPostTime)>)new (ulong threadId, DateTime lastPostTime)[0]);
+		public Task<ICollection<(ulong threadId, DateTimeOffset lastPostTime)>> CheckExistingThreads(IEnumerable<ulong> threadIdsToCheck, string board, bool archivedOnly, bool getTimestamps = true)
+			=> Task.FromResult((ICollection<(ulong threadId, DateTimeOffset lastPostTime)>)new (ulong threadId, DateTimeOffset lastPostTime)[0]);
 
 		public void Dispose() { }
 	}
