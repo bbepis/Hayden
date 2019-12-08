@@ -364,6 +364,14 @@ namespace Hayden.Consumers
 					if (bannedPosts.Contains((uint)post.PostNumber))
 						continue;
 
+					string capcode = post.Capcode?.Substring(0, 1).ToUpperInvariant() ?? "N";
+					if (post.Capcode?.Equals("Manager", StringComparison.OrdinalIgnoreCase) == true)
+						capcode = "G";
+
+					string posterTrip = post.Trip;
+					if (post.Trip?.Equals("Developer", StringComparison.OrdinalIgnoreCase) == true)
+						posterTrip = "Dev";
+
 					await chainedQuery
 						.SetParam("@num", post.PostNumber)
 						.SetParam("@thread_num", post.ReplyPostNumber != 0 ? post.ReplyPostNumber : post.PostNumber)
@@ -381,10 +389,10 @@ namespace Hayden.Consumers
 						.SetParam("@media_orig", post.TimestampedFilenameFull)
 						.SetParam("@spoiler", post.SpoilerImage == true ? 1 : 0)
 						.SetParam("@deleted", 0)
-						.SetParam("@capcode", post.Capcode?.Substring(0, 1).ToUpperInvariant() ?? "N")
+						.SetParam("@capcode", capcode)
 						.SetParam("@email", null)
 						.SetParam("@name", HttpUtility.HtmlDecode(post.Name)?.Trim())
-						.SetParam("@trip", post.Trip)
+						.SetParam("@trip", posterTrip)
 						.SetParam("@title", HttpUtility.HtmlDecode(post.Subject)?.Trim())
 						.SetParam("@comment", CleanComment(post.Comment))
 						.SetParam("@sticky", post.Sticky == true ? 1 : 0)
