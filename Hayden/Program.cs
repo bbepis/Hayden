@@ -54,8 +54,6 @@ namespace Hayden
 				proxyProvider = new ConfigProxyProvider((JArray)rawConfigFile["proxies"]);
 
 			Log("Initialized.");
-
-			//Log($"Downloading from board /{board}/ to directory {downloadDir}");
 			Log("Press Q to stop archival.");
 			
 			var boardArchiver = new BoardArchiver(yotsubaConfig, consumer, proxyProvider);

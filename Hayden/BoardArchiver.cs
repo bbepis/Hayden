@@ -85,7 +85,7 @@ namespace Hayden
 								{
 									var thread = threadList.First(x => x.ThreadNumber == existingThread.threadId);
 
-									if (thread.LastModified <= Utility.GetGMTTimestamp(new DateTimeOffset(existingThread.lastPostTime, TimeSpan.Zero)))
+									if (thread.LastModified <= Utility.GetGMTTimestamp(existingThread.lastPostTime))
 									{
 										threadList.Remove(thread);
 									}
@@ -366,6 +366,31 @@ namespace Hayden
 		{
 			DownloadUri = downloadUri;
 			DownloadPath = downloadPath;
+		}
+
+		protected bool Equals(QueuedImageDownload other)
+		{
+			return DownloadUri.AbsolutePath == other.DownloadUri.AbsolutePath
+				   && DownloadPath == other.DownloadPath;
+		}
+
+		public override bool Equals(object obj)
+		{
+			if (ReferenceEquals(null, obj))
+				return false;
+			if (ReferenceEquals(this, obj))
+				return true;
+			if (obj.GetType() != GetType())
+				return false;
+			return Equals((QueuedImageDownload)obj);
+		}
+
+		public override int GetHashCode()
+		{
+			unchecked
+			{
+				return ((DownloadUri != null ? DownloadUri.GetHashCode() : 0) * 397) ^ (DownloadPath != null ? DownloadPath.GetHashCode() : 0);
+			}
 		}
 	}
 }
