@@ -11,7 +11,6 @@ using Hayden.Proxy;
 using Mono.Unix;
 using Mono.Unix.Native;
 using Newtonsoft.Json.Linq;
-using Nito.AsyncEx.Interop;
 
 namespace Hayden
 {
@@ -89,20 +88,35 @@ namespace Hayden
 				Console.WriteLine($"[{DateTime.Now:G}] {content}");
 		}
 
+		private static Task WaitForUnixKillSignal()
+		{
+			var sigIntHandle = new UnixSignal(Signum.SIGINT);
+			var sigTermHandle = new UnixSignal(Signum.SIGTERM);
+			var sigHupHandle = new UnixSignal(Signum.SIGHUP);
+
+			return Task.Factory.StartNew(() =>
+			{
+				int signal = UnixSignal.WaitAny(new[] { sigIntHandle, sigTermHandle, sigHupHandle });
+
+				if (signal == 0)
+					Log("Received kill signal (SIGINT)");
+				else if (signal == 1)
+					Log("Received kill signal (SIGTERM)");
+				else if (signal == 2)
+					Log("Received kill signal (SIGHUP)");
+				else
+					Log("Received kill signal (unknown)");
+
+			}, TaskCreationOptions.LongRunning);
+		}
+
 		public static Task WaitForTerminateAsync()
 		{
 			Task unixKillSignalTask = null;
 
 			if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
 			{
-				var sigIntTask = WaitHandleAsyncFactory.FromWaitHandle(new UnixSignal(Signum.SIGINT))
-													   .ContinueWith(async s => Log("Received kill signal (SIGINT)"));
-				var sigTermTask = WaitHandleAsyncFactory.FromWaitHandle(new UnixSignal(Signum.SIGTERM))
-														.ContinueWith(async s => Log("Received kill signal (SIGTERM)"));
-				var sigHUpTask = WaitHandleAsyncFactory.FromWaitHandle(new UnixSignal(Signum.SIGHUP))
-													   .ContinueWith(async s => Log("Received kill signal (SIGHUP)"));
-
-				unixKillSignalTask = Task.WhenAny(sigIntTask, sigTermTask, sigHUpTask);
+				unixKillSignalTask = WaitForUnixKillSignal();
 			}
 
 
