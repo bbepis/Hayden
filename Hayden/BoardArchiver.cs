@@ -6,6 +6,7 @@ using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using Hayden.Api;
+using Hayden.Cache;
 using Hayden.Config;
 using Hayden.Contract;
 using Hayden.Models;
@@ -18,17 +19,19 @@ namespace Hayden
 		public YotsubaConfig Config { get; }
 
 		protected IThreadConsumer ThreadConsumer { get; }
+		protected IStateStore StateStore { get; }
 		protected ProxyProvider ProxyProvider { get; }
 
 		public TimeSpan BoardUpdateTimespan { get; set; }
 
 		public TimeSpan ApiCooldownTimespan { get; set; }
 
-		public BoardArchiver(YotsubaConfig config, IThreadConsumer threadConsumer, ProxyProvider proxyProvider = null)
+		public BoardArchiver(YotsubaConfig config, IThreadConsumer threadConsumer, IStateStore stateStore = null, ProxyProvider proxyProvider = null)
 		{
 			Config = config;
 			ThreadConsumer = threadConsumer;
 			ProxyProvider = proxyProvider ?? new NullProxyProvider();
+			StateStore = stateStore ?? new NullStateStore();
 
 			ApiCooldownTimespan = TimeSpan.FromSeconds(config.ApiDelay ?? 1);
 			BoardUpdateTimespan = TimeSpan.FromSeconds(config.BoardDelay ?? 30);
@@ -39,6 +42,7 @@ namespace Hayden
 			bool firstRun = true;
 
 			List<(string board, ulong threadNumber)> threadQueue = new List<(string board, ulong threadNumber)>();
+			Queue<QueuedImageDownload> enqueuedImages = new Queue<QueuedImageDownload>();
 			List<QueuedImageDownload> requeuedImages = new List<QueuedImageDownload>();
 
 			SortedList<string, DateTimeOffset> lastBoardCheckTimes = new SortedList<string, DateTimeOffset>(Config.Boards.Length);
@@ -183,7 +187,14 @@ namespace Hayden
 
 						var threadWaitTask = Task.Delay(ApiCooldownTimespan);
 
-						await action(client);
+						try
+						{
+							await action(client);
+						}
+						catch (Exception ex)
+						{
+							Program.Log($"ERROR: Network operation failed, and was unhandled. Inconsistencies may arise in continued use of program\r\n" + ex.ToString());
+						}
 
 						await threadWaitTask;
 					});
@@ -196,34 +207,49 @@ namespace Hayden
 				int threadCompletedCount = 0;
 				int imageCompletedCount = 0;
 
-				void EnqueueImage(QueuedImageDownload imageDownload)
+				async Task DownloadEnqueuedImage(HttpClient client)
 				{
-					if (File.Exists(imageDownload.DownloadPath))
+					QueuedImageDownload queuedDownload;
+
+					lock (enqueuedImages)
+						if (!enqueuedImages.TryDequeue(out queuedDownload))
+							return;
+
+					if (File.Exists(queuedDownload.DownloadPath))
 					{
 						Interlocked.Increment(ref imageCompletedCount);
 						return;
 					}
 
-					QueueProxyCall(async innerClient =>
+					await Task.Delay(100); // Wait 100ms because we're nice people
+
+					try
 					{
-						try
-						{
-							await DownloadFileTask(imageDownload.DownloadUri, imageDownload.DownloadPath, innerClient);
-						}
-						catch (Exception ex)
-						{
-							Program.Log($"ERROR: Could not download image . Will try again next board update\nException: {ex}");
+						await DownloadFileTask(queuedDownload.DownloadUri, queuedDownload.DownloadPath, client);
+					}
+					catch (Exception ex)
+					{
+						Program.Log($"ERROR: Could not download image . Will try again next board update\nException: {ex}");
 
-							lock (requeuedImages)
-								requeuedImages.Add(imageDownload);
-						}
+						lock (requeuedImages)
+							requeuedImages.Add(queuedDownload);
+					}
 
-						Interlocked.Increment(ref imageCompletedCount);
-					});
+					Interlocked.Increment(ref imageCompletedCount);
+				}
+
+				enqueuedImages.Clear();
+
+				if (firstRun)
+				{
+					foreach (var queuedImage in await StateStore.GetDownloadQueue())
+						enqueuedImages.Enqueue(queuedImage);
+
+					Program.Log($"{enqueuedImages.Count} media items loaded from queue cache");
 				}
 
 				foreach (var queuedImage in requeuedImages)
-					EnqueueImage(queuedImage);
+					enqueuedImages.Enqueue(queuedImage);
 
 				requeuedImages.Clear();
 
@@ -244,6 +270,9 @@ namespace Hayden
 						if (newCompletedCount % 50 == 0)
 						{
 							Program.Log($" --> Completed {threadCompletedCount} / {threadQueue.Count} : {threadQueue.Count - threadCompletedCount} to go");
+
+							lock (enqueuedImages)
+								Program.Log($" --> {enqueuedImages.Count} in image queue");
 						}
 
 						if (!success)
@@ -253,14 +282,51 @@ namespace Hayden
 						}
 						else
 						{
-							foreach (var imageDownload in imageDownloads)
-								EnqueueImage(imageDownload);
+							// Fallback to Monitor references instead of lock(){} because of some compiler rule that doesn't allow us to await inside of locks
+							try
+							{
+								Monitor.Enter(enqueuedImages);
+
+								foreach (var imageDownload in imageDownloads)
+									enqueuedImages.Enqueue(imageDownload);
+
+								await StateStore.WriteDownloadQueue(enqueuedImages.ToArray());
+							}
+							finally
+							{
+								Monitor.Exit(enqueuedImages);
+							}
+
+
+							// Perform 100 image downloads on a thread.
+							for (int i = 0; i < 100; i++)
+							{
+								await DownloadEnqueuedImage(client);
+							}
 						}
 
 						threadSemaphore.Release();
 					});
 				}
 
+				// Queue a download task to download all remaining images.
+				QueueProxyCall(async client =>
+				{
+					while (true)
+					{
+						QueuedImageDownload queuedDownload;
+
+						lock (enqueuedImages)
+							if (!enqueuedImages.TryDequeue(out queuedDownload))
+								break;
+
+						await Task.Delay(100); // Wait 100ms because we're nice people
+
+						await DownloadEnqueuedImage(client);
+					}
+				});
+
+				// Wait for all currently running/enqueued thread download tasks
 				while (true)
 				{
 					WeakReference<Task> remainingTask;
@@ -279,6 +345,7 @@ namespace Hayden
 
 				firstRun = false;
 
+				// A bit overkill but force a compacting GC collect here to make sure that the heap doesn't expand too much over time
 				System.Runtime.GCSettings.LargeObjectHeapCompactionMode = System.Runtime.GCLargeObjectHeapCompactionMode.CompactOnce;
 				GC.Collect();
 
@@ -358,9 +425,11 @@ namespace Hayden
 
 	public class QueuedImageDownload
 	{
-		public Uri DownloadUri { get; }
+		public Uri DownloadUri { get; set; }
 
-		public string DownloadPath { get; }
+		public string DownloadPath { get; set; }
+
+		public QueuedImageDownload() { }
 
 		public QueuedImageDownload(Uri downloadUri, string downloadPath)
 		{

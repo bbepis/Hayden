@@ -4,6 +4,7 @@ using System.Linq;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
+using Hayden.Cache;
 using Hayden.Config;
 using Hayden.Consumers;
 using Hayden.Contract;
@@ -34,12 +35,14 @@ namespace Hayden
 			string backendType = rawConfigFile["backend"]["type"].Value<string>();
 
 			var yotsubaConfig = rawConfigFile["source"].ToObject<YotsubaConfig>();
+			string downloadLocation = null;
 
 			switch (backendType)
 			{
 				case "Asagi":
 					var asagiConfig = rawConfigFile["backend"].ToObject<AsagiConfig>();
 
+					downloadLocation = asagiConfig.DownloadLocation;
 					consumer = new AsagiThreadConsumer(asagiConfig, yotsubaConfig.Boards);
 					break;
 
@@ -54,8 +57,13 @@ namespace Hayden
 
 			Log("Initialized.");
 			Log("Press Q to stop archival.");
+
+			var haydenDirectory = Path.Combine(downloadLocation, "hayden");
+			Directory.CreateDirectory(haydenDirectory);
+
+			var stateStore = new LiteDbStateStore(Path.Combine(haydenDirectory, "imagequeue.db"));
 			
-			var boardArchiver = new BoardArchiver(yotsubaConfig, consumer, proxyProvider);
+			var boardArchiver = new BoardArchiver(yotsubaConfig, consumer, stateStore, proxyProvider);
 
 			var tokenSource = new CancellationTokenSource();
 

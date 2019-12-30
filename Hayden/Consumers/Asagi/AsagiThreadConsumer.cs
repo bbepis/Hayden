@@ -173,7 +173,7 @@ namespace Hayden.Consumers
 			foreach (var post in postsToAdd)
 				threadHashes[post.PostNumber] = CalculateAsagiHash(post, true);
 
-			Program.Log($"[Asagi] {postsToAdd.Count} posts have been inserted from thread /{board}/{thread.OriginalPost.PostNumber}");
+			Program.Log($"[Asagi] {postsToAdd.Count} posts have been inserted from thread /{board}/{thread.OriginalPost.PostNumber} ({imageDownloads.Count} media items enqueued)");
 
 			List<ulong> postNumbersToDelete = new List<ulong>(thread.Posts.Length);
 
