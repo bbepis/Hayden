@@ -28,8 +28,8 @@ namespace Hayden.Proxy
 						IWebProxy proxy = username != null
 										  ? new WebProxy(url, false, new string[0], new NetworkCredential(username, password))
 										  : new WebProxy(url);
-						
-						ProxyClients.Add(CreateNewClient(proxy));
+
+						ProxyClients.Add(new HttpClientProxy(CreateNewClient(proxy), $"{username}@{url}"));
 					}
 					else if (proxyType.Equals("socks", StringComparison.OrdinalIgnoreCase))
 					{
@@ -47,7 +47,7 @@ namespace Hayden.Proxy
 							? new HttpToSocks5Proxy(uri.Host, uri.Port, username, password)
 							: new HttpToSocks5Proxy(uri.Host, uri.Port);
 						
-						ProxyClients.Add(CreateNewClient(proxy));
+						ProxyClients.Add(new HttpClientProxy(CreateNewClient(proxy), $"{username}@{uri.Host}"));
 					}
 					else
 					{
@@ -59,7 +59,7 @@ namespace Hayden.Proxy
 				}
 
 			// add a direct connection client too
-			ProxyClients.Add(CreateNewClient(null));
+			ProxyClients.Add(new HttpClientProxy(CreateNewClient(null), "baseconnection/none"));
 		}
 	}
 }

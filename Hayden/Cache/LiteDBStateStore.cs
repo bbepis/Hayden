@@ -33,7 +33,7 @@ namespace Hayden.Cache
 		{
 			List<QueuedImageDownload> downloads = QueuedImageDownloads.FindAll().ToList();
 
-			QueuedImageDownloads.Insert(imageDownloads.Except(downloads));
+			QueuedImageDownloads.Upsert(imageDownloads.Except(downloads));
 
 			foreach (var removedItem in downloads.Where(x => imageDownloads.All(y => !Equals(x, y))))
 				QueuedImageDownloads.Delete(removedItem.DownloadPath);

@@ -8,7 +8,7 @@ namespace Hayden.Proxy
 		public NullProxyProvider(Action<HttpClientHandler> configureClientHandlerAction = null) : base(configureClientHandlerAction)
 		{
 			// use only a direct connection
-			ProxyClients.Add(CreateNewClient(null));
+			ProxyClients.Add(new HttpClientProxy(CreateNewClient(null), "baseconnection/none"));
 		}
 	}
 }

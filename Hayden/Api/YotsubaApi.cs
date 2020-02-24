@@ -6,6 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Hayden.Api;
 using Hayden.Models;
+using Hayden.Proxy;
 using Newtonsoft.Json;
 using Thread = Hayden.Models.Thread;
 
@@ -29,33 +30,45 @@ namespace Hayden
 			return request;
 		}
 
-		public static Task<(Thread Thread, YotsubaResponseType ResponseType)> GetThread(string board, ulong threadNumber, HttpClient client, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default)
+		public static Task<(Thread Thread, YotsubaResponseType ResponseType)> GetThread(string board, ulong threadNumber, HttpClientProxy client, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default)
 		{
 			return MakeYotsubaApiCall<Thread>(new Uri($"https://a.4cdn.org/{board}/thread/{threadNumber}.json"), client, modifiedSince, cancellationToken);
 		}
 
-		public static Task<(Page[] Pages, YotsubaResponseType ResponseType)> GetBoard(string board, HttpClient client, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default)
+		public static Task<(Page[] Pages, YotsubaResponseType ResponseType)> GetBoard(string board, HttpClientProxy client, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default)
 		{
 			return MakeYotsubaApiCall<Page[]>(new Uri($"https://a.4cdn.org/{board}/threads.json"), client, modifiedSince, cancellationToken);
 		}
 
-		public static Task<(ulong[] ThreadIds, YotsubaResponseType ResponseType)> GetArchive(string board, HttpClient client, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default)
+		public static Task<(ulong[] ThreadIds, YotsubaResponseType ResponseType)> GetArchive(string board, HttpClientProxy client, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default)
 		{
 			return MakeYotsubaApiCall<ulong[]>(new Uri($"https://a.4cdn.org/{board}/archive.json"), client, modifiedSince, cancellationToken);
 		}
 
-		private static async Task<HttpResponseMessage> DoCall(Uri uri, HttpClient client, DateTimeOffset? modifiedSince, CancellationToken cancellationToken)
+		private static async Task<HttpResponseMessage> DoCall(Uri uri, HttpClientProxy client, DateTimeOffset? modifiedSince, CancellationToken cancellationToken)
 		{
 			using (var request = CreateRequest(uri, modifiedSince))
 			{
-				return await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+				return await client.Client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
 			}
 		}
 
 		private static readonly JsonSerializer jsonSerializer = JsonSerializer.Create();
-		private static async Task<(T, YotsubaResponseType)> MakeYotsubaApiCall<T>(Uri uri, HttpClient client, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default)
+		private static async Task<(T, YotsubaResponseType)> MakeYotsubaApiCall<T>(Uri uri, HttpClientProxy client, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default)
 		{
-			using (var response = await NetworkPolicies.HttpApiPolicy.ExecuteAsync(() => DoCall(uri, client, modifiedSince, cancellationToken)))
+			HttpResponseMessage response;
+
+			try
+			{
+				response = await NetworkPolicies.HttpApiPolicy.ExecuteAsync(() => DoCall(uri, client, modifiedSince, cancellationToken));
+			}
+			catch
+			{
+				Program.Log($"Exception: Network error with proxy {client.Name}");
+				throw;
+			}
+
+			using (response)
 			{
 				if (response.StatusCode == HttpStatusCode.NotModified)
 					return (default, YotsubaResponseType.NotModified);

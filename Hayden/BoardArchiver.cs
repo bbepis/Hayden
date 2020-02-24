@@ -179,7 +179,7 @@ namespace Hayden
 
 				var requeuedThreads = new List<(string board, ulong threadNumber)>();
 
-				void QueueProxyCall(Func<HttpClient, Task> action)
+				void QueueProxyCall(Func<HttpClientProxy, Task> action)
 				{
 					var task = Task.Run(async () =>
 					{
@@ -189,7 +189,7 @@ namespace Hayden
 
 						try
 						{
-							await action(client);
+							await action(client.Object);
 						}
 						catch (Exception ex)
 						{
@@ -207,7 +207,7 @@ namespace Hayden
 				int threadCompletedCount = 0;
 				int imageCompletedCount = 0;
 
-				async Task DownloadEnqueuedImage(HttpClient client)
+				async Task DownloadEnqueuedImage(HttpClientProxy client)
 				{
 					QueuedImageDownload queuedDownload;
 
@@ -225,11 +225,11 @@ namespace Hayden
 
 					try
 					{
-						await DownloadFileTask(queuedDownload.DownloadUri, queuedDownload.DownloadPath, client);
+						await DownloadFileTask(queuedDownload.DownloadUri, queuedDownload.DownloadPath, client.Client);
 					}
 					catch (Exception ex)
 					{
-						Program.Log($"ERROR: Could not download image . Will try again next board update\nException: {ex}");
+						Program.Log($"ERROR: Could not download image. Will try again next board update\nClient name: {client.Name}\nException: {ex}");
 
 						lock (requeuedImages)
 							requeuedImages.Add(queuedDownload);
@@ -257,13 +257,18 @@ namespace Hayden
 
 				foreach (var thread in threadQueue.RoundRobin(x => x.board))
 				{
+					if (token.IsCancellationRequested)
+						break;
+
 					await threadSemaphore.WaitAsync();
 
 					QueueProxyCall(async client =>
 					{
+						if (token.IsCancellationRequested)
+							return;
+
 						(bool success, IList<QueuedImageDownload> imageDownloads)
 							= await ThreadUpdateTask(CancellationToken.None, thread.board, thread.threadNumber, client);
-
 
 						int newCompletedCount = Interlocked.Increment(ref threadCompletedCount);
 
@@ -301,6 +306,9 @@ namespace Hayden
 							// Perform 100 image downloads on a thread.
 							for (int i = 0; i < 100; i++)
 							{
+								if (token.IsCancellationRequested)
+									break;
+
 								await DownloadEnqueuedImage(client);
 							}
 						}
@@ -314,6 +322,9 @@ namespace Hayden
 				{
 					while (true)
 					{
+						if (token.IsCancellationRequested)
+							break;
+
 						QueuedImageDownload queuedDownload;
 
 						lock (enqueuedImages)
@@ -358,7 +369,7 @@ namespace Hayden
 			}
 		}
 
-		private async Task<(bool success, IList<QueuedImageDownload> imageDownloads)> ThreadUpdateTask(CancellationToken token, string board, ulong threadNumber, HttpClient client)
+		private async Task<(bool success, IList<QueuedImageDownload> imageDownloads)> ThreadUpdateTask(CancellationToken token, string board, ulong threadNumber, HttpClientProxy client)
 		{
 			try
 			{
@@ -397,7 +408,7 @@ namespace Hayden
 			}
 			catch (Exception exception)
 			{
-				Program.Log($"ERROR: Could not poll or update thread /{board}/{threadNumber}. Will try again next board update\nException: {exception}");
+				Program.Log($"ERROR: Could not poll or update thread /{board}/{threadNumber}. Will try again next board update\nClient name: {client.Name}\nException: {exception}");
 
 				return (false, null);
 			}

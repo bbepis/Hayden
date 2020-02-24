@@ -6,19 +6,31 @@ using Nito.AsyncEx;
 
 namespace Hayden.Proxy
 {
+	public class HttpClientProxy
+	{
+		public HttpClient Client { get; }
+		public string Name { get; }
+
+		public HttpClientProxy(HttpClient client, string name)
+		{
+			Client = client;
+			Name = name;
+		}
+	}
+
 	public abstract class ProxyProvider
 	{
 		protected Action<HttpClientHandler> ConfigureClientHandlerAction { get; }
-		protected virtual AsyncCollection<HttpClient> ProxyClients { get; } = new AsyncCollection<HttpClient>();
+		protected virtual AsyncCollection<HttpClientProxy> ProxyClients { get; } = new AsyncCollection<HttpClientProxy>();
 
 		protected ProxyProvider(Action<HttpClientHandler> configureClientHandlerHandlerAction = null)
 		{
 			ConfigureClientHandlerAction = configureClientHandlerHandlerAction;
 		}
 
-		public virtual async Task<PoolObject<HttpClient>> RentHttpClient()
+		public virtual async Task<PoolObject<HttpClientProxy>> RentHttpClient()
 		{
-			return new PoolObject<HttpClient>(await ProxyClients.TakeAsync(), proxy => ProxyClients.Add(proxy));
+			return new PoolObject<HttpClientProxy>(await ProxyClients.TakeAsync(), proxy => ProxyClients.Add(proxy));
 		}
 
 		protected virtual HttpClient CreateNewClient(IWebProxy proxy)
@@ -36,7 +48,7 @@ namespace Hayden.Proxy
 
 			var httpClient = new HttpClient(handler, true);
 
-			httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("Hayden/0.6.0");
+			httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("Hayden/0.7.0");
 			httpClient.DefaultRequestHeaders.AcceptEncoding.ParseAdd("gzip, deflate");
 
 			return httpClient;
