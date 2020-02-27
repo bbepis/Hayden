@@ -46,12 +46,12 @@ namespace Hayden.Consumers
 			Directory.CreateDirectory(ImageDownloadLocation);
 		}
 
-		private ConcurrentDictionary<ThreadHashObject, SortedList<ulong, int>> ThreadHashes { get; } = new ConcurrentDictionary<ThreadHashObject, SortedList<ulong, int>>();
+		private ConcurrentDictionary<ThreadPointer, SortedList<ulong, int>> ThreadHashes { get; } = new ConcurrentDictionary<ThreadPointer, SortedList<ulong, int>>();
 
 		/// <inheritdoc/>
 		public async Task<IList<QueuedImageDownload>> ConsumeThread(Thread thread, string board)
 		{
-			var hashObject = new ThreadHashObject(board, thread.OriginalPost.PostNumber);
+			var hashObject = new ThreadPointer(board, thread.OriginalPost.PostNumber);
 			List<QueuedImageDownload> imageDownloads = new List<QueuedImageDownload>(thread.Posts.Length);
 
 			async Task ProcessImages(Post post)
@@ -220,7 +220,7 @@ namespace Hayden.Consumers
 		{
 			await SetUntracked(threadId, board, deleted);
 
-			ThreadHashes.TryRemove(new ThreadHashObject(board, threadId), out _);
+			ThreadHashes.TryRemove(new ThreadPointer(board, threadId), out _);
 		}
 
 		/// <summary>
@@ -284,7 +284,7 @@ namespace Hayden.Consumers
 			if (string.IsNullOrWhiteSpace(inputComment))
 				return string.Empty;
 
-			if (!inputComment.Contains('<'))
+			if (!inputComment.Contains('<') && !inputComment.Contains('['))
 			{
 				if (!inputComment.Contains('&'))
 				{
@@ -679,22 +679,6 @@ namespace Hayden.Consumers
 		public void Dispose()
 		{
 			ConnectionPool.Dispose();
-		}
-
-		/// <summary>
-		/// A struct containing information about a specific thread.
-		/// </summary>
-		private struct ThreadHashObject
-		{
-			public string Board { get; }
-
-			public ulong ThreadId { get; }
-
-			public ThreadHashObject(string board, ulong threadId)
-			{
-				Board = board;
-				ThreadId = threadId;
-			}
 		}
 
 		/// <summary>

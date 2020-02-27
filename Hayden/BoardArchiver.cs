@@ -57,7 +57,7 @@ namespace Hayden
 		{
 			bool firstRun = true;
 
-			List<(string board, ulong threadNumber)> threadQueue = new List<(string board, ulong threadNumber)>();
+			List<ThreadPointer> threadQueue = new List<ThreadPointer>();
 			Queue<QueuedImageDownload> enqueuedImages = new Queue<QueuedImageDownload>();
 			List<QueuedImageDownload> requeuedImages = new List<QueuedImageDownload>();
 
@@ -102,7 +102,7 @@ namespace Hayden
 
 				var threadTasks = new Queue<WeakReference<Task>>();
 
-				var requeuedThreads = new List<(string board, ulong threadNumber)>();
+				var requeuedThreads = new List<ThreadPointer>();
 
 				void QueueProxyCall(Func<HttpClientProxy, Task> action)
 				{
@@ -180,7 +180,7 @@ namespace Hayden
 
 				var threadSemaphore = new SemaphoreSlim(20);
 
-				foreach (var thread in threadQueue.RoundRobin(x => x.board))
+				foreach (var thread in threadQueue.RoundRobin(x => x.Board))
 				{
 					if (token.IsCancellationRequested)
 						break;
@@ -193,7 +193,7 @@ namespace Hayden
 							return;
 
 						(bool success, IList<QueuedImageDownload> imageDownloads)
-							= await ThreadUpdateTask(CancellationToken.None, thread.board, thread.threadNumber, client);
+							= await ThreadUpdateTask(CancellationToken.None, thread.Board, thread.ThreadId, client);
 
 						int newCompletedCount = Interlocked.Increment(ref threadCompletedCount);
 
@@ -301,11 +301,11 @@ namespace Hayden
 		/// <param name="board">The board to retrieve threads from.</param>
 		/// <param name="lastDateTimeCheck">The time to compare the thread's updated time to.</param>
 		/// <returns>A list of thread IDs.</returns>
-		private async Task<IList<(string board, ulong threadNumber)>> GetArchivedBoardThreads(CancellationToken token, string board, DateTimeOffset lastDateTimeCheck)
+		private async Task<IList<ThreadPointer>> GetArchivedBoardThreads(CancellationToken token, string board, DateTimeOffset lastDateTimeCheck)
 		{
 			var cooldownTask = Task.Delay(ApiCooldownTimespan, token);
 
-			var threadQueue = new List<(string board, ulong threadNumber)>();
+			var threadQueue = new List<ThreadPointer>();
 
 			var archiveRequest = await NetworkPolicies.GenericRetryPolicy<ApiResponse<ulong[]>>(12).ExecuteAsync(async () =>
 			{
@@ -323,7 +323,7 @@ namespace Hayden
 
 					foreach (ulong nonExistingThreadId in archiveRequest.Data.Except(existingArchivedThreads.Select(x => x.threadId)))
 					{
-						threadQueue.Add((board, nonExistingThreadId));
+						threadQueue.Add(new ThreadPointer(board, nonExistingThreadId));
 					}
 
 					Program.Log($"Enqueued {threadQueue.Count} threads from board archive /{board}/");
@@ -352,11 +352,11 @@ namespace Hayden
 		/// <param name="lastDateTimeCheck">The time to compare the thread's updated time to.</param>
 		/// <param name="firstRun">True if this is the first cycle in the archival loop, otherwise false. Controls whether or not the database is called to find existing threads</param>
 		/// <returns>A list of thread IDs.</returns>
-		public async Task<IList<(string board, ulong threadNumber)>> GetBoardThreads(CancellationToken token, string board, DateTimeOffset lastDateTimeCheck, bool firstRun)
+		public async Task<IList<ThreadPointer>> GetBoardThreads(CancellationToken token, string board, DateTimeOffset lastDateTimeCheck, bool firstRun)
 		{
 			var cooldownTask = Task.Delay(ApiCooldownTimespan, token);
 
-			var threads = new List<(string board, ulong threadNumber)>();
+			var threads = new List<ThreadPointer>();
 
 			var pagesRequest = await NetworkPolicies.GenericRetryPolicy<ApiResponse<Page[]>>(12).ExecuteAsync(async () =>
 			{
@@ -400,7 +400,7 @@ namespace Hayden
 					{
 						if (thread.LastModified > lastCheckTimestamp)
 						{
-							threads.Add((board, thread.ThreadNumber));
+							threads.Add(new ThreadPointer(board, thread.ThreadNumber));
 						}
 					}
 
@@ -538,6 +538,22 @@ namespace Hayden
 			{
 				return ((DownloadUri != null ? DownloadUri.GetHashCode() : 0) * 397) ^ (DownloadPath != null ? DownloadPath.GetHashCode() : 0);
 			}
+		}
+	}
+
+	/// <summary>
+	/// A struct containing information about a specific thread.
+	/// </summary>
+	public struct ThreadPointer
+	{
+		public string Board { get; }
+
+		public ulong ThreadId { get; }
+
+		public ThreadPointer(string board, ulong threadId)
+		{
+			Board = board;
+			ThreadId = threadId;
 		}
 	}
 }
