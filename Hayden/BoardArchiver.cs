@@ -14,16 +14,28 @@ using Hayden.Proxy;
 
 namespace Hayden
 {
+	/// <summary>
+	/// Handles the core archival logic, independent of any API or consumer implementations.
+	/// </summary>
 	public class BoardArchiver
 	{
+		/// <summary>
+		/// Configuration for the Yotsuba API given by the constructor.
+		/// </summary>
 		public YotsubaConfig Config { get; }
 
 		protected IThreadConsumer ThreadConsumer { get; }
 		protected IStateStore StateStore { get; }
 		protected ProxyProvider ProxyProvider { get; }
 
+		/// <summary>
+		/// The minimum amount of time the archiver should wait before checking the boards for any thread updates.
+		/// </summary>
 		public TimeSpan BoardUpdateTimespan { get; set; }
 
+		/// <summary>
+		/// The minimum amount of time that should be waited in-between API calls.
+		/// </summary>
 		public TimeSpan ApiCooldownTimespan { get; set; }
 
 		public BoardArchiver(YotsubaConfig config, IThreadConsumer threadConsumer, IStateStore stateStore = null, ProxyProvider proxyProvider = null)
@@ -37,6 +49,10 @@ namespace Hayden
 			BoardUpdateTimespan = TimeSpan.FromSeconds(config.BoardDelay ?? 30);
 		}
 
+		/// <summary>
+		/// Performs the main archival loop.
+		/// </summary>
+		/// <param name="token">Token to safely cancel the execution.</param>
 		public async Task Execute(CancellationToken token)
 		{
 			bool firstRun = true;
@@ -57,110 +73,19 @@ namespace Hayden
 						if (!lastBoardCheckTimes.TryGetValue(board, out lastDateTimeCheck))
 							lastDateTimeCheck = DateTimeOffset.MinValue;
 
-					uint lastCheckTimestamp = firstRun
-						? 0
-						: Utility.GetGMTTimestamp(lastDateTimeCheck);
-
 					DateTimeOffset beforeCheckTime = DateTimeOffset.Now;
 
-					await Task.Delay(ApiCooldownTimespan);
+					var threads = await GetBoardThreads(token, board, lastDateTimeCheck, firstRun);
 
-
-					var pagesRequest = await NetworkPolicies.GenericRetryPolicy<(Page[] Pages, YotsubaResponseType ResponseType)>(12).ExecuteAsync(async () =>
-					{
-						Program.Log($"Requesting threads from board /{board}/...");
-						await using var boardClient = await ProxyProvider.RentHttpClient();
-						return await YotsubaApi.GetBoard(board, boardClient.Object, lastDateTimeCheck, token);
-					});
-
-					switch (pagesRequest.ResponseType)
-					{
-						case YotsubaResponseType.Ok:
-
-							int newCount = 0;
-
-							var threadList = pagesRequest.Pages.SelectMany(x => x.Threads).ToList();
-
-							if (firstRun)
-							{
-								var existingThreads = await ThreadConsumer.CheckExistingThreads(threadList.Select(x => x.ThreadNumber), board, false, true);
-
-								foreach (var existingThread in existingThreads)
-								{
-									var thread = threadList.First(x => x.ThreadNumber == existingThread.threadId);
-
-									if (thread.LastModified <= Utility.GetGMTTimestamp(existingThread.lastPostTime))
-									{
-										threadList.Remove(thread);
-									}
-								}
-							}
-
-							foreach (var thread in threadList)
-							{
-								if (thread.LastModified > lastCheckTimestamp)
-								{
-									lock (threadQueue)
-										threadQueue.Add((board, thread.ThreadNumber));
-									
-									newCount++;
-								}
-							}
-
-							Program.Log($"Enqueued {newCount} threads from board /{board}/ past timestamp {lastCheckTimestamp}");
-
-							break;
-
-						case YotsubaResponseType.NotModified:
-							break;
-
-						case YotsubaResponseType.NotFound:
-						default:
-							Program.Log($"Unable to index board /{board}/, is there a connection error?");
-							break;
-					}
-
+					lock (threadQueue)
+						threadQueue.AddRange(threads);
 
 					if (firstRun)
 					{
-						await Task.Delay(ApiCooldownTimespan);
+						var archivedThreads = await GetArchivedBoardThreads(token, board, lastDateTimeCheck);
 
-						var archiveRequest = await NetworkPolicies.GenericRetryPolicy<(ulong[] ThreadIds, YotsubaResponseType ResponseType)>(12).ExecuteAsync(async () =>
-						{
-							await using var boardClient = await ProxyProvider.RentHttpClient();
-							return await YotsubaApi.GetArchive(board, boardClient.Object, lastDateTimeCheck, token);
-						});
-
-						switch (archiveRequest.ResponseType)
-						{
-							case YotsubaResponseType.Ok:
-
-								var existingArchivedThreads = await ThreadConsumer.CheckExistingThreads(archiveRequest.ThreadIds, board, true, false);
-
-								Program.Log($"Found {existingArchivedThreads.Count} existing archived threads for board /{board}/");
-
-								int count = 0;
-
-								foreach (ulong nonExistingThreadId in archiveRequest.ThreadIds.Except(existingArchivedThreads.Select(x => x.threadId)))
-								{
-									lock (threadQueue)
-										threadQueue.Add((board, nonExistingThreadId));
-
-									count++;
-								}
-
-								Program.Log($"Enqueued {count} threads from board archive /{board}/");
-
-								break;
-
-							case YotsubaResponseType.NotModified:
-								break;
-
-							case YotsubaResponseType.NotFound:
-							default:
-								Program.Log($"Unable to index the archive of board /{board}/, is there a connection error?");
-								break;
-						}
+						lock (threadQueue)
+							threadQueue.AddRange(archivedThreads);
 					}
 
 					lock (lastBoardCheckTimes)
@@ -369,22 +294,158 @@ namespace Hayden
 			}
 		}
 
+		/// <summary>
+		/// Retrieves a list of threads that are present on the board's archive, but only ones updated after the specified time.
+		/// </summary>
+		/// <param name="token">Token to cancel the request.</param>
+		/// <param name="board">The board to retrieve threads from.</param>
+		/// <param name="lastDateTimeCheck">The time to compare the thread's updated time to.</param>
+		/// <returns>A list of thread IDs.</returns>
+		private async Task<IList<(string board, ulong threadNumber)>> GetArchivedBoardThreads(CancellationToken token, string board, DateTimeOffset lastDateTimeCheck)
+		{
+			var cooldownTask = Task.Delay(ApiCooldownTimespan, token);
+
+			var threadQueue = new List<(string board, ulong threadNumber)>();
+
+			var archiveRequest = await NetworkPolicies.GenericRetryPolicy<ApiResponse<ulong[]>>(12).ExecuteAsync(async () =>
+			{
+				await using var boardClient = await ProxyProvider.RentHttpClient();
+				return await YotsubaApi.GetArchive(board, boardClient.Object.Client, lastDateTimeCheck, token);
+			});
+
+			switch (archiveRequest.ResponseType)
+			{
+				case ResponseType.Ok:
+
+					var existingArchivedThreads = await ThreadConsumer.CheckExistingThreads(archiveRequest.Data, board, true, false);
+
+					Program.Log($"Found {existingArchivedThreads.Count} existing archived threads for board /{board}/");
+
+					foreach (ulong nonExistingThreadId in archiveRequest.Data.Except(existingArchivedThreads.Select(x => x.threadId)))
+					{
+						threadQueue.Add((board, nonExistingThreadId));
+					}
+
+					Program.Log($"Enqueued {threadQueue.Count} threads from board archive /{board}/");
+
+					break;
+
+				case ResponseType.NotModified:
+					break;
+
+				case ResponseType.NotFound:
+				default:
+					Program.Log($"Unable to index the archive of board /{board}/, is there a connection error?");
+					break;
+			}
+
+			await cooldownTask;
+
+			return threadQueue;
+		}
+
+		/// <summary>
+		/// Retrieves a list of threads that are present on the board, but only ones updated after the specified time.
+		/// </summary>
+		/// <param name="token">Token to cancel the request.</param>
+		/// <param name="board">The board to retrieve threads from.</param>
+		/// <param name="lastDateTimeCheck">The time to compare the thread's updated time to.</param>
+		/// <param name="firstRun">True if this is the first cycle in the archival loop, otherwise false. Controls whether or not the database is called to find existing threads</param>
+		/// <returns>A list of thread IDs.</returns>
+		public async Task<IList<(string board, ulong threadNumber)>> GetBoardThreads(CancellationToken token, string board, DateTimeOffset lastDateTimeCheck, bool firstRun)
+		{
+			var cooldownTask = Task.Delay(ApiCooldownTimespan, token);
+
+			var threads = new List<(string board, ulong threadNumber)>();
+
+			var pagesRequest = await NetworkPolicies.GenericRetryPolicy<ApiResponse<Page[]>>(12).ExecuteAsync(async () =>
+			{
+				Program.Log($"Requesting threads from board /{board}/...");
+				await using var boardClient = await ProxyProvider.RentHttpClient();
+				return await YotsubaApi.GetBoard(board,
+					boardClient.Object.Client,
+					lastDateTimeCheck,
+					token);
+			});
+
+			switch (pagesRequest.ResponseType)
+			{
+				case ResponseType.Ok:
+
+					var threadList = pagesRequest.Data.SelectMany(x => x.Threads).ToList();
+
+					if (firstRun)
+					{
+						var existingThreads = await ThreadConsumer.CheckExistingThreads(threadList.Select(x => x.ThreadNumber),
+							board,
+							false,
+							true);
+
+						foreach (var existingThread in existingThreads)
+						{
+							var thread = threadList.First(x => x.ThreadNumber == existingThread.threadId);
+
+							if (thread.LastModified <= Utility.GetGMTTimestamp(existingThread.lastPostTime))
+							{
+								threadList.Remove(thread);
+							}
+						}
+					}
+
+					uint lastCheckTimestamp = firstRun
+						? 0
+						: Utility.GetGMTTimestamp(lastDateTimeCheck);
+
+					foreach (var thread in threadList)
+					{
+						if (thread.LastModified > lastCheckTimestamp)
+						{
+							threads.Add((board, thread.ThreadNumber));
+						}
+					}
+
+					Program.Log($"Enqueued {threads.Count} threads from board /{board}/ past timestamp {lastCheckTimestamp}");
+
+					break;
+
+				case ResponseType.NotModified:
+					break;
+
+				case ResponseType.NotFound:
+				default:
+					Program.Log($"Unable to index board /{board}/, is there a connection error?");
+					break;
+			}
+
+			await cooldownTask;
+
+			return threads;
+		}
+
+		/// <summary>
+		/// Polls a thread, and passes it to the consumer if the thread has been detected as updated.
+		/// </summary>
+		/// <param name="token">The cancellation token associated with this request.</param>
+		/// <param name="board">The board of the thread.</param>
+		/// <param name="threadNumber">The post number of the thread to poll.</param>
+		/// <param name="client">The <see cref="HttpClientProxy"/> to use for the poll request.</param>
+		/// <returns></returns>
 		private async Task<(bool success, IList<QueuedImageDownload> imageDownloads)> ThreadUpdateTask(CancellationToken token, string board, ulong threadNumber, HttpClientProxy client)
 		{
 			try
 			{
 				Program.Log($"Polling thread /{board}/{threadNumber}");
 
-				var response = await YotsubaApi.GetThread(board, threadNumber, client, null, token);
+				var response = await YotsubaApi.GetThread(board, threadNumber, client.Client, null, token);
 
 				switch (response.ResponseType)
 				{
-					case YotsubaResponseType.Ok:
+					case ResponseType.Ok:
 						Program.Log($"Downloading changes from thread /{board}/{threadNumber}");
 
-						var images = await ThreadConsumer.ConsumeThread(response.Thread, board);
+						var images = await ThreadConsumer.ConsumeThread(response.Data, board);
 
-						if (response.Thread.OriginalPost.Archived == true)
+						if (response.Data.OriginalPost.Archived == true)
 						{
 							Program.Log($"Thread /{board}/{threadNumber} has been archived");
 
@@ -393,10 +454,10 @@ namespace Hayden
 
 						return (true, images);
 
-					case YotsubaResponseType.NotModified:
+					case ResponseType.NotModified:
 						return (true, new QueuedImageDownload[0]);
 
-					case YotsubaResponseType.NotFound:
+					case ResponseType.NotFound:
 						Program.Log($"Thread /{board}/{threadNumber} has been pruned or deleted");
 
 						await ThreadConsumer.ThreadUntracked(threadNumber, board, true);
@@ -414,6 +475,12 @@ namespace Hayden
 			}
 		}
 
+		/// <summary>
+		/// Creates a task to download an image to a specified path, using a specific HttpClient. Skips if the file already exists.
+		/// </summary>
+		/// <param name="imageUrl">The <see cref="Uri"/> of the image.</param>
+		/// <param name="downloadPath">The filepath to download the image to.</param>
+		/// <param name="httpClient">The client to use for the request.</param>
 		private async Task DownloadFileTask(Uri imageUrl, string downloadPath, HttpClient httpClient)
 		{
 			if (File.Exists(downloadPath))
@@ -422,10 +489,10 @@ namespace Hayden
 			Program.Log($"Downloading image {Path.GetFileName(downloadPath)}");
 
 			var request = new HttpRequestMessage(HttpMethod.Get, imageUrl);
+			using var response = await NetworkPolicies.HttpApiPolicy.ExecuteAsync(() => httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead));
 
-			using (var response = await NetworkPolicies.HttpApiPolicy.ExecuteAsync(() => httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead)))
-			using (var webStream = await response.Content.ReadAsStreamAsync())
-			using (var fileStream = new FileStream(downloadPath + ".part", FileMode.Create))
+			await using (var webStream = await response.Content.ReadAsStreamAsync())
+			await using (var fileStream = new FileStream(downloadPath + ".part", FileMode.Create))
 			{
 				await webStream.CopyToAsync(fileStream);
 			}

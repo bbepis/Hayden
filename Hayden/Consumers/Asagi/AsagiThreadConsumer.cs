@@ -16,6 +16,9 @@ using Thread = Hayden.Models.Thread;
 
 namespace Hayden.Consumers
 {
+	/// <summary>
+	/// A thread consumer for the Asagi MySQL backend.
+	/// </summary>
 	public class AsagiThreadConsumer : IThreadConsumer
 	{
 		private AsagiConfig Config { get; }
@@ -24,6 +27,8 @@ namespace Hayden.Consumers
 
 		private MySqlConnectionPool ConnectionPool { get; }
 
+		/// <param name="config">The object to load configuration values from.</param>
+		/// <param name="boards">The boards that will be archived.</param>
 		public AsagiThreadConsumer(AsagiConfig config, string[] boards)
 		{
 			Config = config;
@@ -43,6 +48,7 @@ namespace Hayden.Consumers
 
 		private ConcurrentDictionary<ThreadHashObject, SortedList<ulong, int>> ThreadHashes { get; } = new ConcurrentDictionary<ThreadHashObject, SortedList<ulong, int>>();
 
+		/// <inheritdoc/>
 		public async Task<IList<QueuedImageDownload>> ConsumeThread(Thread thread, string board)
 		{
 			var hashObject = new ThreadHashObject(board, thread.OriginalPost.PostNumber);
@@ -101,9 +107,9 @@ namespace Hayden.Consumers
 			if (!ThreadHashes.TryGetValue(hashObject, out var threadHashes))
 			{
 				// Rebuild hashes from database, if they exist
-				
+
 				var hashes = await GetHashesOfThread(hashObject.ThreadId, board);
-				
+
 				threadHashes = new SortedList<ulong, int>();
 
 				foreach (var hashPair in hashes)
@@ -209,6 +215,7 @@ namespace Hayden.Consumers
 			return imageDownloads;
 		}
 
+		/// <inheritdoc/>
 		public async Task ThreadUntracked(ulong threadId, string board, bool deleted)
 		{
 			await SetUntracked(threadId, board, deleted);
@@ -216,6 +223,14 @@ namespace Hayden.Consumers
 			ThreadHashes.TryRemove(new ThreadHashObject(board, threadId), out _);
 		}
 
+		/// <summary>
+		/// Calculates a 32bit hash for a specific 4chan post, used for tracking post content changes.
+		/// </summary>
+		/// <param name="sticky">Post is a sticky</param>
+		/// <param name="closed">Post is closed (archived or pruned)</param>
+		/// <param name="comment">The text attached to a post</param>
+		/// <param name="originalFilename">The filename of the image attached (null if no image)</param>
+		/// <returns>Hash of the post.</returns>
 		public static int CalculateAsagiHash(bool? sticky, bool? closed, string comment, string originalFilename)
 		{
 			int hashCode = Utility.FNV1aHash32(comment ?? "u\0001");
@@ -225,6 +240,12 @@ namespace Hayden.Consumers
 			return hashCode;
 		}
 
+		/// <summary>
+		/// Calculates a 32bit hash for a specific 4chan post, used for tracking post content changes.
+		/// </summary>
+		/// <param name="post">The post object.</param>
+		/// <param name="cleanComment">True to clean the comment and convert it to BBCode, false to use the text as-is.</param>
+		/// <returns>Hash of the post.</returns>
 		public static int CalculateAsagiHash(Post post, bool cleanComment)
 		{
 			string comment = cleanComment ? CleanComment(post.Comment) : post.Comment;
@@ -252,6 +273,12 @@ namespace Hayden.Consumers
 		private static readonly Regex oldSpoilerTagRegex = new Regex(@"<span class=""spoiler""[^>]*>(.*?)<\/span>", RegexOptions.Compiled);
 		private static readonly Regex shiftjisTagRegex = new Regex(@"<span class=\""sjis\"">(.*?)<\/span>", RegexOptions.Compiled);
 		private static readonly Regex newLineRegex = new Regex(@"<br\s*\/?>", RegexOptions.Compiled);
+
+		/// <summary>
+		/// Cleans a comment, and converts it to it's relevant BBCode used in FoolFuuka.
+		/// </summary>
+		/// <param name="inputComment">The raw comment to clean.</param>
+		/// <returns>A cleaned comment.</returns>
 		public static string CleanComment(string inputComment)
 		{
 			if (string.IsNullOrWhiteSpace(inputComment))
@@ -322,26 +349,34 @@ namespace Hayden.Consumers
 
 		private static readonly string CreateTablesQuery = Utility.GetEmbeddedText("Hayden.Consumers.Asagi.AsagiSchema.sql");
 
+		/// <summary>
+		/// Runs a SQL query that creates the required tables for the board. Does nothing if they already exist.
+		/// </summary>
+		/// <param name="board">The board to create tables for.</param>
 		private async Task CreateTables(string board)
 		{
-			using (var rentedConnection = await ConnectionPool.RentConnectionAsync())
+			await using var rentedConnection = await ConnectionPool.RentConnectionAsync();
+
+			DataTable tables = await rentedConnection.Object.CreateQuery($"SHOW TABLES LIKE '{board}\\_%';").ExecuteTableAsync();
+
+			if (tables.Rows.Count == 0)
 			{
-				DataTable tables = await rentedConnection.Object.CreateQuery($"SHOW TABLES LIKE '{board}\\_%';").ExecuteTableAsync();
+				Program.Log($"[Asagi] Creating tables for board /{board}/");
 
-				if (tables.Rows.Count == 0)
+				string formattedQuery = string.Format(CreateTablesQuery, board);
+
+				foreach (var splitString in formattedQuery.Split('$'))
 				{
-					Program.Log($"[Asagi] Creating tables for board /{board}/");
-
-					string formattedQuery = string.Format(CreateTablesQuery, board);
-
-					foreach (var splitString in formattedQuery.Split('$'))
-					{
-						await rentedConnection.Object.CreateQuery(splitString).ExecuteNonQueryAsync();
-					}
+					await rentedConnection.Object.CreateQuery(splitString).ExecuteNonQueryAsync();
 				}
 			}
 		}
 
+		/// <summary>
+		/// Inserts a collection of posts into their relevant table on the database.
+		/// </summary>
+		/// <param name="posts">The posts to insert.</param>
+		/// <param name="board">The board of the posts.</param>
 		public async Task InsertPosts(ICollection<Post> posts, string board)
 		{
 			string insertQuerySql = $"INSERT INTO `{board}`"
@@ -352,57 +387,56 @@ namespace Hayden.Consumers
 									+ "      @media_filename, @media_w, @media_h, @media_size, @media_hash, @media_orig, @spoiler, @deleted,"
 									+ "      @capcode, @email, @name, @trip, @title, @comment, NULL, @sticky, @locked, @poster_hash, @poster_country, @exif);";
 
-			using (var rentedConnection = await ConnectionPool.RentConnectionAsync())
-			using (var chainedQuery = rentedConnection.Object.CreateQuery(insertQuerySql, true))
+			await using var rentedConnection = await ConnectionPool.RentConnectionAsync();
+
+			using var chainedQuery = rentedConnection.Object.CreateQuery(insertQuerySql, true);
+
+			var bannedPosts = await rentedConnection.Object
+													.CreateQuery($"SELECT num FROM `{board}` WHERE num NOT IN ({string.Join(',', posts.Select(post => post.PostNumber.ToString()))})")
+													.ExecuteScalarListAsync<uint>();
+
+			foreach (var post in posts)
 			{
-				var bannedPosts = await rentedConnection.Object
-														.CreateQuery($"SELECT num FROM `{board}` WHERE num NOT IN ({string.Join(',', posts.Select(post => post.PostNumber.ToString()))})")
-														.ExecuteScalarListAsync<uint>();
-				
-				foreach (var post in posts)
-				{
-					if (bannedPosts.Contains((uint)post.PostNumber))
-						continue;
+				if (bannedPosts.Contains((uint)post.PostNumber))
+					continue;
 
-					string capcode = post.Capcode?.Substring(0, 1).ToUpperInvariant() ?? "N";
-					if (post.Capcode?.Equals("Manager", StringComparison.OrdinalIgnoreCase) == true)
-						capcode = "G";
+				string capcode = post.Capcode?.Substring(0, 1).ToUpperInvariant() ?? "N";
+				if (post.Capcode?.Equals("Manager", StringComparison.OrdinalIgnoreCase) == true)
+					capcode = "G";
 
-					string posterTrip = post.Trip;
-					if (post.Trip?.Equals("Developer", StringComparison.OrdinalIgnoreCase) == true)
-						posterTrip = "Dev";
+				string posterTrip = post.Trip;
+				if (post.Trip?.Equals("Developer", StringComparison.OrdinalIgnoreCase) == true)
+					posterTrip = "Dev";
 
-					await chainedQuery
-						.SetParam("@num", post.PostNumber)
-						.SetParam("@thread_num", post.ReplyPostNumber != 0 ? post.ReplyPostNumber : post.PostNumber)
-						.SetParam("@op", post.ReplyPostNumber == 0 ? 1 : 0)
-						.SetParam("@timestamp", post.UnixTimestamp)
-						.SetParam("@timestamp_expired", 0)
-						.SetParam("@preview_orig", post.TimestampedFilename.HasValue ? $"{post.TimestampedFilename}s.jpg" : null)
-						.SetParam("@preview_w", post.ThumbnailWidth ?? 0)
-						.SetParam("@preview_h", post.ThumbnailHeight ?? 0)
-						.SetParam("@media_filename", post.OriginalFilenameFull)
-						.SetParam("@media_w", post.ImageWidth ?? 0)
-						.SetParam("@media_h", post.ImageHeight ?? 0)
-						.SetParam("@media_size", post.FileSize ?? 0)
-						.SetParam("@media_hash", post.FileMd5)
-						.SetParam("@media_orig", post.TimestampedFilenameFull)
-						.SetParam("@spoiler", post.SpoilerImage == true ? 1 : 0)
-						.SetParam("@deleted", 0)
-						.SetParam("@capcode", capcode)
-						.SetParam("@email", null)
-						.SetParam("@name", HttpUtility.HtmlDecode(post.Name)?.Trim())
-						.SetParam("@trip", posterTrip)
-						.SetParam("@title", HttpUtility.HtmlDecode(post.Subject)?.Trim())
-						.SetParam("@comment", CleanComment(post.Comment))
-						.SetParam("@sticky", post.Sticky == true ? 1 : 0)
-						.SetParam("@locked", post.Closed == true ? 1 : 0)
-						.SetParam("@poster_hash", post.PosterID == "Developer" ? "Dev" : post.PosterID)
-						.SetParam("@poster_country", post.CountryCode)
-						.SetParam("@exif", GenerateExifColumnData(post))
-						.ExecuteNonQueryAsync();
-				}
-
+				await chainedQuery
+					  .SetParam("@num", post.PostNumber)
+					  .SetParam("@thread_num", post.ReplyPostNumber != 0 ? post.ReplyPostNumber : post.PostNumber)
+					  .SetParam("@op", post.ReplyPostNumber == 0 ? 1 : 0)
+					  .SetParam("@timestamp", post.UnixTimestamp)
+					  .SetParam("@timestamp_expired", 0)
+					  .SetParam("@preview_orig", post.TimestampedFilename.HasValue ? $"{post.TimestampedFilename}s.jpg" : null)
+					  .SetParam("@preview_w", post.ThumbnailWidth ?? 0)
+					  .SetParam("@preview_h", post.ThumbnailHeight ?? 0)
+					  .SetParam("@media_filename", post.OriginalFilenameFull)
+					  .SetParam("@media_w", post.ImageWidth ?? 0)
+					  .SetParam("@media_h", post.ImageHeight ?? 0)
+					  .SetParam("@media_size", post.FileSize ?? 0)
+					  .SetParam("@media_hash", post.FileMd5)
+					  .SetParam("@media_orig", post.TimestampedFilenameFull)
+					  .SetParam("@spoiler", post.SpoilerImage == true ? 1 : 0)
+					  .SetParam("@deleted", 0)
+					  .SetParam("@capcode", capcode)
+					  .SetParam("@email", null)
+					  .SetParam("@name", HttpUtility.HtmlDecode(post.Name)?.Trim())
+					  .SetParam("@trip", posterTrip)
+					  .SetParam("@title", HttpUtility.HtmlDecode(post.Subject)?.Trim())
+					  .SetParam("@comment", CleanComment(post.Comment))
+					  .SetParam("@sticky", post.Sticky == true ? 1 : 0)
+					  .SetParam("@locked", post.Closed == true ? 1 : 0)
+					  .SetParam("@poster_hash", post.PosterID == "Developer" ? "Dev" : post.PosterID)
+					  .SetParam("@poster_country", post.CountryCode)
+					  .SetParam("@exif", GenerateExifColumnData(post))
+					  .ExecuteNonQueryAsync();
 			}
 		}
 
@@ -410,6 +444,10 @@ namespace Hayden.Consumers
 		private static readonly Regex ExifRegex = new Regex(@"<table \s class=""exif""[^>]*>(.*)<\/table>", RegexOptions.IgnorePatternWhitespace | RegexOptions.Singleline | RegexOptions.Compiled);
 		private static readonly Regex ExifDataRegex = new Regex(@"<tr><td>(.*?)<\/td><td>(.*?)</td><\/tr>", RegexOptions.IgnorePatternWhitespace | RegexOptions.Singleline | RegexOptions.Compiled);
 
+		/// <summary>
+		/// Generates the string for the Exif column in an Asagi schema database, from a post.
+		/// </summary>
+		/// <param name="post">The post to generate the string from.</param>
 		private static string GenerateExifColumnData(Post post)
 		{
 			var exifJson = new JObject();
@@ -457,116 +495,139 @@ namespace Hayden.Consumers
 			return exifJson.ToString(Formatting.None);
 		}
 
+		/// <summary>
+		/// Updates an existing post in the database.
+		/// </summary>
+		/// <param name="post">The post to update.</param>
+		/// <param name="board">The board that the post belongs to.</param>
+		/// <param name="deleted">True if the post was explicitly deleted, false if it was not.</param>
 		public async Task UpdatePost(Post post, string board, bool deleted)
 		{
-			using (var rentedConnection = await ConnectionPool.RentConnectionAsync())
-			{
-				string sql = $"UPDATE `{board}` SET "
-								+ "comment = @comment, "
-								+ "deleted = @deleted, "
-								+ "media_filename = COALESCE(@media_filename, media_filename), "
-								+ "sticky = @sticky, "
-								+ "locked = @locked OR locked "
-							 + "WHERE num = @no "
-								+ "AND subnum = @subnum";
+			await using var rentedConnection = await ConnectionPool.RentConnectionAsync();
 
-				await rentedConnection.Object.CreateQuery(sql)
-									  .SetParam("@comment", CleanComment(post.Comment))
-									  .SetParam("@deleted", deleted ? 1 : 0)
-									  .SetParam("@media_filename", post.OriginalFilenameFull)
-									  .SetParam("@sticky", post.Sticky == true ? 1 : 0)
-									  .SetParam("@locked", post.Archived != true && post.Closed == true ? 1 : 0)
-									  .SetParam("@no", post.PostNumber)
-									  .SetParam("@subnum", 0)
-									  .ExecuteNonQueryAsync();
-			}
+			string sql = $"UPDATE `{board}` SET "
+						 + "comment = @comment, "
+						 + "deleted = @deleted, "
+						 + "media_filename = COALESCE(@media_filename, media_filename), "
+						 + "sticky = @sticky, "
+						 + "locked = @locked OR locked "
+						 + "WHERE num = @no "
+						 + "AND subnum = @subnum";
+
+			await rentedConnection.Object.CreateQuery(sql)
+								  .SetParam("@comment", CleanComment(post.Comment))
+								  .SetParam("@deleted", deleted ? 1 : 0)
+								  .SetParam("@media_filename", post.OriginalFilenameFull)
+								  .SetParam("@sticky", post.Sticky == true ? 1 : 0)
+								  .SetParam("@locked", post.Archived != true && post.Closed == true ? 1 : 0)
+								  .SetParam("@no", post.PostNumber)
+								  .SetParam("@subnum", 0)
+								  .ExecuteNonQueryAsync();
 		}
 
+		/// <summary>
+		/// Updates the exif column of a post in the database. Generally only done for the OP post, when the thread has been updated.
+		/// </summary>
+		/// <param name="post">The post to update.</param>
+		/// <param name="board">The board of the post.</param>
 		public async Task UpdatePostExif(Post post, string board)
 		{
-			using (var rentedConnection = await ConnectionPool.RentConnectionAsync())
-			{
-				string sql = $"UPDATE `{board}` SET "
-								+ "exif = @exif "
-							 + "WHERE num = @post_no "
-								+ "AND subnum = 0";
+			await using var rentedConnection = await ConnectionPool.RentConnectionAsync();
 
-				await rentedConnection.Object.CreateQuery(sql)
-									  .SetParam("@exif", GenerateExifColumnData(post))
-									  .SetParam("@post_no", post.PostNumber)
-									  .ExecuteNonQueryAsync();
-			}
+			string sql = $"UPDATE `{board}` SET "
+						 + "exif = @exif "
+						 + "WHERE num = @post_no "
+						 + "AND subnum = 0";
+
+			await rentedConnection.Object.CreateQuery(sql)
+								  .SetParam("@exif", GenerateExifColumnData(post))
+								  .SetParam("@post_no", post.PostNumber)
+								  .ExecuteNonQueryAsync();
 		}
 
+		/// <summary>
+		/// Sets a post tracking status in the database.
+		/// </summary>
+		/// <param name="postNumber">The number of the post.</param>
+		/// <param name="board">The board that the post belongs to.</param>
+		/// <param name="deleted">True if the post was explicitly deleted, false if not.</param>
 		public async Task SetUntracked(ulong postNumber, string board, bool deleted)
 		{
 			uint currentTimestamp = Utility.GetNewYorkTimestamp(DateTimeOffset.Now);
 
-			using (var rentedConnection = await ConnectionPool.RentConnectionAsync())
-			{
-				await rentedConnection.Object.CreateQuery($"UPDATE `{board}` SET deleted = @deleted, timestamp_expired = @timestamp_expired WHERE num = @post_no AND subnum = 0")
-									  .SetParam("@timestamp_expired", currentTimestamp)
-									  .SetParam("@post_no", postNumber)
-									  .SetParam("@deleted", deleted ? 1 : 0)
-									  .ExecuteNonQueryAsync();
-			}
+			await using var rentedConnection = await ConnectionPool.RentConnectionAsync();
+
+			await rentedConnection.Object.CreateQuery($"UPDATE `{board}` SET deleted = @deleted, timestamp_expired = @timestamp_expired WHERE num = @post_no AND subnum = 0")
+								  .SetParam("@timestamp_expired", currentTimestamp)
+								  .SetParam("@post_no", postNumber)
+								  .SetParam("@deleted", deleted ? 1 : 0)
+								  .ExecuteNonQueryAsync();
 		}
 
+		/// <summary>
+		/// Returns a list of hashes generated by <see cref="CalculateAsagiHash(Post,bool)"/>, for every post in a specified thread.
+		/// </summary>
+		/// <param name="threadNumber">The post number of the thread.</param>
+		/// <param name="board">The board of the thread.</param>
 		public async Task<IEnumerable<KeyValuePair<ulong, int>>> GetHashesOfThread(ulong threadNumber, string board)
 		{
 			var threadHashes = new List<KeyValuePair<ulong, int>>();
 
-			using (var rentedConnection = await ConnectionPool.RentConnectionAsync())
+			await using var rentedConnection = await ConnectionPool.RentConnectionAsync();
+
+			var table = await rentedConnection.Object.CreateQuery($"SELECT num, locked, sticky, comment, media_filename FROM `{board}` WHERE thread_num = @thread_no")
+											  .SetParam("@thread_no", (uint)threadNumber)
+											  .ExecuteTableAsync();
+
+			foreach (DataRow row in table.Rows)
 			{
-				var table = await rentedConnection.Object.CreateQuery($"SELECT num, locked, sticky, comment, media_filename FROM `{board}` WHERE thread_num = @thread_no")
-												  .SetParam("@thread_no", (uint)threadNumber)
-												  .ExecuteTableAsync();
+				uint postNumber = row.GetValue<uint>("num");
+				bool? closed = row.GetValue<bool?>("locked");
+				bool? sticky = row.GetValue<bool?>("sticky");
+				string comment = row.GetValue<string>("comment");
 
-				foreach (DataRow row in table.Rows)
-				{
-					uint postNumber = row.GetValue<uint>("num");
-					bool? closed = row.GetValue<bool?>("locked");
-					bool? sticky = row.GetValue<bool?>("sticky");
-					string comment = row.GetValue<string>("comment");
+				string originalFilename = row.GetValue<string>("media_filename")
+											 ?.Substring(0, ((string)row["media_filename"]).LastIndexOf('.'));
 
-					string originalFilename = row.GetValue<string>("media_filename")
-												 ?.Substring(0, ((string)row["media_filename"]).LastIndexOf('.'));
-
-					threadHashes.Add(new KeyValuePair<ulong, int>(postNumber, CalculateAsagiHash(sticky, closed, comment, originalFilename)));
-				}
+				threadHashes.Add(new KeyValuePair<ulong, int>(postNumber, CalculateAsagiHash(sticky, closed, comment, originalFilename)));
 			}
 
 			return threadHashes;
 		}
 
+		/// <summary>
+		/// Retrieves media info for a specific image hash from the database.
+		/// </summary>
+		/// <param name="md5Hash">A base64 encoded string of the MD5 hash.</param>
+		/// <param name="board">The board that the media belongs to.</param>
 		private async Task<MediaInfo> GetMediaInfo(string md5Hash, string board)
 		{
-			using (var rentedConnection = await ConnectionPool.RentConnectionAsync())
-			{
-				var chainedQuery = rentedConnection.Object.CreateQuery($"SELECT media, preview_op, preview_reply, banned FROM `{board}_images` WHERE `media_hash` = @media_hash");
+			await using var rentedConnection = await ConnectionPool.RentConnectionAsync();
 
-				var table = await chainedQuery.SetParam("@media_hash", md5Hash)
-											  .ExecuteTableAsync();
+			var chainedQuery = rentedConnection.Object.CreateQuery($"SELECT media, preview_op, preview_reply, banned FROM `{board}_images` WHERE `media_hash` = @media_hash");
 
-				if (table.Rows.Count == 0)
-					//throw new DataException("Expecting image data in database to be created by trigger");
-					return null;
+			var table = await chainedQuery.SetParam("@media_hash", md5Hash)
+										  .ExecuteTableAsync();
 
-				var row = table.Rows[0];
+			if (table.Rows.Count == 0)
+				//throw new DataException("Expecting image data in database to be created by trigger");
+				return null;
 
-				return new MediaInfo(row.GetValue<string>("media"),
-					row.GetValue<string>("preview_op"),
-					row.GetValue<string>("preview_reply"),
-					//row.GetValue<bool>("banned"));
-					row.GetValue<ushort>("banned") > 0); // Why is this column SMALLINT and not TINYINT
-			}
+			var row = table.Rows[0];
+
+			return new MediaInfo(row.GetValue<string>("media"),
+				row.GetValue<string>("preview_op"),
+				row.GetValue<string>("preview_reply"),
+				//row.GetValue<bool>("banned"));
+				row.GetValue<ushort>("banned") > 0); // Why is this column SMALLINT and not TINYINT
 		}
 
+		/// <inheritdoc/>
 		public async Task<ICollection<(ulong threadId, DateTimeOffset lastPostTime)>> CheckExistingThreads(IEnumerable<ulong> threadIdsToCheck, string board, bool archivedOnly, bool getTimestamps = true)
 		{
 			int archivedInt = archivedOnly ? 1 : 0;
 
-			using var rentedConnection = await ConnectionPool.RentConnectionAsync();
+			await using var rentedConnection = await ConnectionPool.RentConnectionAsync();
 
 			string query;
 
@@ -612,11 +673,17 @@ namespace Hayden.Consumers
 
 		#endregion
 
+		/// <summary>
+		/// Disposes the object.
+		/// </summary>
 		public void Dispose()
 		{
 			ConnectionPool.Dispose();
 		}
 
+		/// <summary>
+		/// A struct containing information about a specific thread.
+		/// </summary>
 		private struct ThreadHashObject
 		{
 			public string Board { get; }
@@ -630,11 +697,31 @@ namespace Hayden.Consumers
 			}
 		}
 
+		/// <summary>
+		/// Information relating to a single media object tracked in the database.
+		/// </summary>
 		private class MediaInfo
 		{
+			/// <summary>
+			/// The timestamped filename of the media.
+			/// </summary>
 			public string MediaFilename { get; set; }
+
+			/// <summary>
+			/// True if the media should be forbidden from downloading, false if otherwise.
+			/// </summary>
 			public bool Banned { get; set; }
+
+			// These two properties are designed weirdly. They're the same thing, but only one is used depending on whether the post is the OP or not.
+
+			/// <summary>
+			/// The preview file filename. Only used when the post that the media is attached to is an OP post
+			/// </summary>
 			public string PreviewOpFilename { get; set; }
+
+			/// <summary>
+			/// The preview file filename. Only used when the post that the media is attached to is a non-OP post
+			/// </summary>
 			public string PreviewReplyFilename { get; set; }
 
 			public MediaInfo(string mediaFilename, string previewOpFilename, string previewReplyFilename, bool banned)

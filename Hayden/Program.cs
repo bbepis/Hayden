@@ -96,6 +96,10 @@ namespace Hayden
 				Console.WriteLine($"[{DateTime.Now:G}] {content}");
 		}
 
+		/// <summary>
+		/// Creates a task that will complete when it receives a SIGINT, SIGTERM or SIGHUP signal.
+		/// </summary>
+		/// <returns></returns>
 		private static Task WaitForUnixKillSignal()
 		{
 			var sigIntHandle = new UnixSignal(Signum.SIGINT);
@@ -118,7 +122,11 @@ namespace Hayden
 			}, TaskCreationOptions.LongRunning);
 		}
 
-		public static Task WaitForTerminateAsync()
+		/// <summary>
+		/// Creates a task that will complete when Hayden has been signaled to terminate.
+		/// </summary>
+		/// <returns></returns>
+		private static Task WaitForTerminateAsync()
 		{
 			Task unixKillSignalTask = null;
 
@@ -132,6 +140,9 @@ namespace Hayden
 
 			if (!Console.IsInputRedirected)
 			{
+				// Create a task that will return if Q or Ctrl-C is pressed in the console.
+				// This code breaks if the console is redirected
+
 				consoleWaitTask = Task.Factory.StartNew(async () =>
 				{
 					while (true)
@@ -150,6 +161,8 @@ namespace Hayden
 					}
 				}, TaskCreationOptions.LongRunning).Unwrap();
 			}
+
+			// Return when either task completes
 
 			var taskArray = new[] { unixKillSignalTask, consoleWaitTask ?? new TaskCompletionSource<object>().Task };
 			return Task.WhenAny(taskArray.Where(x => x != null));

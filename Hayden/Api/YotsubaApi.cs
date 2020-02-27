@@ -6,88 +6,100 @@ using System.Threading;
 using System.Threading.Tasks;
 using Hayden.Api;
 using Hayden.Models;
-using Hayden.Proxy;
 using Newtonsoft.Json;
 using Thread = Hayden.Models.Thread;
 
 namespace Hayden
 {
-	public enum YotsubaResponseType
-	{
-		Ok,
-		NotModified,
-		NotFound
-	}
-
+	/// <summary>
+	/// Class that handles requests to the 4chan API.
+	/// </summary>
 	public static class YotsubaApi
 	{
+		/// <summary>
+		/// Creates the base HTTP request used by 4chan API calls.
+		/// </summary>
+		/// <param name="uri">The uri of the request.</param>
+		/// <param name="modifiedSince">The value to use in the If-Modified-Since header.</param>
+		/// <returns></returns>
 		private static HttpRequestMessage CreateRequest(Uri uri, DateTimeOffset? modifiedSince)
 		{
 			var request = new HttpRequestMessage(HttpMethod.Get, uri);
 			request.Headers.IfModifiedSince = modifiedSince;
+
+			// 4chan API requires this as part of CORS
 			request.Headers.Add("Origin", "https://boards.4chan.org");
 
 			return request;
 		}
 
-		public static Task<(Thread Thread, YotsubaResponseType ResponseType)> GetThread(string board, ulong threadNumber, HttpClientProxy client, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default)
+		/// <summary>
+		/// Retrieves a thread and its posts from the 4chan API.
+		/// </summary>
+		/// <param name="board">The board of the thread.</param>
+		/// <param name="threadNumber">The post number of the thread.</param>
+		/// <param name="client">The <see cref="HttpClient"/> to make this request with.</param>
+		/// <param name="modifiedSince">The value to use in the If-Modified-Since header. Returns NotModified if the thread has not been updated since this time.</param>
+		/// <param name="cancellationToken">The cancellation token to use with this request.</param>
+		public static Task<ApiResponse<Thread>> GetThread(string board, ulong threadNumber, HttpClient client, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default)
 		{
 			return MakeYotsubaApiCall<Thread>(new Uri($"https://a.4cdn.org/{board}/thread/{threadNumber}.json"), client, modifiedSince, cancellationToken);
 		}
 
-		public static Task<(Page[] Pages, YotsubaResponseType ResponseType)> GetBoard(string board, HttpClientProxy client, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default)
+		/// <summary>
+		/// Retrieves a list of a board's threads from the 4chan API.
+		/// </summary>
+		/// <param name="board">The board of the thread.</param>
+		/// <param name="client">The <see cref="HttpClient"/> to make this request with.</param>
+		/// <param name="modifiedSince">The value to use in the If-Modified-Since header. Returns NotModified if the thread has not been updated since this time.</param>
+		/// <param name="cancellationToken">The cancellation token to use with this request.</param>
+		public static Task<ApiResponse<Page[]>> GetBoard(string board, HttpClient client, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default)
 		{
 			return MakeYotsubaApiCall<Page[]>(new Uri($"https://a.4cdn.org/{board}/threads.json"), client, modifiedSince, cancellationToken);
 		}
 
-		public static Task<(ulong[] ThreadIds, YotsubaResponseType ResponseType)> GetArchive(string board, HttpClientProxy client, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default)
+		/// <summary>
+		/// Retrieves a list of a board's archive's threads from the 4chan API.
+		/// </summary>
+		/// <param name="board">The board of the thread.</param>
+		/// <param name="client">The <see cref="HttpClient"/> to make this request with.</param>
+		/// <param name="modifiedSince">The value to use in the If-Modified-Since header. Returns NotModified if the thread has not been updated since this time.</param>
+		/// <param name="cancellationToken">The cancellation token to use with this request.</param>
+		public static Task<ApiResponse<ulong[]>> GetArchive(string board, HttpClient client, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default)
 		{
 			return MakeYotsubaApiCall<ulong[]>(new Uri($"https://a.4cdn.org/{board}/archive.json"), client, modifiedSince, cancellationToken);
 		}
 
-		private static async Task<HttpResponseMessage> DoCall(Uri uri, HttpClientProxy client, DateTimeOffset? modifiedSince, CancellationToken cancellationToken)
+		private static async Task<HttpResponseMessage> DoCall(Uri uri, HttpClient client, DateTimeOffset? modifiedSince, CancellationToken cancellationToken)
 		{
-			using (var request = CreateRequest(uri, modifiedSince))
-			{
-				return await client.Client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-			}
+			using var request = CreateRequest(uri, modifiedSince);
+
+			return await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
 		}
 
+		// For performance, we keep a single static instance of a JsonSerializer object instead of recreating it multiple times.
 		private static readonly JsonSerializer jsonSerializer = JsonSerializer.Create();
-		private static async Task<(T, YotsubaResponseType)> MakeYotsubaApiCall<T>(Uri uri, HttpClientProxy client, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default)
+
+		private static async Task<ApiResponse<T>> MakeYotsubaApiCall<T>(Uri uri, HttpClient client, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default)
 		{
-			HttpResponseMessage response;
+			using var response = await NetworkPolicies.HttpApiPolicy.ExecuteAsync(() => DoCall(uri, client, modifiedSince, cancellationToken));
 
-			try
-			{
-				response = await NetworkPolicies.HttpApiPolicy.ExecuteAsync(() => DoCall(uri, client, modifiedSince, cancellationToken));
-			}
-			catch
-			{
-				Program.Log($"Exception: Network error with proxy {client.Name}");
-				throw;
-			}
+			if (response.StatusCode == HttpStatusCode.NotModified)
+				return new ApiResponse<T>(ResponseType.NotModified, default);
 
-			using (response)
-			{
-				if (response.StatusCode == HttpStatusCode.NotModified)
-					return (default, YotsubaResponseType.NotModified);
+			if (response.StatusCode == HttpStatusCode.NotFound)
+				return new ApiResponse<T>(ResponseType.NotFound, default);
 
-				if (response.StatusCode == HttpStatusCode.NotFound)
-					return (default, YotsubaResponseType.NotFound);
+			if (!response.IsSuccessStatusCode)
+				throw new WebException($"Received an error code: {response.StatusCode}");
 
-				if (!response.IsSuccessStatusCode)
-					throw new WebException($"Received an error code: {response.StatusCode}");
-				
-				using (var responseStream = await response.Content.ReadAsStreamAsync())
-				using (StreamReader streamReader = new StreamReader(responseStream))
-				using (JsonReader reader = new JsonTextReader(streamReader))
-				{
-					var obj = jsonSerializer.Deserialize<T>(reader);
+			await using var responseStream = await response.Content.ReadAsStreamAsync();
+			using StreamReader streamReader = new StreamReader(responseStream);
+			using JsonReader reader = new JsonTextReader(streamReader);
 
-					return (obj, YotsubaResponseType.Ok);
-				}
-			}
+			var obj = jsonSerializer.Deserialize<T>(reader);
+
+			return new ApiResponse<T>(ResponseType.Ok, obj);
 		}
 	}
 }

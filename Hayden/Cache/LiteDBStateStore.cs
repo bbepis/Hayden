@@ -6,6 +6,9 @@ using LiteDB;
 
 namespace Hayden.Cache
 {
+	/// <summary>
+	/// A state storage implementation using LiteDb.
+	/// </summary>
 	public class LiteDbStateStore : IStateStore
 	{
 		protected string FilePath { get; set; }
@@ -29,6 +32,7 @@ namespace Hayden.Cache
 			QueuedImageDownloads = Database.GetCollection<QueuedImageDownload>("QueuedImageDownloads");
 		}
 
+		/// <inheritdoc/>
 		public async Task WriteDownloadQueue(IList<QueuedImageDownload> imageDownloads)
 		{
 			List<QueuedImageDownload> downloads = QueuedImageDownloads.FindAll().ToList();
@@ -39,6 +43,7 @@ namespace Hayden.Cache
 				QueuedImageDownloads.Delete(removedItem.DownloadPath);
 		}
 
+		/// <inheritdoc/>
 		public async Task<IList<QueuedImageDownload>> GetDownloadQueue()
 		{
 			return QueuedImageDownloads.FindAll().ToArray();

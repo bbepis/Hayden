@@ -4,6 +4,9 @@ using Newtonsoft.Json;
 
 namespace Hayden
 {
+	/// <summary>
+	/// A <see cref="JsonConverter"/> for converting 4chan API results from integers into boolean values, and vice-versa.
+	/// </summary>
 	public class BoolIntConverter : JsonConverter<bool>
 	{
 		public override void WriteJson(JsonWriter writer, bool value, JsonSerializer serializer)
@@ -17,6 +20,9 @@ namespace Hayden
 		}
 	}
 
+	/// <summary>
+	/// A <see cref="JsonConverter"/> for converting 4chan API results from a string date format into an actual <see cref="DateTime"/> object, and vice-versa.
+	/// </summary>
 	public class YotsubaDateConverter : JsonConverter<DateTime>
 	{
 		public override void WriteJson(JsonWriter writer, DateTime value, JsonSerializer serializer)
