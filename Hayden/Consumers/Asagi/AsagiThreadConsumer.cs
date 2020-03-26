@@ -22,8 +22,6 @@ namespace Hayden.Consumers
 	public class AsagiThreadConsumer : IThreadConsumer
 	{
 		private AsagiConfig Config { get; }
-		private string ThumbDownloadLocation { get; }
-		private string ImageDownloadLocation { get; }
 
 		private MySqlConnectionPool ConnectionPool { get; }
 
@@ -34,16 +32,10 @@ namespace Hayden.Consumers
 			Config = config;
 			ConnectionPool = new MySqlConnectionPool(config.ConnectionString, config.SqlConnectionPoolSize);
 
-			ThumbDownloadLocation = Path.Combine(Config.DownloadLocation, "thumb");
-			ImageDownloadLocation = Path.Combine(Config.DownloadLocation, "image");
-
 			foreach (var board in boards)
 			{
 				CreateTables(board).Wait();
 			}
-
-			Directory.CreateDirectory(ThumbDownloadLocation);
-			Directory.CreateDirectory(ImageDownloadLocation);
 		}
 
 		private ConcurrentDictionary<ThreadPointer, SortedList<ulong, int>> ThreadHashes { get; } = new ConcurrentDictionary<ThreadPointer, SortedList<ulong, int>>();
@@ -74,7 +66,7 @@ namespace Hayden.Consumers
 						string fullImageName = mediaInfo?.MediaFilename ?? post.TimestampedFilenameFull;
 
 						string radixString = Path.Combine(fullImageName.Substring(0, 4), fullImageName.Substring(4, 2));
-						string radixDirectory = Path.Combine(ImageDownloadLocation, board, radixString);
+						string radixDirectory = Path.Combine(Config.DownloadLocation, board, "image", radixString);
 						Directory.CreateDirectory(radixDirectory);
 
 						string fullImageFilename = Path.Combine(radixDirectory, fullImageName);
@@ -93,7 +85,7 @@ namespace Hayden.Consumers
 							thumbImageName = mediaInfo?.PreviewReplyFilename ?? $"{post.TimestampedFilename}s.jpg";
 
 						string radixString = Path.Combine(thumbImageName.Substring(0, 4), thumbImageName.Substring(4, 2));
-						string radixDirectory = Path.Combine(ThumbDownloadLocation, board, radixString);
+						string radixDirectory = Path.Combine(Config.DownloadLocation, board, "thumb", radixString);
 						Directory.CreateDirectory(radixDirectory);
 
 						string thumbFilename = Path.Combine(radixDirectory, thumbImageName);
