@@ -75,5 +75,23 @@ namespace Hayden.Proxy
 
 			return httpClient;
 		}
+
+		/// <summary>
+		/// Creates a new <see cref="HttpClient"/> object with some default values, and with the <see cref="IWebProxy"/> object attached.
+		/// </summary>
+		/// <param name="proxy">The proxy to use for the <see cref="HttpClient"/>.</param>
+		/// <returns>A new and configured <see cref="HttpClient"/> instance.</returns>
+		protected virtual HttpClient CreateNewClient(HttpMessageHandler handler)
+		{
+			var httpClient = new HttpClient(handler, true);
+
+			httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; rv:68.0) Gecko/20100101 Firefox/68.0"); //Hayden/0.7.0
+
+
+
+			httpClient.DefaultRequestHeaders.AcceptEncoding.ParseAdd("identity");
+
+			return httpClient;
+		}
 	}
 }

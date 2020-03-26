@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Net;
 using System.Net.Http;
 using MihaZupan;
@@ -10,6 +11,8 @@ namespace Hayden.Proxy
 	{
 		public ConfigProxyProvider(JArray jsonArray, Action<HttpClientHandler> configureClientHandlerAction = null) : base(configureClientHandlerAction)
 		{
+			List<HttpClientProxy> proxies = new List<HttpClientProxy>();
+
 			if (jsonArray != null)
 				foreach (JObject obj in jsonArray)
 				{
@@ -29,7 +32,7 @@ namespace Hayden.Proxy
 										  ? new WebProxy(url, false, new string[0], new NetworkCredential(username, password))
 										  : new WebProxy(url);
 
-						ProxyClients.Add(new HttpClientProxy(CreateNewClient(proxy), $"{username}@{url}"));
+						proxies.Add(new HttpClientProxy(CreateNewClient(proxy), $"{username}@{url}"));
 					}
 					else if (proxyType.Equals("socks", StringComparison.OrdinalIgnoreCase))
 					{
@@ -43,11 +46,10 @@ namespace Hayden.Proxy
 						string username = obj["username"]?.Value<string>();
 						string password = obj["password"]?.Value<string>();
 
-						IWebProxy proxy = username != null
-							? new HttpToSocks5Proxy(uri.Host, uri.Port, username, password)
-							: new HttpToSocks5Proxy(uri.Host, uri.Port);
-						
-						ProxyClients.Add(new HttpClientProxy(CreateNewClient(proxy), $"{username}@{uri.Host}"));
+						var handler = new Socks5ProxyHandler();
+						handler.ProxyInfo = new ProxyInfo(uri.Host, uri.Port, username, password);
+
+						proxies.Add(new HttpClientProxy(CreateNewClient(handler), $"{username}@{uri.Host}"));
 					}
 					else
 					{
@@ -59,7 +61,34 @@ namespace Hayden.Proxy
 				}
 
 			// add a direct connection client too
-			ProxyClients.Add(new HttpClientProxy(CreateNewClient(null), "baseconnection/none"));
+			proxies.Add(new HttpClientProxy(CreateNewClient((IWebProxy)null), "baseconnection/none"));
+
+			foreach (var proxy in proxies)
+			{
+				bool success = true;
+
+				try
+				{
+					var result = proxy.Client.GetAsync("https://a.4cdn.org/3/archive.json").ConfigureAwait(false).GetAwaiter().GetResult();
+
+					if (!result.IsSuccessStatusCode)
+						success = false;
+				}
+				catch
+				{
+					success = false;
+				}
+
+				if (success)
+				{
+					Program.Log($"Proxy '{proxy.Name}' tested successfully");
+					ProxyClients.Add(proxy);
+				}
+				else
+				{
+					Program.Log($"Proxy '{proxy.Name}' failed test, will be ignored");
+				}
+			}
 		}
 	}
 }

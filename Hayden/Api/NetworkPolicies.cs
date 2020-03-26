@@ -21,10 +21,13 @@ namespace Hayden.Api
 				.OrResult(response => response.StatusCode == HttpStatusCode.TooManyRequests
 									  || response.StatusCode == HttpStatusCode.RequestTimeout
 									  || (int)response.StatusCode >= 500)
+				
 				.WaitAndRetryAsync(5,
 					retryAttempt => TimeSpan.FromSeconds(Math.Pow(2, retryAttempt)) // exponential back-off: 2, 4, 8 etc
 									+ TimeSpan.FromMilliseconds(random.Next(0, 5000)) // plus some jitter: up to 5 seconds
-				);
+				)
+				.WrapAsync(Policy
+				.TimeoutAsync(10));
 
 		/// <summary>
 		/// Creates a generic retry policy, with exponential back-off and jitter.
