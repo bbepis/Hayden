@@ -10,7 +10,13 @@ namespace Hayden.Cache
 	public class NullStateStore : IStateStore
 	{
 		/// <inheritdoc/>
-		public Task WriteDownloadQueue(IList<QueuedImageDownload> imageDownloads)
+		public Task WriteDownloadQueue(IReadOnlyCollection<QueuedImageDownload> imageDownloads)
+		{
+			return Task.CompletedTask;
+		}
+
+		/// <inheritdoc/>
+		public Task InsertToDownloadQueue(IReadOnlyCollection<QueuedImageDownload> imageDownloads)
 		{
 			return Task.CompletedTask;
 		}

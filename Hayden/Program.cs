@@ -17,6 +17,8 @@ namespace Hayden
 {
 	class Program
 	{
+		private static HaydenConfigOptions HaydenConfig;
+
 		static async Task Main(string[] args)
 		{
 			Console.WriteLine("Hayden v0.7.0");
@@ -49,7 +51,9 @@ namespace Hayden
 				default:
 					throw new ArgumentException($"Unknown backend type {backendType}");
 			}
-			
+
+			HaydenConfig = rawConfigFile["hayden"]?.ToObject<HaydenConfigOptions>() ?? new HaydenConfigOptions();
+
 			ProxyProvider proxyProvider = null;
 
 			if (rawConfigFile["proxies"] != null)
@@ -90,8 +94,11 @@ namespace Hayden
 
 
 		private static readonly object ConsoleLockObject = new object();
-		public static void Log(string content)
+		public static void Log(string content, bool debug = false)
 		{
+			if (debug && !HaydenConfig.DebugLogging)
+				return;
+
 			lock (ConsoleLockObject)
 				Console.WriteLine($"[{DateTime.Now:G}] {content}");
 		}

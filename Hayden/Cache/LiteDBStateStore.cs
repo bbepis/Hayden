@@ -33,14 +33,18 @@ namespace Hayden.Cache
 		}
 
 		/// <inheritdoc/>
-		public async Task WriteDownloadQueue(IList<QueuedImageDownload> imageDownloads)
+		public async Task WriteDownloadQueue(IReadOnlyCollection<QueuedImageDownload> imageDownloads)
 		{
-			List<QueuedImageDownload> downloads = QueuedImageDownloads.FindAll().ToList();
+			QueuedImageDownloads.Upsert(imageDownloads.Except(QueuedImageDownloads.FindAll()));
 
-			QueuedImageDownloads.Upsert(imageDownloads.Except(downloads));
-
-			foreach (var removedItem in downloads.Where(x => imageDownloads.All(y => !Equals(x, y))))
+			foreach (var removedItem in QueuedImageDownloads.FindAll().Where(x => imageDownloads.All(y => !Equals(x, y))))
 				QueuedImageDownloads.Delete(removedItem.DownloadPath);
+		}
+
+		/// <inheritdoc/>
+		public async Task InsertToDownloadQueue(IReadOnlyCollection<QueuedImageDownload> imageDownloads)
+		{
+			QueuedImageDownloads.Upsert(imageDownloads);
 		}
 
 		/// <inheritdoc/>

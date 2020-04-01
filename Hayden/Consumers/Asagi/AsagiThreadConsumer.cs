@@ -57,7 +57,7 @@ namespace Hayden.Consumers
 
 					if (mediaInfo?.Banned == true)
 					{
-						Program.Log($"[Asagi] Post /{board}/{post.PostNumber} contains a banned image; skipping");
+						Program.Log($"[Asagi] Post /{board}/{post.PostNumber} contains a banned image; skipping", true);
 						return;
 					}
 
@@ -129,7 +129,7 @@ namespace Hayden.Consumers
 					{
 						// Post has changed since we last saved it to the database
 
-						Program.Log($"[Asagi] Post /{board}/{post.PostNumber} has been modified");
+						Program.Log($"[Asagi] Post /{board}/{post.PostNumber} has been modified", true);
 
 						await UpdatePost(post, board, false);
 
@@ -171,7 +171,7 @@ namespace Hayden.Consumers
 			foreach (var post in postsToAdd)
 				threadHashes[post.PostNumber] = CalculateAsagiHash(post, true);
 
-			Program.Log($"[Asagi] {postsToAdd.Count} posts have been inserted from thread /{board}/{thread.OriginalPost.PostNumber} ({imageDownloads.Count} media items enqueued)");
+			Program.Log($"[Asagi] {postsToAdd.Count} posts have been inserted from thread /{board}/{thread.OriginalPost.PostNumber} ({imageDownloads.Count} media items enqueued)", true);
 
 			List<ulong> postNumbersToDelete = new List<ulong>(thread.Posts.Length);
 
@@ -181,7 +181,7 @@ namespace Hayden.Consumers
 				{
 					// Post has been deleted
 
-					Program.Log($"[Asagi] Post /{board}/{postNumber} has been deleted");
+					Program.Log($"[Asagi] Post /{board}/{postNumber} has been deleted", true);
 
 					await SetUntracked(postNumber, board, true);
 

@@ -1,5 +1,7 @@
 ﻿using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
@@ -56,9 +58,10 @@ namespace Hayden
 		public async Task Execute(CancellationToken token)
 		{
 			bool firstRun = true;
+			var imageDownloadClient = new HttpClientProxy(ProxyProvider.CreateNewClient(), "baseconnection/image");
 
 			List<ThreadPointer> threadQueue = new List<ThreadPointer>();
-			Queue<QueuedImageDownload> enqueuedImages = new Queue<QueuedImageDownload>();
+			ConcurrentQueue<QueuedImageDownload> enqueuedImages = new ConcurrentQueue<QueuedImageDownload>();
 			List<QueuedImageDownload> requeuedImages = new List<QueuedImageDownload>();
 
 			SortedList<string, DateTimeOffset> lastBoardCheckTimes = new SortedList<string, DateTimeOffset>(Config.Boards.Length);
@@ -106,8 +109,6 @@ namespace Hayden
 				if (token.IsCancellationRequested)
 					break;
 
-				//threadQueue = threadQueue.Distinct().ToList();
-
 				Program.Log($"{threadQueue.Count} threads have been queued total");
 				threadQueue.TrimExcess();
 
@@ -120,37 +121,39 @@ namespace Hayden
 
 				void QueueProxyCall(Func<HttpClientProxy, Task> action)
 				{
-					var task = Task.Run(async () =>
-					{
-						await using var client = await ProxyProvider.RentHttpClient();
-
-						var threadWaitTask = Task.Delay(ApiCooldownTimespan);
-
-						try
-						{
-							await action(client.Object);
-						}
-						catch (Exception ex)
-						{
-							Program.Log($"ERROR: Network operation failed, and was unhandled. Inconsistencies may arise in continued use of program\r\n" + ex.ToString());
-						}
-
-						await threadWaitTask;
-					});
+					var task = AsyncProxyCall(action);
 
 					lock (threadTasks)
 						threadTasks.Enqueue(new WeakReference<Task>(task));
+				}
+
+				async Task AsyncProxyCall(Func<HttpClientProxy, Task> action)
+				{
+					await using var client = await ProxyProvider.RentHttpClient();
+
+					var threadWaitTask = Task.Delay(ApiCooldownTimespan);
+
+					try
+					{
+						await action(client.Object);
+					}
+					catch (Exception ex)
+					{
+						Program.Log($"ERROR: Network operation failed, and was unhandled. Inconsistencies may arise in continued use of program\r\n" + ex.ToString());
+					}
+
+					await threadWaitTask;
 				}
 
 
 				int threadCompletedCount = 0;
 				int imageCompletedCount = 0;
 
-				async Task DownloadEnqueuedImage(HttpClientProxy client)
+				async Task DownloadEnqueuedImage(HttpClientProxy client, QueuedImageDownload image)
 				{
-					QueuedImageDownload queuedDownload;
+					QueuedImageDownload queuedDownload = image;
 
-					lock (enqueuedImages)
+					if (image == null)
 						if (!enqueuedImages.TryDequeue(out queuedDownload))
 							return;
 
@@ -179,8 +182,6 @@ namespace Hayden
 					Interlocked.Increment(ref imageCompletedCount);
 				}
 
-				enqueuedImages.Clear();
-
 				if (firstRun)
 				{
 					foreach (var queuedImage in await StateStore.GetDownloadQueue())
@@ -194,106 +195,129 @@ namespace Hayden
 
 				requeuedImages.Clear();
 
-				var threadSemaphore = new SemaphoreSlim(20);
+				using var roundRobinQueue = threadQueue.RoundRobin(x => x.Board).GetEnumerator();
 
-				foreach (var thread in threadQueue.RoundRobin(x => x.Board))
+				async Task WorkerTask(bool prioritizeImages)
 				{
-					if (token.IsCancellationRequested)
-						break;
-
-					await threadSemaphore.WaitAsync();
-
-					QueueProxyCall(async client =>
+					async Task<bool> CheckImages()
 					{
-						if (token.IsCancellationRequested)
-							return;
+						bool success = enqueuedImages.TryDequeue(out var nextImage);
 
-						(bool success, IList<QueuedImageDownload> imageDownloads)
-							= await ThreadUpdateTask(CancellationToken.None, thread.Board, thread.ThreadId, client);
-
-						int newCompletedCount = Interlocked.Increment(ref threadCompletedCount);
-
-						if (newCompletedCount % 50 == 0)
+						if (success)
 						{
-							Program.Log($" --> Completed {threadCompletedCount} / {threadQueue.Count} : {threadQueue.Count - threadCompletedCount} to go");
+							await DownloadEnqueuedImage(imageDownloadClient, nextImage);
 
-							lock (enqueuedImages)
-								Program.Log($" --> {enqueuedImages.Count} in image queue");
+							if (imageCompletedCount % 10 == 0)
+							{
+								Program.Log($"{"[Image]",-9} [{imageCompletedCount}/{enqueuedImages.Count}]");
+							}
+						}
+
+						return success;
+					}
+
+					async Task<bool> CheckThreads()
+					{
+						bool success = false;
+						ThreadPointer nextThread;
+
+						lock (roundRobinQueue)
+						{
+							success = roundRobinQueue.MoveNext();
+							nextThread = roundRobinQueue.Current;
 						}
 
 						if (!success)
+							return false;
+
+						bool outerSuccess = true;
+
+						await AsyncProxyCall(async client =>
 						{
-							lock (requeuedThreads)
-								requeuedThreads.Add(thread);
-						}
-						else
-						{
-							// Fallback to Monitor references instead of lock(){} because of some compiler rule that doesn't allow us to await inside of locks
-							try
-							{
-								Monitor.Enter(enqueuedImages);
+							var result = await ThreadUpdateTask(CancellationToken.None, nextThread.Board, nextThread.ThreadId, client);
 
-								foreach (var imageDownload in imageDownloads)
-									enqueuedImages.Enqueue(imageDownload);
+							int newCompletedCount = Interlocked.Increment(ref threadCompletedCount);
 
-								await StateStore.WriteDownloadQueue(enqueuedImages.ToArray());
-							}
-							finally
+							string threadStatus = " ";
+
+							switch (result.Status)
 							{
-								Monitor.Exit(enqueuedImages);
+								case ThreadUpdateStatus.Ok:          threadStatus = " "; break;
+								case ThreadUpdateStatus.Archived:    threadStatus = "A"; break;
+								case ThreadUpdateStatus.Deleted:     threadStatus = "D"; break;
+								case ThreadUpdateStatus.NotModified: threadStatus = "N"; break;
+								case ThreadUpdateStatus.Error:       threadStatus = "E"; break;
 							}
 
+							//if (newCompletedCount % 50 == 0)
+							//{
+							//	Program.Log($" --> Completed {threadCompletedCount} / {threadQueue.Count} : {threadQueue.Count - threadCompletedCount} to go");
 
-							// Perform 100 image downloads on a thread.
-							for (int i = 0; i < 100; i++)
+							//	lock (enqueuedImages)
+							//		Program.Log($" --> {enqueuedImages.Count} in image queue");
+							//}
+
+							if (!success)
 							{
-								if (token.IsCancellationRequested)
-									break;
+								lock (requeuedThreads)
+									requeuedThreads.Add(nextThread);
 
-								await DownloadEnqueuedImage(client);
+								outerSuccess = false;
+								return;
 							}
-						}
 
-						threadSemaphore.Release();
-					});
-				}
+							Program.Log($"{"[Thread]",-9} {$"/{nextThread.Board}/{nextThread.ThreadId}",-17} {threadStatus} {$"+({result.ImageDownloads.Count}/{result.PostCount})",-13} [{enqueuedImages.Count}/{newCompletedCount}/{threadQueue.Count}]");
 
-				// Queue a download task to download all remaining images.
-				QueueProxyCall(async client =>
-				{
+							foreach (var imageDownload in result.ImageDownloads)
+								enqueuedImages.Enqueue(imageDownload);
+
+							await StateStore.InsertToDownloadQueue(new ReadOnlyCollection<QueuedImageDownload>(result.ImageDownloads));
+						});
+
+						return outerSuccess;
+					}
+
 					while (true)
 					{
 						if (token.IsCancellationRequested)
 							break;
 
-						QueuedImageDownload queuedDownload;
-
-						lock (enqueuedImages)
-							if (!enqueuedImages.TryDequeue(out queuedDownload))
-								break;
-
-						await Task.Delay(50); // Wait 100ms because we're nice people
-
-						await DownloadEnqueuedImage(client);
-					}
-				});
-
-				// Wait for all currently running/enqueued thread download tasks
-				while (true)
-				{
-					WeakReference<Task> remainingTask;
-
-					lock (threadTasks)
-						if (!threadTasks.TryDequeue(out remainingTask))
+						if (prioritizeImages)
 						{
-							break;
+							if (await CheckImages())
+								continue;
 						}
 
-					if (remainingTask.TryGetTarget(out var task))
-						await task;
+						if (await CheckThreads())
+							continue;
+
+						if (await CheckImages())
+							continue;
+
+						break;
+					}
 				}
 
+				List<Task> workerTasks = new List<Task>();
+
+				for (int i = 0; i < 2; i++)
+					workerTasks.Add(WorkerTask(true));
+
+				for (int i = 0; i < 5; i++)
+					workerTasks.Add(WorkerTask(false));
+
+				//Task.Run()
+
+				await Task.WhenAll(workerTasks);
+				
+
 				Program.Log($" --> Completed {threadCompletedCount} / {threadQueue.Count} : Waiting for next board update interval");
+
+
+				enqueuedImages.Clear();
+				await StateStore.WriteDownloadQueue(enqueuedImages);
+
+				Program.Log($" --> Cleared queued image cache");
 
 				firstRun = false;
 
@@ -448,38 +472,43 @@ namespace Hayden
 		/// <param name="threadNumber">The post number of the thread to poll.</param>
 		/// <param name="client">The <see cref="HttpClientProxy"/> to use for the poll request.</param>
 		/// <returns></returns>
-		private async Task<(bool success, IList<QueuedImageDownload> imageDownloads)> ThreadUpdateTask(CancellationToken token, string board, ulong threadNumber, HttpClientProxy client)
+		private async Task<ThreadUpdateTaskResult> ThreadUpdateTask(CancellationToken token, string board, ulong threadNumber, HttpClientProxy client)
 		{
 			try
 			{
-				Program.Log($"Polling thread /{board}/{threadNumber}");
+				Program.Log($"Polling thread /{board}/{threadNumber}", true);
 
 				var response = await YotsubaApi.GetThread(board, threadNumber, client.Client, null, token);
 
 				switch (response.ResponseType)
 				{
 					case ResponseType.Ok:
-						Program.Log($"Downloading changes from thread /{board}/{threadNumber}");
+						Program.Log($"Downloading changes from thread /{board}/{threadNumber}", true);
 
 						var images = await ThreadConsumer.ConsumeThread(response.Data, board);
 
 						if (response.Data.OriginalPost.Archived == true)
 						{
-							Program.Log($"Thread /{board}/{threadNumber} has been archived");
+							Program.Log($"Thread /{board}/{threadNumber} has been archived", true);
 
 							await ThreadConsumer.ThreadUntracked(threadNumber, board, false);
 						}
 
-						return (true, images);
+						
+
+						return new ThreadUpdateTaskResult(true,
+							images,
+							response.Data.OriginalPost.Archived == true ? ThreadUpdateStatus.Archived : ThreadUpdateStatus.Ok,
+							response.Data.Posts.Length);
 
 					case ResponseType.NotModified:
-						return (true, new QueuedImageDownload[0]);
+						return new ThreadUpdateTaskResult(true, new QueuedImageDownload[0], ThreadUpdateStatus.NotModified, response.Data.Posts.Length);
 
 					case ResponseType.NotFound:
-						Program.Log($"Thread /{board}/{threadNumber} has been pruned or deleted");
+						Program.Log($"Thread /{board}/{threadNumber} has been pruned or deleted", true);
 
 						await ThreadConsumer.ThreadUntracked(threadNumber, board, true);
-						return (true, new QueuedImageDownload[0]);
+						return new ThreadUpdateTaskResult(true, new QueuedImageDownload[0], ThreadUpdateStatus.Deleted, 0);
 
 					default:
 						throw new ArgumentOutOfRangeException();
@@ -489,7 +518,7 @@ namespace Hayden
 			{
 				Program.Log($"ERROR: Could not poll or update thread /{board}/{threadNumber}. Will try again next board update\nClient name: {client.Name}\nException: {exception}");
 
-				return (false, null);
+				return new ThreadUpdateTaskResult(false, new QueuedImageDownload[0], ThreadUpdateStatus.Error, 0);
 			}
 		}
 
@@ -504,7 +533,7 @@ namespace Hayden
 			if (File.Exists(downloadPath))
 				return;
 
-			Program.Log($"Downloading image {Path.GetFileName(downloadPath)}");
+			Program.Log($"Downloading image {Path.GetFileName(downloadPath)}", true);
 
 			var request = new HttpRequestMessage(HttpMethod.Get, imageUrl);
 			using var response = await NetworkPolicies.HttpApiPolicy.ExecuteAsync(() => httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead));
@@ -572,6 +601,30 @@ namespace Hayden
 		{
 			Board = board;
 			ThreadId = threadId;
+		}
+	}
+	public enum ThreadUpdateStatus
+	{
+		Ok,
+		Deleted,
+		Archived,
+		NotModified,
+		Error
+	}
+
+	public struct ThreadUpdateTaskResult
+	{
+		public bool Success { get; set; }
+		public IList<QueuedImageDownload> ImageDownloads { get; set; }
+		public ThreadUpdateStatus Status { get; set; }
+		public int PostCount { get; set; }
+
+		public ThreadUpdateTaskResult(bool success, IList<QueuedImageDownload> imageDownloads, ThreadUpdateStatus status, int postCount)
+		{
+			Success = success;
+			ImageDownloads = imageDownloads;
+			Status = status;
+			PostCount = postCount;
 		}
 	}
 }

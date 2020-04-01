@@ -12,7 +12,9 @@ namespace Hayden.Contract
 		/// Writes the current image download queue to storage.
 		/// </summary>
 		/// <param name="imageDownloads">The list of queued storage downloads.</param>
-		Task WriteDownloadQueue(IList<QueuedImageDownload> imageDownloads);
+		Task WriteDownloadQueue(IReadOnlyCollection<QueuedImageDownload> imageDownloads);
+
+		Task InsertToDownloadQueue(IReadOnlyCollection<QueuedImageDownload> imageDownloads);
 
 		/// <summary>
 		/// Retrieves a list of queued image downloads from intermediate storage.
