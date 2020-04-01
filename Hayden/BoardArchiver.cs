@@ -65,8 +65,12 @@ namespace Hayden
 
 			while (!token.IsCancellationRequested)
 			{
-				await Config.Boards.ForEachAsync(4, async board =>
+				int currentBoardCount = 0;
+
+				await Config.Boards.ForEachAsync(8, async board =>
 				{
+					token.ThrowIfCancellationRequested();
+
 					DateTimeOffset lastDateTimeCheck;
 
 					lock (lastBoardCheckTimes)
@@ -80,7 +84,7 @@ namespace Hayden
 					lock (threadQueue)
 						threadQueue.AddRange(threads);
 
-					if (firstRun)
+					if (firstRun && Config.ReadArchive)
 					{
 						var archivedThreads = await GetArchivedBoardThreads(token, board, lastDateTimeCheck);
 
@@ -89,10 +93,20 @@ namespace Hayden
 					}
 
 					lock (lastBoardCheckTimes)
+					{
 						lastBoardCheckTimes[board] = beforeCheckTime;
+
+						if (++currentBoardCount % 5 == 0 || currentBoardCount == Config.Boards.Length)
+						{
+							Program.Log($"{currentBoardCount} / {Config.Boards.Length} boards enqueued");
+						}
+					}
 				});
 
-				threadQueue = threadQueue.Distinct().ToList();
+				if (token.IsCancellationRequested)
+					break;
+
+				//threadQueue = threadQueue.Distinct().ToList();
 
 				Program.Log($"{threadQueue.Count} threads have been queued total");
 				threadQueue.TrimExcess();
@@ -146,7 +160,7 @@ namespace Hayden
 						return;
 					}
 
-					await Task.Delay(100); // Wait 100ms because we're nice people
+					var waitTask = Task.Delay(50, token); // Wait 100ms because we're nice people
 
 					try
 					{
@@ -159,6 +173,8 @@ namespace Hayden
 						lock (requeuedImages)
 							requeuedImages.Add(queuedDownload);
 					}
+
+					await waitTask;
 
 					Interlocked.Increment(ref imageCompletedCount);
 				}
@@ -256,7 +272,7 @@ namespace Hayden
 							if (!enqueuedImages.TryDequeue(out queuedDownload))
 								break;
 
-						await Task.Delay(100); // Wait 100ms because we're nice people
+						await Task.Delay(50); // Wait 100ms because we're nice people
 
 						await DownloadEnqueuedImage(client);
 					}
@@ -309,6 +325,7 @@ namespace Hayden
 
 			var archiveRequest = await NetworkPolicies.GenericRetryPolicy<ApiResponse<ulong[]>>(12).ExecuteAsync(async () =>
 			{
+				token.ThrowIfCancellationRequested();
 				await using var boardClient = await ProxyProvider.RentHttpClient();
 				return await YotsubaApi.GetArchive(board, boardClient.Object.Client, lastDateTimeCheck, token);
 			});
@@ -360,6 +377,7 @@ namespace Hayden
 
 			var pagesRequest = await NetworkPolicies.GenericRetryPolicy<ApiResponse<Page[]>>(12).ExecuteAsync(async () =>
 			{
+				token.ThrowIfCancellationRequested();
 				Program.Log($"Requesting threads from board /{board}/...");
 				await using var boardClient = await ProxyProvider.RentHttpClient();
 				return await YotsubaApi.GetBoard(board,

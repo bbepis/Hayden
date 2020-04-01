@@ -19,5 +19,10 @@
 		/// The minimum amount of time (in seconds) that should be waited in-between board scrapes. Defaults to 30.0 seconds if null.
 		/// </summary>
 		public double? BoardDelay { get; set; }
+
+		/// <summary>
+		/// True if downloading from the archive, false if not.
+		/// </summary>
+		public bool ReadArchive { get; set; }
 	}
 }
