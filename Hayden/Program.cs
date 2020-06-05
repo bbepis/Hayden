@@ -17,7 +17,7 @@ namespace Hayden
 {
 	class Program
 	{
-		private static HaydenConfigOptions HaydenConfig;
+		public static HaydenConfigOptions HaydenConfig;
 
 		static async Task Main(string[] args)
 		{

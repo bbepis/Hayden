@@ -115,17 +115,7 @@ namespace Hayden
 				var waitTask = Task.Delay(BoardUpdateTimespan, token);
 
 
-				var threadTasks = new Queue<WeakReference<Task>>();
-
 				var requeuedThreads = new List<ThreadPointer>();
-
-				void QueueProxyCall(Func<HttpClientProxy, Task> action)
-				{
-					var task = AsyncProxyCall(action);
-
-					lock (threadTasks)
-						threadTasks.Enqueue(new WeakReference<Task>(task));
-				}
 
 				async Task AsyncProxyCall(Func<HttpClientProxy, Task> action)
 				{
@@ -149,18 +139,17 @@ namespace Hayden
 				int threadCompletedCount = 0;
 				int imageCompletedCount = 0;
 
-				async Task DownloadEnqueuedImage(HttpClientProxy client, QueuedImageDownload image)
+				async Task<int> DownloadEnqueuedImage(HttpClientProxy client, QueuedImageDownload image)
 				{
 					QueuedImageDownload queuedDownload = image;
 
 					if (image == null)
 						if (!enqueuedImages.TryDequeue(out queuedDownload))
-							return;
+							return imageCompletedCount;
 
 					if (File.Exists(queuedDownload.DownloadPath))
 					{
-						Interlocked.Increment(ref imageCompletedCount);
-						return;
+						return Interlocked.Increment(ref imageCompletedCount);
 					}
 
 					var waitTask = Task.Delay(50, token); // Wait 100ms because we're nice people
@@ -179,7 +168,7 @@ namespace Hayden
 
 					await waitTask;
 
-					Interlocked.Increment(ref imageCompletedCount);
+					return Interlocked.Increment(ref imageCompletedCount);
 				}
 
 				if (firstRun)
@@ -197,19 +186,25 @@ namespace Hayden
 
 				using var roundRobinQueue = threadQueue.RoundRobin(x => x.Board).GetEnumerator();
 
-				async Task WorkerTask(bool prioritizeImages)
+				IDictionary<int, string> WorkerStatuses = new ConcurrentDictionary<int, string>();
+
+				async Task WorkerTask(int id, bool prioritizeImages)
 				{
+					var idString = id.ToString();
+
 					async Task<bool> CheckImages()
 					{
 						bool success = enqueuedImages.TryDequeue(out var nextImage);
 
 						if (success)
 						{
-							await DownloadEnqueuedImage(imageDownloadClient, nextImage);
+							WorkerStatuses[id] = $"Downloading image {nextImage.DownloadUri}";
 
-							if (imageCompletedCount % 10 == 0)
+							int completedCount = await DownloadEnqueuedImage(imageDownloadClient, nextImage);
+
+							if (completedCount % 10 == 0)
 							{
-								Program.Log($"{"[Image]",-9} [{imageCompletedCount}/{enqueuedImages.Count}]");
+								Program.Log($"{"[Image]",-9} [{completedCount}/{enqueuedImages.Count}]");
 							}
 						}
 
@@ -230,11 +225,13 @@ namespace Hayden
 						if (!success)
 							return false;
 
+						WorkerStatuses[id] = $"Scraping thread /{nextThread.Board}/{nextThread.ThreadId}";
+
 						bool outerSuccess = true;
 
 						await AsyncProxyCall(async client =>
 						{
-							var result = await ThreadUpdateTask(CancellationToken.None, nextThread.Board, nextThread.ThreadId, client);
+							var result = await ThreadUpdateTask(CancellationToken.None, idString, nextThread.Board, nextThread.ThreadId, client);
 
 							int newCompletedCount = Interlocked.Increment(ref threadCompletedCount);
 
@@ -248,14 +245,6 @@ namespace Hayden
 								case ThreadUpdateStatus.NotModified: threadStatus = "N"; break;
 								case ThreadUpdateStatus.Error:       threadStatus = "E"; break;
 							}
-
-							//if (newCompletedCount % 50 == 0)
-							//{
-							//	Program.Log($" --> Completed {threadCompletedCount} / {threadQueue.Count} : {threadQueue.Count - threadCompletedCount} to go");
-
-							//	lock (enqueuedImages)
-							//		Program.Log($" --> {enqueuedImages.Count} in image queue");
-							//}
 
 							if (!success)
 							{
@@ -279,6 +268,8 @@ namespace Hayden
 
 					while (true)
 					{
+						WorkerStatuses[id] = "Idle";
+
 						if (token.IsCancellationRequested)
 							break;
 
@@ -296,17 +287,30 @@ namespace Hayden
 
 						break;
 					}
+
+					Program.Log($"Worker ID {idString} finished", true);
+
+					WorkerStatuses[id] = "Finished";
+
+					if (Program.HaydenConfig.DebugLogging)
+					{
+						lock (WorkerStatuses)
+							foreach (var kv in WorkerStatuses)
+							{
+								Program.Log($"ID {kv.Key,-2} => {kv.Value}", true);
+							}
+					}
 				}
 
 				List<Task> workerTasks = new List<Task>();
 
+				int id = 1;
+
 				for (int i = 0; i < 2; i++)
-					workerTasks.Add(WorkerTask(true));
+					workerTasks.Add(WorkerTask(id++, true));
 
 				for (int i = 0; i < 5; i++)
-					workerTasks.Add(WorkerTask(false));
-
-				//Task.Run()
+					workerTasks.Add(WorkerTask(id++, false));
 
 				await Task.WhenAll(workerTasks);
 				
@@ -472,24 +476,24 @@ namespace Hayden
 		/// <param name="threadNumber">The post number of the thread to poll.</param>
 		/// <param name="client">The <see cref="HttpClientProxy"/> to use for the poll request.</param>
 		/// <returns></returns>
-		private async Task<ThreadUpdateTaskResult> ThreadUpdateTask(CancellationToken token, string board, ulong threadNumber, HttpClientProxy client)
+		private async Task<ThreadUpdateTaskResult> ThreadUpdateTask(CancellationToken token, string workerId, string board, ulong threadNumber, HttpClientProxy client)
 		{
 			try
 			{
-				Program.Log($"Polling thread /{board}/{threadNumber}", true);
+				Program.Log($"{workerId,-2}: Polling thread /{board}/{threadNumber}", true);
 
 				var response = await YotsubaApi.GetThread(board, threadNumber, client.Client, null, token);
 
 				switch (response.ResponseType)
 				{
 					case ResponseType.Ok:
-						Program.Log($"Downloading changes from thread /{board}/{threadNumber}", true);
+						Program.Log($"{workerId,-2}: Downloading changes from thread /{board}/{threadNumber}", true);
 
 						var images = await ThreadConsumer.ConsumeThread(response.Data, board);
 
 						if (response.Data.OriginalPost.Archived == true)
 						{
-							Program.Log($"Thread /{board}/{threadNumber} has been archived", true);
+							Program.Log($"{workerId,-2}: Thread /{board}/{threadNumber} has been archived", true);
 
 							await ThreadConsumer.ThreadUntracked(threadNumber, board, false);
 						}
@@ -505,7 +509,7 @@ namespace Hayden
 						return new ThreadUpdateTaskResult(true, new QueuedImageDownload[0], ThreadUpdateStatus.NotModified, response.Data.Posts.Length);
 
 					case ResponseType.NotFound:
-						Program.Log($"Thread /{board}/{threadNumber} has been pruned or deleted", true);
+						Program.Log($"{workerId,-2}: Thread /{board}/{threadNumber} has been pruned or deleted", true);
 
 						await ThreadConsumer.ThreadUntracked(threadNumber, board, true);
 						return new ThreadUpdateTaskResult(true, new QueuedImageDownload[0], ThreadUpdateStatus.Deleted, 0);

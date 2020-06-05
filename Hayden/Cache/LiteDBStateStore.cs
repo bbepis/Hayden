@@ -39,6 +39,8 @@ namespace Hayden.Cache
 
 			foreach (var removedItem in QueuedImageDownloads.FindAll().Where(x => imageDownloads.All(y => !Equals(x, y))))
 				QueuedImageDownloads.Delete(removedItem.DownloadPath);
+
+			Database.Shrink();
 		}
 
 		/// <inheritdoc/>
