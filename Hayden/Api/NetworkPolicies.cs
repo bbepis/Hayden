@@ -39,9 +39,12 @@ namespace Hayden.Api
 		{
 			return Policy<T>
 				   .Handle<Exception>()
-				   .WaitAndRetryAsync(tries,
-					   retryAttempt => TimeSpan.FromSeconds(Math.Pow(2, retryAttempt)) // exponential back-off: 2, 4, 8 etc
-									   + TimeSpan.FromMilliseconds(random.Next(0, 5000)) // plus some jitter: up to 5 seconds
+				   .WaitAndRetryAsync(99999,
+					   retryAttempt => TimeSpan.FromSeconds(Math.Pow(2, Math.Min(retryAttempt, 5))) // exponential back-off: 2, 4, 8 etc
+				                                      + TimeSpan.FromMilliseconds(random.Next(0, 5000)) // plus some jitter: up to 5 seconds
+				   )
+				   .WrapAsync(
+					   Policy.TimeoutAsync(10)
 				   );
 		}
 	}
