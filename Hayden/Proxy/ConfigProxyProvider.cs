@@ -49,7 +49,7 @@ namespace Hayden.Proxy
 						var handler = new Socks5ProxyHandler();
 						handler.ProxyInfo = new ProxyInfo(uri.Host, uri.Port, username, password);
 
-						proxies.Add(new HttpClientProxy(CreateNewClient(handler), $"{username}@{uri.Host}"));
+						proxies.Add(new HttpClientProxy(CreateNewClient(handler), $"{username}@{uri.Host}:{uri.Port}"));
 					}
 					else
 					{
