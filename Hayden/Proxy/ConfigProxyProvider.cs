@@ -2,8 +2,8 @@
 using System.Collections.Generic;
 using System.Net;
 using System.Net.Http;
-using MihaZupan;
 using Newtonsoft.Json.Linq;
+using NSocks;
 
 namespace Hayden.Proxy
 {
@@ -46,9 +46,8 @@ namespace Hayden.Proxy
 						string username = obj["username"]?.Value<string>();
 						string password = obj["password"]?.Value<string>();
 
-						var handler = new Socks5ProxyHandler();
-						handler.ProxyInfo = new ProxyInfo(uri.Host, uri.Port, username, password);
 
+						var handler = new Socks5Handler(uri, username, password);
 						proxies.Add(new HttpClientProxy(CreateNewClient(handler), $"{username}@{uri.Host}:{uri.Port}"));
 					}
 					else

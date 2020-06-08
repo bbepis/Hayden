@@ -32,8 +32,8 @@
     <Reference Include="LiteDB">
       <HintPath>..\lib\LiteDB.dll</HintPath>
     </Reference>
-    <Reference Include="MihaZupan.HttpToSocks5Proxy">
-      <HintPath>..\lib\MihaZupan.HttpToSocks5Proxy.dll</HintPath>
+    <Reference Include="NSocks">
+      <HintPath>..\lib\NSocks.dll</HintPath>
     </Reference>
   </ItemGroup>
 
