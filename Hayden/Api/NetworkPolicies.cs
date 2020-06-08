@@ -2,6 +2,7 @@
 using System.Net;
 using System.Net.Http;
 using Polly;
+using Polly.Timeout;
 
 namespace Hayden.Api
 {
@@ -27,7 +28,7 @@ namespace Hayden.Api
 									+ TimeSpan.FromMilliseconds(random.Next(0, 5000)) // plus some jitter: up to 5 seconds
 				)
 				.WrapAsync(
-					Policy.TimeoutAsync(10)
+					Policy.TimeoutAsync(10, TimeoutStrategy.Pessimistic)
 				);
 
 		/// <summary>
@@ -44,7 +45,7 @@ namespace Hayden.Api
 				                                      + TimeSpan.FromMilliseconds(random.Next(0, 5000)) // plus some jitter: up to 5 seconds
 				   )
 				   .WrapAsync(
-					   Policy.TimeoutAsync(10)
+					   Policy.TimeoutAsync(10, TimeoutStrategy.Pessimistic)
 				   );
 		}
 	}
