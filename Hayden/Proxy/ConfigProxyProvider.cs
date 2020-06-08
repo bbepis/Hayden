@@ -75,16 +75,24 @@ namespace Hayden.Proxy
 			{
 				bool success = true;
 
-				try
+				for (int i = 0; i < 4; i++)
 				{
-					var result = await proxy.Client.GetAsync("https://a.4cdn.org/3/archive.json");
+					success = true;
 
-					if (!result.IsSuccessStatusCode)
+					try
+					{
+						var result = await proxy.Client.GetAsync("https://a.4cdn.org/po/catalog.json");
+
+						if (!result.IsSuccessStatusCode)
+							success = false;
+					}
+					catch
+					{
 						success = false;
-				}
-				catch
-				{
-					success = false;
+					}
+
+					if (success)
+						break;
 				}
 
 				if (success)
