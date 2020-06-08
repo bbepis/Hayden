@@ -57,7 +57,10 @@ namespace Hayden
 			ProxyProvider proxyProvider = null;
 
 			if (rawConfigFile["proxies"] != null)
+			{
 				proxyProvider = new ConfigProxyProvider((JArray)rawConfigFile["proxies"]);
+				await proxyProvider.InitializeAsync();
+			}
 
 			Log("Initialized.");
 			Log("Press Q to stop archival.");

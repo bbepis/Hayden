@@ -41,6 +41,8 @@ namespace Hayden.Proxy
 			ConfigureClientHandlerAction = configureClientHandlerHandlerAction;
 		}
 
+		public abstract Task InitializeAsync();
+
 		/// <summary>
 		/// Rents a <see cref="HttpClientProxy"/> object, encapsulated in a <see cref="PoolObject{HttpClientProxy}"/> object.
 		/// </summary>

@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Net;
 using System.Net.Http;
+using System.Threading.Tasks;
 
 namespace Hayden.Proxy
 {
@@ -10,6 +11,11 @@ namespace Hayden.Proxy
 		{
 			// use only a direct connection
 			ProxyClients.Add(new HttpClientProxy(CreateNewClient((IWebProxy)null), "baseconnection/none"));
+		}
+
+		public override Task InitializeAsync()
+		{
+			return Task.CompletedTask;
 		}
 	}
 }
