@@ -86,8 +86,10 @@ namespace Hayden.Proxy
 						if (!result.IsSuccessStatusCode)
 							success = false;
 					}
-					catch
+					catch (Exception ex)
 					{
+						Program.Log($"{proxy.Name} failed: {ex}", true);
+
 						success = false;
 					}
 
