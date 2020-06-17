@@ -13,6 +13,8 @@ namespace Hayden.Proxy
 			ProxyClients.Add(new HttpClientProxy(CreateNewClient((IWebProxy)null), "baseconnection/none"));
 		}
 
+		public override int ProxyCount => 1;
+
 		public override Task InitializeAsync()
 		{
 			return Task.CompletedTask;

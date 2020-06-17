@@ -306,11 +306,10 @@ namespace Hayden
 
 				int id = 1;
 
-				for (int i = 0; i < 2; i++)
-					workerTasks.Add(WorkerTask(id++, true));
-
-				for (int i = 0; i < 5; i++)
-					workerTasks.Add(WorkerTask(id++, false));
+				for (int i = 0; i < ProxyProvider.ProxyCount; i++)
+				{
+					workerTasks.Add(WorkerTask(id++, i % 3 == 0));
+				}
 
 				await Task.WhenAll(workerTasks);
 				

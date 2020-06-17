@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
+using System.Threading;
 using System.Threading.Tasks;
 using Newtonsoft.Json.Linq;
 using NSocks;
@@ -17,6 +18,9 @@ namespace Hayden.Proxy
 		{
 			JsonArray = jsonArray;
 		}
+
+		private int _proxyCount = 0;
+		public override int ProxyCount => _proxyCount;
 
 		public override async Task InitializeAsync()
 		{
@@ -101,6 +105,7 @@ namespace Hayden.Proxy
 				{
 					Program.Log($"Proxy '{proxy.Name}' tested successfully");
 					ProxyClients.Add(proxy);
+					Interlocked.Increment(ref _proxyCount);
 				}
 				else
 				{

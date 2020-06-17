@@ -36,6 +36,8 @@ namespace Hayden.Proxy
 		protected Action<HttpClientHandler> ConfigureClientHandlerAction { get; }
 		protected virtual AsyncCollection<HttpClientProxy> ProxyClients { get; } = new AsyncCollection<HttpClientProxy>();
 
+		public abstract int ProxyCount { get; }
+
 		protected ProxyProvider(Action<HttpClientHandler> configureClientHandlerHandlerAction = null)
 		{
 			ConfigureClientHandlerAction = configureClientHandlerHandlerAction;
