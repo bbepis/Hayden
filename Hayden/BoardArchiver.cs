@@ -229,9 +229,11 @@ namespace Hayden
 
 						bool outerSuccess = true;
 
+						using var timeoutToken = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+
 						await AsyncProxyCall(async client =>
 						{
-							var result = await ThreadUpdateTask(CancellationToken.None, idString, nextThread.Board, nextThread.ThreadId, client);
+							var result = await ThreadUpdateTask(timeoutToken.Token, idString, nextThread.Board, nextThread.ThreadId, client);
 
 							int newCompletedCount = Interlocked.Increment(ref threadCompletedCount);
 
@@ -482,6 +484,8 @@ namespace Hayden
 				Program.Log($"{workerId,-2}: Polling thread /{board}/{threadNumber}", true);
 
 				var response = await YotsubaApi.GetThread(board, threadNumber, client.Client, null, token);
+
+				token.ThrowIfCancellationRequested();
 
 				switch (response.ResponseType)
 				{
