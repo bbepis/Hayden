@@ -51,7 +51,7 @@ namespace Hayden.Proxy
 		/// <returns></returns>
 		public virtual async Task<PoolObject<HttpClientProxy>> RentHttpClient()
 		{
-			return new PoolObject<HttpClientProxy>(await ProxyClients.TakeAsync(), proxy => ProxyClients.Add(proxy));
+			return new PoolObject<HttpClientProxy>(await ProxyClients.TakeAsync(), proxy => ProxyClients.AddAsync(proxy));
 		}
 
 		/// <summary>
