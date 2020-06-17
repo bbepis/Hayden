@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using Hayden.Api;
 using Hayden.Models;
 using Newtonsoft.Json;
+using Polly;
 using Thread = Hayden.Models.Thread;
 
 namespace Hayden
@@ -83,11 +84,11 @@ namespace Hayden
 		private static async Task<ApiResponse<T>> MakeYotsubaApiCall<T>(Uri uri, HttpClient client, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default)
 		{
 			int callCount = 0;
-			using var response = await NetworkPolicies.HttpApiPolicy.ExecuteAsync(() => 
+			using var response = await NetworkPolicies.HttpApiPolicy.ExecuteAsync((context) => 
 			{
 				Program.Log($"HttpApiPolicy call ({callCount}): {uri.AbsoluteUri}", true);
 				return DoCall(uri, client, modifiedSince, cancellationToken);
-			});
+			}, new Context(uri.AbsoluteUri));
 
 			if (response.StatusCode == HttpStatusCode.NotModified)
 				return new ApiResponse<T>(ResponseType.NotModified, default);
