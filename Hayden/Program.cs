@@ -15,7 +15,7 @@ using Newtonsoft.Json.Linq;
 
 namespace Hayden
 {
-	class Program
+	public class Program
 	{
 		public static HaydenConfigOptions HaydenConfig;
 
@@ -58,7 +58,7 @@ namespace Hayden
 
 			if (rawConfigFile["proxies"] != null)
 			{
-				proxyProvider = new ConfigProxyProvider((JArray)rawConfigFile["proxies"]);
+				proxyProvider = new ConfigProxyProvider((JArray)rawConfigFile["proxies"], HaydenConfig.ResolveDnsLocally);
 				await proxyProvider.InitializeAsync();
 			}
 

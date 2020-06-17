@@ -15,6 +15,8 @@ namespace Hayden
 
 	public class HaydenConfigOptions
 	{
-		public bool DebugLogging { get; set; }
+		public bool DebugLogging { get; set; } = false;
+
+		public bool ResolveDnsLocally { get; set; } = false;
 	}
 }

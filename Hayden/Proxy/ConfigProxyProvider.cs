@@ -13,10 +13,12 @@ namespace Hayden.Proxy
 	public class ConfigProxyProvider : ProxyProvider
 	{
 		protected JArray JsonArray { get; set; }
+		protected bool ResolveDnsLocally { get; set; }
 
-		public ConfigProxyProvider(JArray jsonArray, Action<HttpClientHandler> configureClientHandlerAction = null) : base(configureClientHandlerAction)
+		public ConfigProxyProvider(JArray jsonArray, bool resolveDnsLocally, Action<HttpClientHandler> configureClientHandlerAction = null) : base(configureClientHandlerAction)
 		{
 			JsonArray = jsonArray;
+			ResolveDnsLocally = resolveDnsLocally;
 		}
 
 		private int _proxyCount = 0;
@@ -61,6 +63,7 @@ namespace Hayden.Proxy
 
 
 						var handler = new Socks5Handler(uri, username, password);
+						handler.ResolveDnsLocally = ResolveDnsLocally;
 						proxies.Add(new HttpClientProxy(CreateNewClient(handler), $"{username}@{uri.Host}:{uri.Port}"));
 					}
 					else
