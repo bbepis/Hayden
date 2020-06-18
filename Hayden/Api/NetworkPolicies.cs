@@ -28,7 +28,7 @@ namespace Hayden.Api
 									+ TimeSpan.FromMilliseconds(random.Next(0, 5000)) // plus some jitter: up to 5 seconds
 				)
 				.WrapAsync(
-					Policy.TimeoutAsync(10, TimeoutStrategy.Pessimistic, async (context, span, failedTask) =>
+					Policy.TimeoutAsync(10, TimeoutStrategy.Optimistic, async (context, span, failedTask) =>
 					{
 						Program.Log($"Timeout occurred: {context.OperationKey}", true);
 					})
@@ -48,7 +48,7 @@ namespace Hayden.Api
 				                                      + TimeSpan.FromMilliseconds(random.Next(0, 5000)) // plus some jitter: up to 5 seconds
 				   )
 				   .WrapAsync(
-					   Policy.TimeoutAsync(10, TimeoutStrategy.Pessimistic, async (context, span, failedTask) =>
+					   Policy.TimeoutAsync(10, TimeoutStrategy.Optimistic, async (context, span, failedTask) =>
 					   {
 						   Program.Log($"Timeout occurred: {context.OperationKey}", true);
 					   })

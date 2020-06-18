@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using Hayden.Api;
 using Hayden.Models;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using Polly;
 using Thread = Hayden.Models.Thread;
 
@@ -78,9 +79,6 @@ namespace Hayden
 			return await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
 		}
 
-		// For performance, we keep a single static instance of a JsonSerializer object instead of recreating it multiple times.
-		private static readonly JsonSerializer jsonSerializer = JsonSerializer.Create();
-
 		private static async Task<ApiResponse<T>> MakeYotsubaApiCall<T>(Uri uri, HttpClient client, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default)
 		{
 			int callCount = 0;
@@ -103,7 +101,7 @@ namespace Hayden
 			using StreamReader streamReader = new StreamReader(responseStream);
 			using JsonReader reader = new JsonTextReader(streamReader);
 
-			var obj = jsonSerializer.Deserialize<T>(reader);
+			var obj = (await JToken.LoadAsync(reader, cancellationToken)).ToObject<T>();
 
 			return new ApiResponse<T>(ResponseType.Ok, obj);
 		}
