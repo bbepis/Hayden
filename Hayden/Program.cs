@@ -48,6 +48,13 @@ namespace Hayden
 					consumer = new AsagiThreadConsumer(asagiConfig, yotsubaConfig.Boards);
 					break;
 
+				case "Filesystem":
+					var filesystemConfig = rawConfigFile["backend"].ToObject<FilesystemConfig>();
+
+					downloadLocation = filesystemConfig.DownloadLocation;
+					consumer = new FilesystemThreadConsumer(filesystemConfig);
+					break;
+
 				default:
 					throw new ArgumentException($"Unknown backend type {backendType}");
 			}
