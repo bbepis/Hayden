@@ -82,7 +82,7 @@ namespace Hayden
 		private static async Task<ApiResponse<T>> MakeYotsubaApiCall<T>(Uri uri, HttpClient client, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default)
 		{
 			int callCount = 0;
-			using var response = await NetworkPolicies.HttpApiPolicy.ExecuteAsync((context) => 
+			using var response = await NetworkPolicies.HttpApiPolicy.ExecuteAsync(_ => 
 			{
 				Program.Log($"HttpApiPolicy call ({callCount}): {uri.AbsoluteUri}", true);
 				return DoCall(uri, client, modifiedSince, cancellationToken);

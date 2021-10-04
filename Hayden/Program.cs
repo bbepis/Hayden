@@ -34,6 +34,9 @@ namespace Hayden
 
 			IThreadConsumer consumer;
 
+			// Figure out what backend the user wants to use, and load it
+			// This entire section is more of a stop-gap than actual clean code
+
 			string backendType = rawConfigFile["backend"]["type"].Value<string>();
 
 			var yotsubaConfig = rawConfigFile["source"].ToObject<YotsubaConfig>();
