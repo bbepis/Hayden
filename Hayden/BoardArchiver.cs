@@ -543,7 +543,9 @@ namespace Hayden
 			Program.Log($"Downloading image {Path.GetFileName(downloadPath)}", true);
 
 			var request = new HttpRequestMessage(HttpMethod.Get, imageUrl);
-			using var response = await NetworkPolicies.HttpApiPolicy.ExecuteAsync(() => httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead));
+			using var response = await NetworkPolicies.HttpApiPolicy.ExecuteAsync(
+				() => httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead))
+				.ConfigureAwait(false);
 
 			await using (var webStream = await response.Content.ReadAsStreamAsync())
 			await using (var fileStream = new FileStream(downloadPath + ".part", FileMode.Create))

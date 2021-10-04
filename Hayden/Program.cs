@@ -85,14 +85,14 @@ namespace Hayden
 				});
 
 			var terminateTask = WaitForTerminateAsync();
-			await Task.WhenAny(archivalTask, terminateTask);
+			await Task.WhenAny(archivalTask, terminateTask).ConfigureAwait(false);
 
 			Log("Shutting down...");
 
 			if (!tokenSource.IsCancellationRequested)
 				tokenSource.Cancel();
 
-			await archivalTask;
+			await archivalTask.ConfigureAwait(false);
 		}
 
 
