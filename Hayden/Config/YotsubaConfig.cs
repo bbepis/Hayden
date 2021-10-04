@@ -11,6 +11,11 @@
 		public string[] Boards { get; set; }
 
 		/// <summary>
+		/// The filter for thread titles. Only archives a thread if its title matches this regex.
+		/// </summary>
+		public string ThreadTitleRegexFilter { get; set; }
+
+		/// <summary>
 		/// The minimum amount of time (in seconds) that should be waited in-between API calls. Defaults to 1.0 seconds if null.
 		/// </summary>
 		public double? ApiDelay { get; set; }

@@ -5,6 +5,7 @@ using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Hayden.Api;
@@ -13,6 +14,7 @@ using Hayden.Config;
 using Hayden.Contract;
 using Hayden.Models;
 using Hayden.Proxy;
+using Thread = Hayden.Models.Thread;
 
 namespace Hayden
 {
@@ -29,6 +31,9 @@ namespace Hayden
 		protected IThreadConsumer ThreadConsumer { get; }
 		protected IStateStore StateStore { get; }
 		protected ProxyProvider ProxyProvider { get; }
+		protected List<ulong> ThreadIdBlacklist { get; } = new List<ulong>();
+
+		protected Regex ThreadTitleRegex { get; }
 
 		/// <summary>
 		/// The minimum amount of time the archiver should wait before checking the boards for any thread updates.
@@ -49,6 +54,11 @@ namespace Hayden
 
 			ApiCooldownTimespan = TimeSpan.FromSeconds(config.ApiDelay ?? 1);
 			BoardUpdateTimespan = TimeSpan.FromSeconds(config.BoardDelay ?? 30);
+
+			if (!string.IsNullOrWhiteSpace(config.ThreadTitleRegexFilter))
+			{
+				ThreadTitleRegex = new Regex(config.ThreadTitleRegexFilter, RegexOptions.IgnoreCase | RegexOptions.Compiled);
+			}
 		}
 
 		/// <summary>
@@ -112,6 +122,7 @@ namespace Hayden
 				Program.Log($"{threadQueue.Count} threads have been queued total");
 				threadQueue.TrimExcess();
 
+				var beginTime = DateTime.UtcNow;
 				var waitTask = Task.Delay(BoardUpdateTimespan, token);
 
 
@@ -152,7 +163,7 @@ namespace Hayden
 						return Interlocked.Increment(ref imageCompletedCount);
 					}
 
-					var waitTask = Task.Delay(50, token); // Wait 100ms because we're nice people
+					var waitTask = Task.Delay(100, token); // Wait 100ms because we're nice people
 
 					try
 					{
@@ -202,7 +213,7 @@ namespace Hayden
 
 							int completedCount = await DownloadEnqueuedImage(imageDownloadClient, nextImage);
 
-							if (completedCount % 10 == 0)
+							if (completedCount % 10 == 0 || enqueuedImages.Count == 0)
 							{
 								Program.Log($"{"[Image]",-9} [{completedCount}/{enqueuedImages.Count}]");
 							}
@@ -226,7 +237,7 @@ namespace Hayden
 							return false;
 
 						WorkerStatuses[id] = $"Scraping thread /{nextThread.Board}/{nextThread.ThreadId}";
-
+						
 						bool outerSuccess = true;
 
 						using var timeoutToken = new CancellationTokenSource(TimeSpan.FromMinutes(2));
@@ -241,11 +252,12 @@ namespace Hayden
 
 							switch (result.Status)
 							{
-								case ThreadUpdateStatus.Ok:          threadStatus = " "; break;
-								case ThreadUpdateStatus.Archived:    threadStatus = "A"; break;
-								case ThreadUpdateStatus.Deleted:     threadStatus = "D"; break;
-								case ThreadUpdateStatus.NotModified: threadStatus = "N"; break;
-								case ThreadUpdateStatus.Error:       threadStatus = "E"; break;
+								case ThreadUpdateStatus.Ok:           threadStatus = " "; break;
+								case ThreadUpdateStatus.Archived:     threadStatus = "A"; break;
+								case ThreadUpdateStatus.Deleted:      threadStatus = "D"; break;
+								case ThreadUpdateStatus.NotModified:  threadStatus = "N"; break;
+								case ThreadUpdateStatus.DoNotArchive: threadStatus = "S"; break;
+								case ThreadUpdateStatus.Error:        threadStatus = "E"; break;
 							}
 
 							if (!success)
@@ -258,6 +270,9 @@ namespace Hayden
 							}
 
 							Program.Log($"{"[Thread]",-9} {$"/{nextThread.Board}/{nextThread.ThreadId}",-17} {threadStatus} {$"+({result.ImageDownloads.Count}/{result.PostCount})",-13} [{enqueuedImages.Count}/{newCompletedCount}/{threadQueue.Count}]");
+
+							if (result.Status == ThreadUpdateStatus.DoNotArchive)
+								return;
 
 							foreach (var imageDownload in result.ImageDownloads)
 								enqueuedImages.Enqueue(imageDownload);
@@ -314,15 +329,19 @@ namespace Hayden
 				}
 
 				await Task.WhenAll(workerTasks);
-				
 
-				Program.Log($" --> Completed {threadCompletedCount} / {threadQueue.Count} : Waiting for next board update interval");
+				var secondsRemaining = (BoardUpdateTimespan - (DateTime.UtcNow - beginTime)).TotalSeconds;
+				secondsRemaining = Math.Max(secondsRemaining, 0);
+
+				Program.Log("");
+				Program.Log($"Completed {threadCompletedCount} / {threadQueue.Count} threads");
+				Program.Log($"Waiting for next board update interval ({secondsRemaining:0.0}s)");
+				Program.Log("");
 
 
-				enqueuedImages.Clear();
 				await StateStore.WriteDownloadQueue(enqueuedImages);
 
-				Program.Log($" --> Cleared queued image cache");
+				Program.Log($" --> Cleared queued image cache", true);
 
 				firstRun = false;
 
@@ -337,6 +356,16 @@ namespace Hayden
 
 				await waitTask;
 			}
+		}
+
+		private bool ThreadFilter(Thread thread)
+			=> ThreadTitleRegex == null ||
+			   (thread.OriginalPost?.Subject != null && ThreadTitleRegex.IsMatch(thread.OriginalPost.Subject));
+
+		private bool ThreadIdFilter(ulong threadNumber)
+		{
+			lock (ThreadIdBlacklist)
+				return !ThreadIdBlacklist.Contains(threadNumber);
 		}
 
 		/// <summary>
@@ -419,7 +448,7 @@ namespace Hayden
 			{
 				case ResponseType.Ok:
 
-					var threadList = pagesRequest.Data.SelectMany(x => x.Threads).ToList();
+					var threadList = pagesRequest.Data.SelectMany(x => x.Threads).Where(x => ThreadIdFilter(x.ThreadNumber)).ToList();
 
 					if (firstRun)
 					{
@@ -469,6 +498,15 @@ namespace Hayden
 			return threads;
 		}
 
+		private void HandleThreadRemoval(ulong threadNumber)
+		{
+			lock (ThreadIdBlacklist)
+				if (ThreadIdBlacklist.Contains(threadNumber))
+					ThreadIdBlacklist.Remove(threadNumber);
+		}
+
+		private static QueuedImageDownload[] emptyImageQueue = new QueuedImageDownload[0];
+
 		/// <summary>
 		/// Polls a thread, and passes it to the consumer if the thread has been detected as updated.
 		/// </summary>
@@ -487,6 +525,17 @@ namespace Hayden
 
 				token.ThrowIfCancellationRequested();
 
+				if (!ThreadFilter(response.Data))
+				{
+					Program.Log($"{workerId,-2}: Blacklisting thread /{board}/{threadNumber} due to title filter", true);
+					
+					lock (ThreadIdBlacklist)
+						if (!ThreadIdBlacklist.Contains(threadNumber))
+							ThreadIdBlacklist.Add(threadNumber);
+
+					return new ThreadUpdateTaskResult(true, emptyImageQueue, ThreadUpdateStatus.DoNotArchive, 0);
+				}
+
 				switch (response.ResponseType)
 				{
 					case ResponseType.Ok:
@@ -498,6 +547,7 @@ namespace Hayden
 						{
 							Program.Log($"{workerId,-2}: Thread /{board}/{threadNumber} has been archived", true);
 
+							HandleThreadRemoval(threadNumber);
 							await ThreadConsumer.ThreadUntracked(threadNumber, board, false);
 						}
 
@@ -509,13 +559,14 @@ namespace Hayden
 							response.Data.Posts.Length);
 
 					case ResponseType.NotModified:
-						return new ThreadUpdateTaskResult(true, new QueuedImageDownload[0], ThreadUpdateStatus.NotModified, response.Data.Posts.Length);
+						return new ThreadUpdateTaskResult(true, emptyImageQueue, ThreadUpdateStatus.NotModified, response.Data.Posts.Length);
 
 					case ResponseType.NotFound:
 						Program.Log($"{workerId,-2}: Thread /{board}/{threadNumber} has been pruned or deleted", true);
 
+						HandleThreadRemoval(threadNumber);
 						await ThreadConsumer.ThreadUntracked(threadNumber, board, true);
-						return new ThreadUpdateTaskResult(true, new QueuedImageDownload[0], ThreadUpdateStatus.Deleted, 0);
+						return new ThreadUpdateTaskResult(true, emptyImageQueue, ThreadUpdateStatus.Deleted, 0);
 
 					default:
 						throw new ArgumentOutOfRangeException();
@@ -525,7 +576,7 @@ namespace Hayden
 			{
 				Program.Log($"ERROR: Could not poll or update thread /{board}/{threadNumber}. Will try again next board update\nClient name: {client.Name}\nException: {exception}");
 
-				return new ThreadUpdateTaskResult(false, new QueuedImageDownload[0], ThreadUpdateStatus.Error, 0);
+				return new ThreadUpdateTaskResult(false, emptyImageQueue, ThreadUpdateStatus.Error, 0);
 			}
 		}
 
@@ -612,12 +663,14 @@ namespace Hayden
 			ThreadId = threadId;
 		}
 	}
+
 	public enum ThreadUpdateStatus
 	{
 		Ok,
 		Deleted,
 		Archived,
 		NotModified,
+		DoNotArchive,
 		Error
 	}
 
