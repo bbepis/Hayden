@@ -35,10 +35,23 @@ namespace Hayden.Cache
 		/// <inheritdoc/>
 		public async Task WriteDownloadQueue(IReadOnlyCollection<QueuedImageDownload> imageDownloads)
 		{
-			QueuedImageDownloads.Upsert(imageDownloads.Except(QueuedImageDownloads.FindAll()));
+			foreach (var item in QueuedImageDownloads.FindAll())
+			{
+				if (!imageDownloads.Contains(item))
+				{
+					QueuedImageDownloads.Delete(item.DownloadPath);
+				}
+			}
 
-			foreach (var removedItem in QueuedImageDownloads.FindAll().Where(x => imageDownloads.All(y => !Equals(x, y))))
-				QueuedImageDownloads.Delete(removedItem.DownloadPath);
+			foreach (var item in imageDownloads)
+			{
+				if (!QueuedImageDownloads.Exists(x => x.DownloadPath == item.DownloadPath))
+				{
+					QueuedImageDownloads.Insert(item);
+				}
+			}
+
+			Program.Log("Shrinking state database...", true);
 
 			Database.Shrink();
 		}
@@ -46,7 +59,8 @@ namespace Hayden.Cache
 		/// <inheritdoc/>
 		public async Task InsertToDownloadQueue(IReadOnlyCollection<QueuedImageDownload> imageDownloads)
 		{
-			QueuedImageDownloads.Upsert(imageDownloads);
+			lock (QueuedImageDownloads)
+				QueuedImageDownloads.Upsert(imageDownloads);
 		}
 
 		/// <inheritdoc/>
