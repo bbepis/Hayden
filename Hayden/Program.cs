@@ -48,7 +48,7 @@ namespace Hayden
 					var asagiConfig = rawConfigFile["backend"].ToObject<AsagiConfig>();
 
 					downloadLocation = asagiConfig.DownloadLocation;
-					consumer = new AsagiThreadConsumer(asagiConfig, yotsubaConfig.Boards);
+					consumer = new AsagiThreadConsumer(asagiConfig, yotsubaConfig.Boards.Keys);
 					break;
 
 				case "Filesystem":

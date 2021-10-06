@@ -14,7 +14,6 @@ using Hayden.Config;
 using Hayden.Contract;
 using Hayden.Models;
 using Hayden.Proxy;
-using Thread = Hayden.Models.Thread;
 
 namespace Hayden
 {
@@ -31,9 +30,9 @@ namespace Hayden
 		protected IThreadConsumer ThreadConsumer { get; }
 		protected IStateStore StateStore { get; }
 		protected ProxyProvider ProxyProvider { get; }
-		protected List<ulong> ThreadIdBlacklist { get; } = new List<ulong>();
+		protected List<ulong> ThreadIdBlacklist { get; } = new();
 
-		protected Regex ThreadTitleRegex { get; }
+		protected Dictionary<string, BoardRules> BoardRules { get; } = new();
 
 		/// <summary>
 		/// The minimum amount of time the archiver should wait before checking the boards for any thread updates.
@@ -53,11 +52,11 @@ namespace Hayden
 			StateStore = stateStore ?? new NullStateStore();
 
 			ApiCooldownTimespan = TimeSpan.FromSeconds(config.ApiDelay ?? 1);
-			BoardUpdateTimespan = TimeSpan.FromSeconds(config.BoardDelay ?? 30);
+			BoardUpdateTimespan = TimeSpan.FromSeconds(config.BoardScrapeDelay ?? 30);
 
-			if (!string.IsNullOrWhiteSpace(config.ThreadTitleRegexFilter))
+			foreach (var (board, boardConfig) in config.Boards)
 			{
-				ThreadTitleRegex = new Regex(config.ThreadTitleRegexFilter, RegexOptions.IgnoreCase | RegexOptions.Compiled);
+				BoardRules[board] = new BoardRules(boardConfig);
 			}
 		}
 
@@ -77,7 +76,7 @@ namespace Hayden
 			List<QueuedImageDownload> requeuedImages = new List<QueuedImageDownload>();
 			
 			// These keep track of the last time we scraped a board, and therefore determines which threads we should scrape
-			SortedList<string, DateTimeOffset> lastBoardCheckTimes = new SortedList<string, DateTimeOffset>(Config.Boards.Length);
+			SortedList<string, DateTimeOffset> lastBoardCheckTimes = new SortedList<string, DateTimeOffset>(Config.Boards.Count);
 
 			// We only loop if cancellation has not been requested (i.e. "Q" has not been pressed)
 			// Every time you see "token" mentioned, its performing a check
@@ -87,7 +86,7 @@ namespace Hayden
 				int currentBoardCount = 0;
 
 				// For each board (maximum of 8 concurrently), retrieve a list of threads that need to be scraped
-				await Config.Boards.ForEachAsync(8, async board =>
+				await Config.Boards.Keys.ForEachAsync(8, async board =>
 				{
 					token.ThrowIfCancellationRequested();
 
@@ -119,9 +118,9 @@ namespace Hayden
 					{
 						lastBoardCheckTimes[board] = beforeCheckTime;
 
-						if (++currentBoardCount % 5 == 0 || currentBoardCount == Config.Boards.Length)
+						if (++currentBoardCount % 5 == 0 || currentBoardCount == Config.Boards.Count)
 						{
-							Program.Log($"{currentBoardCount} / {Config.Boards.Length} boards enqueued");
+							Program.Log($"{currentBoardCount} / {Config.Boards.Count} boards polled");
 						}
 					}
 				});
@@ -424,9 +423,23 @@ namespace Hayden
 
 		#region Filter-related
 
-		private bool ThreadFilter(Thread thread)
-			=> ThreadTitleRegex == null ||
-			   (thread.OriginalPost?.Subject != null && ThreadTitleRegex.IsMatch(thread.OriginalPost.Subject));
+		private bool ThreadFilter(string subject, string html, string board)
+		{
+			var rules = BoardRules[board];
+
+			var result = false;
+
+			if (rules.ThreadTitleRegex == null && rules.OPContentRegex == null)
+				return true;
+
+			if (rules.ThreadTitleRegex != null && subject != null && rules.ThreadTitleRegex.IsMatch(subject))
+				result = true;
+
+			if (rules.OPContentRegex != null && html != null && rules.OPContentRegex.IsMatch(html))
+				result = true;
+
+			return result;
+		}
 
 		private bool ThreadIdFilter(ulong threadNumber)
 		{
@@ -473,7 +486,11 @@ namespace Hayden
 
 					Program.Log($"Found {existingArchivedThreads.Count} existing archived threads for board /{board}/");
 
-					foreach (ulong nonExistingThreadId in archiveRequest.Data.Except(existingArchivedThreads.Select(x => x.threadId)))
+					var filteredIds = archiveRequest.Data
+						.Except(existingArchivedThreads.Select(x => x.threadId))
+						.Where(ThreadIdFilter);
+
+					foreach (ulong nonExistingThreadId in filteredIds)
 					{
 						threadQueue.Add(new ThreadPointer(board, nonExistingThreadId));
 					}
@@ -525,8 +542,11 @@ namespace Hayden
 			{
 				case ResponseType.Ok:
 
-					// Flatten all threads, and remove any that are blacklisted.
-					var threadList = pagesRequest.Data.SelectMany(x => x.Threads).Where(x => ThreadIdFilter(x.ThreadNumber)).ToList();
+					// Flatten all threads.
+					var threadList = pagesRequest.Data.SelectMany(x => x.Threads)
+						.Where(x => ThreadIdFilter(x.ThreadNumber) // Exclude any that are already blacklisted
+									&& ThreadFilter(x.Subject, x.Html, board)) // and exclude any that don't conform to our filter(s)
+						.ToList();
 
 					if (firstRun)
 					{
@@ -567,6 +587,7 @@ namespace Hayden
 					break;
 
 				case ResponseType.NotModified:
+					Program.Log($"Board /{board}/ has not changed");
 					// There are no updates for this board
 					break;
 
@@ -604,20 +625,21 @@ namespace Hayden
 
 				token.ThrowIfCancellationRequested();
 
-				if (!ThreadFilter(response.Data))
-				{
-					Program.Log($"{workerId,-2}: Blacklisting thread /{board}/{threadNumber} due to title filter", true);
-					
-					lock (ThreadIdBlacklist)
-						if (!ThreadIdBlacklist.Contains(threadNumber))
-							ThreadIdBlacklist.Add(threadNumber);
-
-					return new ThreadUpdateTaskResult(true, emptyImageQueue, ThreadUpdateStatus.DoNotArchive, 0);
-				}
-
 				switch (response.ResponseType)
 				{
 					case ResponseType.Ok:
+						
+						if (response.Data != null && !ThreadFilter(response.Data.OriginalPost?.Subject, response.Data.OriginalPost?.Comment, board))
+						{
+							Program.Log($"{workerId,-2}: Blacklisting thread /{board}/{threadNumber} due to title filter", true);
+
+							lock (ThreadIdBlacklist)
+								if (!ThreadIdBlacklist.Contains(threadNumber))
+									ThreadIdBlacklist.Add(threadNumber);
+
+							return new ThreadUpdateTaskResult(true, emptyImageQueue, ThreadUpdateStatus.DoNotArchive, 0);
+						}
+
 						Program.Log($"{workerId,-2}: Downloading changes from thread /{board}/{threadNumber}", true);
 
 						// Pass the thread data to the consumer, and the consumer will return a list of images that it wants us to download.
@@ -771,6 +793,25 @@ namespace Hayden
 			ImageDownloads = imageDownloads;
 			Status = status;
 			PostCount = postCount;
+		}
+	}
+
+	public class BoardRules
+	{
+		public Regex ThreadTitleRegex { get; set; }
+		public Regex OPContentRegex { get; set; }
+
+		public BoardRules(BoardRulesConfig config)
+		{
+			if (!string.IsNullOrWhiteSpace(config.ThreadTitleRegexFilter))
+			{
+				ThreadTitleRegex = new Regex(config.ThreadTitleRegexFilter, RegexOptions.IgnoreCase | RegexOptions.Compiled);
+			}
+
+			if (!string.IsNullOrWhiteSpace(config.OPContentRegexFilter))
+			{
+				OPContentRegex = new Regex(config.OPContentRegexFilter, RegexOptions.IgnoreCase | RegexOptions.Compiled);
+			}
 		}
 	}
 }

@@ -9,6 +9,12 @@ namespace Hayden.Models
 
 		[JsonProperty("last_modified")]
 		public ulong LastModified { get; set; }
+
+		[JsonProperty("sub")]
+		public string Subject { get; set; }
+
+		[JsonProperty("com")]
+		public string Html { get; set; }
 	}
 
 

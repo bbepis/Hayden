@@ -57,7 +57,7 @@ namespace Hayden
 		/// <param name="cancellationToken">The cancellation token to use with this request.</param>
 		public static Task<ApiResponse<Page[]>> GetBoard(string board, HttpClient client, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default)
 		{
-			return MakeYotsubaApiCall<Page[]>(new Uri($"https://a.4cdn.org/{board}/threads.json"), client, modifiedSince, cancellationToken);
+			return MakeYotsubaApiCall<Page[]>(new Uri($"https://a.4cdn.org/{board}/catalog.json"), client, modifiedSince, cancellationToken);
 		}
 
 		/// <summary>
