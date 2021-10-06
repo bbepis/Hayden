@@ -2,8 +2,10 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Numerics;
 using System.Reflection;
 using System.Runtime.CompilerServices;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using NodaTime;
@@ -184,6 +186,24 @@ namespace Hayden
 						queueIndices[key] = index;
 				}
 			}
+		}
+		
+		public static string ConvertToBase(byte[] data, int @base = 36)
+		{
+			const string chars = "0123456789abcdefghijklmnopqrstuvwxyz";
+
+			var builder = new StringBuilder();
+
+			var value = new BigInteger(data);
+
+			while (value > 0)
+			{
+				value = BigInteger.DivRem(value, @base, out var remainder);
+
+				builder.Append(chars[(int)remainder]);
+			}
+
+			return builder.ToString();
 		}
 
 		/// <summary>
