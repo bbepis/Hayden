@@ -23,7 +23,7 @@ namespace Hayden.Consumers
 			ArchiveDirectory = config.DownloadLocation;
 		}
 
-		public ConcurrentDictionary<ulong, int> ThreadCounters { get; } = new ConcurrentDictionary<ulong, int>();
+		public SortedList<ulong, List<ulong>> ThreadCounters { get; } = new();
 
 		private static readonly JsonSerializer Serializer = new JsonSerializer
 		{
@@ -61,42 +61,50 @@ namespace Hayden.Consumers
 
 			// download files that haven't already been downloaded
 
-			if (!ThreadCounters.ContainsKey(threadNumber))
-				ThreadCounters[threadNumber] = 0;
+			List<ulong> threadList;
 
-			var filesToDownload = thread.Posts
-										.Skip(ThreadCounters[threadNumber])
-										.Where(x => x.TimestampedFilename != null);
+			lock (ThreadCounters)
+				if (!ThreadCounters.TryGetValue(threadNumber, out threadList))
+				{
+					threadList = new List<ulong>();
+					ThreadCounters[threadNumber] = threadList;
+				}
+
+			var postsToDownload = thread.Posts
+										.Where(x => x.TimestampedFilename != null && !threadList.Contains(x.PostNumber));
 
 			List<QueuedImageDownload> imageDownloads = new List<QueuedImageDownload>();
 
-			await Task.WhenAll(filesToDownload.Select(async x =>
+			foreach (var post in postsToDownload)
 			{
 				if (Config.FullImagesEnabled)
 				{
-					string fullImageFilename = Path.Combine(threadDirectory, $"{x.TimestampedFilename}{x.FileExtension}");
-					string fullImageUrl = $"https://i.4cdn.org/{board}/{x.TimestampedFilename}{x.FileExtension}";
+					string fullImageFilename = Path.Combine(threadDirectory, post.TimestampedFilenameFull);
+					string fullImageUrl = $"https://i.4cdn.org/{board}/{post.TimestampedFilenameFull}";
 
-					imageDownloads.Add(new QueuedImageDownload(new Uri(fullImageUrl), fullImageFilename));
+					if (!File.Exists(fullImageFilename))
+						imageDownloads.Add(new QueuedImageDownload(new Uri(fullImageUrl), fullImageFilename));
 				}
 
 				if (Config.ThumbnailsEnabled)
 				{
-					string thumbFilename = Path.Combine(threadThumbsDirectory, $"{x.TimestampedFilename}s.jpg");
-					string thumbUrl = $"https://i.4cdn.org/{board}/{x.TimestampedFilename}s.jpg";
+					string thumbFilename = Path.Combine(threadThumbsDirectory, $"{post.TimestampedFilename}s.jpg");
+					string thumbUrl = $"https://i.4cdn.org/{board}/{post.TimestampedFilename}s.jpg";
 
-					imageDownloads.Add(new QueuedImageDownload(new Uri(thumbUrl), thumbFilename));
+					if (!File.Exists(thumbFilename))
+						imageDownloads.Add(new QueuedImageDownload(new Uri(thumbUrl), thumbFilename));
 				}
-			}));
 
-			ThreadCounters[threadNumber] = thread.Posts.Length;
+				threadList.Add(post.PostNumber);
+			}
 
 			return imageDownloads;
 		}
 
 		public Task ThreadUntracked(ulong threadId, string board, bool deleted)
 		{
-			ThreadCounters.TryRemove(threadId, out _);
+			lock (ThreadCounters)
+				ThreadCounters.Remove(threadId);
 
 			return Task.CompletedTask;
 		}
@@ -117,7 +125,13 @@ namespace Hayden.Consumers
 			{
 				if (!existingDirectories.TryGetValue(threadId, out var threadDir))
 					continue;
-				
+
+				if (!getTimestamps)
+				{
+					existingThreads.Add((threadId, DateTimeOffset.MinValue));
+					continue;
+				}
+
 				using StreamReader streamReader = new StreamReader(File.OpenRead(Path.Combine(threadDir, "thread.json")));
 				using JsonReader reader = new JsonTextReader(streamReader);
 
