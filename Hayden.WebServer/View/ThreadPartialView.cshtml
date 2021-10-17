@@ -1,0 +1,9 @@
+﻿@using Hayden.WebServer.View
+@model Hayden.WebServer.View.ThreadPartialViewModel
+
+<div class="thread">
+	@foreach (var post in Model.Posts)
+	{
+		@await Html.PartialAsync("/View/PostPartialView.cshtml", new PostPartialViewModel(post))
+	}
+</div>

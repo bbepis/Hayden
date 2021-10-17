@@ -1,0 +1,29 @@
+﻿@model Hayden.WebServer.View.PostPartialViewModel
+
+<div id="p@(Model.Post.PostId)" class="post reply">
+	<div id="pi@(Model.Post.PostId)" class="postInfo">
+		<span class="nameBlock">
+			<span class="name">@(Model.Post.Author ?? "Anonymous")</span>
+		</span>
+		<span>
+			@(Model.Post.DateTime.ToString("f"))
+		</span>
+		<span>
+            <a href="/@(Model.Post.Board)/thread/@(Model.Post.ThreadId)#p@(Model.Post.PostId)">No. @(Model.Post.PostId)</a>
+		</span>
+	</div>
+	@if (Model.HasFile)
+	{
+		<div class="file">
+			<div class="fileText">
+				<a href="@Model.ImageUrl">@Model.Post.MediaFilename</a> (69 KB, 123 x 456)
+			</div>
+			<a class="fileThumb" href="@Model.ImageUrl">
+				<img src="@Model.ThumbnailUrl"/>
+			</a>
+		</div>
+	} 
+	<blockquote>
+		@Html.Raw(Model.Post.Html)
+	</blockquote>
+</div>

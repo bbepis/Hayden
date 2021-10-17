@@ -50,6 +50,13 @@ namespace Hayden
 					downloadLocation = asagiConfig.DownloadLocation;
 					consumer = new AsagiThreadConsumer(asagiConfig, yotsubaConfig.Boards.Keys);
 					break;
+					
+				case "Hayden":
+					var haydenConfig = rawConfigFile["backend"].ToObject<HaydenMysqlConfig>();
+
+					downloadLocation = haydenConfig.DownloadLocation;
+					consumer = new HaydenMysqlThreadConsumer(haydenConfig);
+					break;
 
 				case "Filesystem":
 					var filesystemConfig = rawConfigFile["backend"].ToObject<FilesystemConfig>();
