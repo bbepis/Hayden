@@ -102,7 +102,7 @@ namespace Hayden.Tests.Api
 			Assert.AreEqual(ResponseType.Ok, result.ResponseType);
 			Assert.IsNotNull(result.Data);
 
-			Assert.AreEqual(1, result.Data.Posts.Length);
+			Assert.AreEqual(1, result.Data.Posts.Count);
 
 			var opPost = result.Data.Posts[0];
 

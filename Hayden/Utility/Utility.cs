@@ -187,6 +187,21 @@ namespace Hayden
 				}
 			}
 		}
+
+		public static int FirstIndexOf<TItem>(this IEnumerable<TItem> items, Predicate<TItem> predicate)
+		{
+			int i = 0;
+
+			foreach (var item in items)
+			{
+				if (predicate(item))
+					return i;
+
+				i++;
+			}
+
+			return -1;
+		}
 		
 		public static string ConvertToBase(byte[] data, int @base = 36)
 		{
@@ -194,7 +209,7 @@ namespace Hayden
 
 			var builder = new StringBuilder();
 
-			var value = new BigInteger(data);
+			var value = new BigInteger(data, true);
 
 			while (value > 0)
 			{
@@ -211,9 +226,9 @@ namespace Hayden
 		/// </summary>
 		/// <param name="input">The string to hash.</param>
 		/// <returns>A 32-bit FV1a hash.</returns>
-		public static int FNV1aHash32(string input)
+		public static uint FNV1aHash32(string input)
 		{
-			const int FNV32Offset = -2128831035;
+			uint FNV32Offset = 0x811C9DC5U;
 
 			return FNV1aHash32(input, FNV32Offset);
 		}
@@ -225,11 +240,11 @@ namespace Hayden
 		/// <param name="state">The current state of the hash.</param>
 		/// <returns>A 32-bit FV1a hash.</returns>
 		[MethodImpl(MethodImplOptions.AggressiveInlining)]
-		public static int FNV1aHash32(int input, int state)
+		public static uint FNV1aHash32(int input, uint state)
 		{
-			const int FNV32Prime = 0x1000193;
+			const uint FNV32Prime = 0x1000193;
 
-			state = state ^ input;
+			state = (uint)(state ^ input);
 			return state * FNV32Prime;
 		}
 
@@ -240,11 +255,11 @@ namespace Hayden
 		/// <param name="state">The current state of the hash.</param>
 		/// <returns>A 32-bit FV1a hash.</returns>
 		[MethodImpl(MethodImplOptions.AggressiveInlining)]
-		public static int FNV1aHash32(string input, int state)
+		public static uint FNV1aHash32(string input, uint state)
 		{
 			foreach (char c in input)
 			{
-				short charValue = (short)c;
+				ushort charValue = c;
 
 				state = FNV1aHash32(charValue >> 8, state);
 				state = FNV1aHash32(charValue & 0xFF, state);

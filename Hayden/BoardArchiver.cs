@@ -30,7 +30,9 @@ namespace Hayden
 		protected IThreadConsumer ThreadConsumer { get; }
 		protected IStateStore StateStore { get; }
 		protected ProxyProvider ProxyProvider { get; }
-		protected List<ulong> ThreadIdBlacklist { get; } = new();
+
+		protected List<ThreadPointer> ThreadIdBlacklist { get; } = new();
+		protected SortedList<ThreadPointer, TrackedThread> TrackedThreads { get; } = new();
 
 		protected Dictionary<string, BoardRules> BoardRules { get; } = new();
 
@@ -96,14 +98,32 @@ namespace Hayden
 						if (!lastBoardCheckTimes.TryGetValue(board, out lastDateTimeCheck))
 							lastDateTimeCheck = DateTimeOffset.MinValue;
 
-					// Set this time now before we do the network calls, as it's safer and we won't miss any threads that update inbetween
+					// Set this time now before we do the network calls, as it's safer and we won't miss any threads that update in-between
 					DateTimeOffset beforeCheckTime = DateTimeOffset.Now;
 					
 					// Get a list of threads to be scraped
-					var threads = await GetBoardThreads(token, board, lastDateTimeCheck, firstRun);
+					var (modifiedThreads, allThreads) = await GetBoardThreads(token, board, lastDateTimeCheck, firstRun);
 
 					lock (threadQueue)
-						threadQueue.AddRange(threads);
+						threadQueue.AddRange(modifiedThreads);
+
+					// If allThreads is null, then the board hasn't changed since we last checked
+					if (allThreads != null)
+					{
+						// Examine the threads we are tracking to find any that have fallen off.
+						// This is the only way we can find out if a thread has been archived or deleted in this polling model
+
+						// Locking on the tracking sortedlist is not required since all operations at this point in time are read-only
+
+						var missingTrackedThreads = TrackedThreads.Where(x => x.Key.Board == board && !allThreads.Contains(x.Key));
+
+						foreach (var (pointer, _) in missingTrackedThreads)
+						{
+							// This thread is missing from the board listing, but the last time we checked it it was still alive.
+							// Add it to the re-examination queue
+							threadQueue.Add(pointer);
+						}
+					}
 
 					if (firstRun && Config.ReadArchive)
 					{
@@ -293,18 +313,17 @@ namespace Hayden
 								return;
 							}
 
+							if (result.ImageDownloads.Count > 0)
+							{
+								foreach (var imageDownload in result.ImageDownloads)
+									enqueuedImages.Enqueue(imageDownload);
+
+								// Add detected images to the cache layer image collection
+								await StateStore.InsertToDownloadQueue(new ReadOnlyCollection<QueuedImageDownload>(result.ImageDownloads));
+							}
+
 							// Log the status of the scraped thread
-							Program.Log($"{"[Thread]",-9} {$"/{nextThread.Board}/{nextThread.ThreadId}",-17} {threadStatus} {$"+({result.ImageDownloads.Count}/{result.PostCount})",-13} [{enqueuedImages.Count}/{newCompletedCount}/{threadQueue.Count}]");
-
-							if (result.Status == ThreadUpdateStatus.DoNotArchive)
-								// This thread has been marked as do not archive, which usually means that it has been filtered out by user config.
-								return;
-
-							foreach (var imageDownload in result.ImageDownloads)
-								enqueuedImages.Enqueue(imageDownload);
-
-							// Add detected images to the cache layer image collection
-							await StateStore.InsertToDownloadQueue(new ReadOnlyCollection<QueuedImageDownload>(result.ImageDownloads));
+							Program.Log($"{"[Thread]",-9} {$"/{nextThread.Board}/{nextThread.ThreadId}",-17} {threadStatus} {$"+({result.ImageDownloads.Count}/{result.PostCountChange})",-13} [{enqueuedImages.Count}/{newCompletedCount}/{threadQueue.Count}]");
 						});
 
 						return outerSuccess;
@@ -441,17 +460,20 @@ namespace Hayden
 			return result;
 		}
 
-		private bool ThreadIdFilter(ulong threadNumber)
+		private bool ThreadIdFilter(ThreadPointer threadPointer)
 		{
 			lock (ThreadIdBlacklist)
-				return !ThreadIdBlacklist.Contains(threadNumber);
+				return !ThreadIdBlacklist.Contains(threadPointer);
 		}
 
-		private void HandleThreadRemoval(ulong threadNumber)
+		private void HandleThreadRemoval(ThreadPointer threadPointer)
 		{
+			lock (TrackedThreads)
+				TrackedThreads.Remove(threadPointer);
+
 			lock (ThreadIdBlacklist)
-				if (ThreadIdBlacklist.Contains(threadNumber))
-					ThreadIdBlacklist.Remove(threadNumber);
+				if (ThreadIdBlacklist.Contains(threadPointer))
+					ThreadIdBlacklist.Remove(threadPointer);
 		}
 
 		#endregion
@@ -487,8 +509,8 @@ namespace Hayden
 					Program.Log($"Found {existingArchivedThreads.Count} existing archived threads for board /{board}/");
 
 					var filteredIds = archiveRequest.Data
-						.Except(existingArchivedThreads.Select(x => x.threadId))
-						.Where(ThreadIdFilter);
+						.Except(existingArchivedThreads.Select(x => x.ThreadId))
+						.Where(x => ThreadIdFilter(new ThreadPointer(board, x)));
 
 					foreach (ulong nonExistingThreadId in filteredIds)
 					{
@@ -521,11 +543,12 @@ namespace Hayden
 		/// <param name="lastDateTimeCheck">The time to compare the thread's updated time to.</param>
 		/// <param name="firstRun">True if this is the first cycle in the archival loop, otherwise false. Controls whether or not the database is called to find existing threads</param>
 		/// <returns>A list of thread IDs.</returns>
-		public async Task<IList<ThreadPointer>> GetBoardThreads(CancellationToken token, string board, DateTimeOffset lastDateTimeCheck, bool firstRun)
+		public async Task<(IList<ThreadPointer> updatedThreads, IList<ThreadPointer> allThreads)> GetBoardThreads(CancellationToken token, string board, DateTimeOffset lastDateTimeCheck, bool firstRun)
 		{
 			var cooldownTask = Task.Delay(ApiCooldownTimespan, token);
 
 			var threads = new List<ThreadPointer>();
+			List<ThreadPointer> allThreads = null;
 
 			var pagesRequest = await NetworkPolicies.GenericRetryPolicy<ApiResponse<Page[]>>(12).ExecuteAsync(async () =>
 			{
@@ -544,7 +567,7 @@ namespace Hayden
 
 					// Flatten all threads.
 					var threadList = pagesRequest.Data.SelectMany(x => x.Threads)
-						.Where(x => ThreadIdFilter(x.ThreadNumber) // Exclude any that are already blacklisted
+						.Where(x => ThreadIdFilter(new ThreadPointer(board, x.ThreadNumber)) // Exclude any that are already blacklisted
 									&& ThreadFilter(x.Subject, x.Html, board)) // and exclude any that don't conform to our filter(s)
 						.ToList();
 
@@ -558,14 +581,19 @@ namespace Hayden
 
 						foreach (var existingThread in existingThreads)
 						{
-							var thread = threadList.First(x => x.ThreadNumber == existingThread.threadId);
+							var thread = threadList.First(x => x.ThreadNumber == existingThread.ThreadId);
 
 							// Only remove threads to be downloaded if the downloaded thread is already up-to-date by comparing last post times
 							// This can't be done below as "last post time" is different to "last modified time"
-							if (thread.LastModified <= Utility.GetGMTTimestamp(existingThread.lastPostTime))
+							if (thread.LastModified <= Utility.GetGMTTimestamp(existingThread.LastPostTime))
 							{
 								threadList.Remove(thread);
 							}
+
+							// Start tracking the thread
+
+							lock (TrackedThreads)
+								TrackedThreads[new ThreadPointer(board, existingThread.ThreadId)] = TrackedThread.StartTrackingThread(existingThread);
 						}
 					}
 
@@ -581,6 +609,8 @@ namespace Hayden
 							threads.Add(new ThreadPointer(board, thread.ThreadNumber));
 						}
 					}
+
+					allThreads = threadList.Select(x => new ThreadPointer(board, x.ThreadNumber)).ToList();
 
 					Program.Log($"Enqueued {threads.Count} threads from board /{board}/ past timestamp {lastCheckTimestamp}");
 
@@ -599,7 +629,7 @@ namespace Hayden
 
 			await cooldownTask;
 
-			return threads;
+			return (threads, allThreads);
 		}
 
 		// Cache this instead of having to create a new one every time we want to return an empty array
@@ -621,6 +651,7 @@ namespace Hayden
 
 				// We should be passing in the last scrape time here, but I don't remember why we don't
 				// I think it's because we only get to this point when we know for sure that the thread has changed?
+				// Or maybe there are properties that *can* change without updating last_modified
 				var response = await YotsubaApi.GetThread(board, threadNumber, client.Client, null, token);
 
 				token.ThrowIfCancellationRequested();
@@ -628,46 +659,98 @@ namespace Hayden
 				switch (response.ResponseType)
 				{
 					case ResponseType.Ok:
-						
+
+						var threadPointer = new ThreadPointer(board, threadNumber);
+
 						if (response.Data != null && !ThreadFilter(response.Data.OriginalPost?.Subject, response.Data.OriginalPost?.Comment, board))
 						{
 							Program.Log($"{workerId,-2}: Blacklisting thread /{board}/{threadNumber} due to title filter", true);
-
+							
 							lock (ThreadIdBlacklist)
-								if (!ThreadIdBlacklist.Contains(threadNumber))
-									ThreadIdBlacklist.Add(threadNumber);
+								if (!ThreadIdBlacklist.Contains(threadPointer))
+									ThreadIdBlacklist.Add(threadPointer);
 
 							return new ThreadUpdateTaskResult(true, emptyImageQueue, ThreadUpdateStatus.DoNotArchive, 0);
 						}
 
 						Program.Log($"{workerId,-2}: Downloading changes from thread /{board}/{threadNumber}", true);
 
-						// Pass the thread data to the consumer, and the consumer will return a list of images that it wants us to download.
-						var images = await ThreadConsumer.ConsumeThread(response.Data, board);
+
+						if (response.Data == null
+						    || response.Data.Posts.Count == 0
+						    || response.Data.OriginalPost == null
+						    || response.Data.OriginalPost.PostNumber == 0)
+						{
+							// This is a very strange edge case.
+							// The 4chan API can return a malformed thread object if the thread has been (incorrectly?) deleted
+							
+							// For example, this is the JSON returned by post /g/83700099 after it was removed for DMCA infringement:
+							// {"posts":[{"resto":0,"replies":0,"images":0,"unique_ips":1,"semantic_url":null}]}
+							
+							// If it's returning this then the assumption is that the thread has been deleted
+
+							Program.Log($"{workerId,-2}: Thread /{board}/{threadNumber} is malformed (DMCA?)", true);
+
+							HandleThreadRemoval(threadPointer);
+							await ThreadConsumer.ThreadUntracked(threadNumber, board, true);
+
+							return new ThreadUpdateTaskResult(true, emptyImageQueue, ThreadUpdateStatus.Deleted, 0);
+						}
+
+						// Process the thread data with its assigned TrackedThread instance, then pass the results to the consumer
+
+						TrackedThread trackedThread;
+
+						bool isNewThread = false;
+
+						lock (TrackedThreads)
+							if (!TrackedThreads.TryGetValue(threadPointer, out trackedThread))
+							{
+								// this is a brand new thread that hasn't been tracked yet
+								trackedThread = TrackedThread.StartTrackingThread();
+								TrackedThreads[threadPointer] = trackedThread;
+								isNewThread = true;
+							}
+
+						var threadUpdateInfo = trackedThread.ProcessThreadUpdates(threadPointer, response.Data);
+						threadUpdateInfo.IsNewThread = isNewThread;
+
+						if (!threadUpdateInfo.HasChanges)
+						{
+							// This should be safe when a thread becomes archived, because that archive bit flip should be counted as a change as well
+
+							return new ThreadUpdateTaskResult(true, emptyImageQueue, ThreadUpdateStatus.NotModified, 0);
+						}
+						
+						// TODO: handle failures from this call
+						// Right now if this call fails, Hayden's state will assume that it has succeeded because the
+						//   TrackedThread instance's state hasn't rolled back
+
+						var images = await ThreadConsumer.ConsumeThread(threadUpdateInfo);
 
 						if (response.Data.OriginalPost.Archived == true)
 						{
 							Program.Log($"{workerId,-2}: Thread /{board}/{threadNumber} has been archived", true);
 
-							HandleThreadRemoval(threadNumber);
+							HandleThreadRemoval(threadPointer);
 							await ThreadConsumer.ThreadUntracked(threadNumber, board, false);
 						}
 
 						return new ThreadUpdateTaskResult(true,
 							images,
 							response.Data.OriginalPost.Archived == true ? ThreadUpdateStatus.Archived : ThreadUpdateStatus.Ok,
-							response.Data.Posts.Length);
+							threadUpdateInfo.NewPosts.Count - threadUpdateInfo.DeletedPosts.Count);
 
 					case ResponseType.NotModified:
 						// There are no updates for this thread
-						return new ThreadUpdateTaskResult(true, emptyImageQueue, ThreadUpdateStatus.NotModified, response.Data.Posts.Length);
+						return new ThreadUpdateTaskResult(true, emptyImageQueue, ThreadUpdateStatus.NotModified, 0);
 
 					case ResponseType.NotFound:
 						// This thread returned a 404, indicating a deletion
 
 						Program.Log($"{workerId,-2}: Thread /{board}/{threadNumber} has been pruned or deleted", true);
 
-						HandleThreadRemoval(threadNumber);
+						HandleThreadRemoval(new ThreadPointer(board, threadNumber));
 						await ThreadConsumer.ThreadUntracked(threadNumber, board, true);
 
 						return new ThreadUpdateTaskResult(true, emptyImageQueue, ThreadUpdateStatus.Deleted, 0);
@@ -757,7 +840,7 @@ namespace Hayden
 	/// <summary>
 	/// A struct containing information about a specific thread.
 	/// </summary>
-	public struct ThreadPointer
+	public struct ThreadPointer : IComparable<ThreadPointer>, IEquatable<ThreadPointer>
 	{
 		public string Board { get; }
 
@@ -768,6 +851,45 @@ namespace Hayden
 			Board = board;
 			ThreadId = threadId;
 		}
+
+		#region Interface boilerplate
+
+		public int CompareTo(ThreadPointer other)
+		{
+			int result = Board.CompareTo(other.Board);
+
+			if (result != 0)
+				return result;
+
+			return ThreadId.CompareTo(other.ThreadId);
+		}
+
+		public bool Equals(ThreadPointer other)
+		{
+			return Board == other.Board && ThreadId == other.ThreadId;
+		}
+
+		public override bool Equals(object obj)
+		{
+			return obj is ThreadPointer other && Equals(other);
+		}
+
+		public override int GetHashCode()
+		{
+			return HashCode.Combine(Board, ThreadId);
+		}
+
+		public static bool operator ==(ThreadPointer left, ThreadPointer right)
+		{
+			return left.Equals(right);
+		}
+
+		public static bool operator !=(ThreadPointer left, ThreadPointer right)
+		{
+			return !left.Equals(right);
+		}
+		
+		#endregion
 	}
 
 	public enum ThreadUpdateStatus
@@ -785,14 +907,14 @@ namespace Hayden
 		public bool Success { get; set; }
 		public IList<QueuedImageDownload> ImageDownloads { get; set; }
 		public ThreadUpdateStatus Status { get; set; }
-		public int PostCount { get; set; }
+		public int PostCountChange { get; set; }
 
-		public ThreadUpdateTaskResult(bool success, IList<QueuedImageDownload> imageDownloads, ThreadUpdateStatus status, int postCount)
+		public ThreadUpdateTaskResult(bool success, IList<QueuedImageDownload> imageDownloads, ThreadUpdateStatus status, int postCountChange)
 		{
 			Success = success;
 			ImageDownloads = imageDownloads;
 			Status = status;
-			PostCount = postCount;
+			PostCountChange = postCountChange;
 		}
 	}
 

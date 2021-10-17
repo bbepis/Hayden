@@ -70,6 +70,9 @@ namespace Hayden
 
 		public ChainedQuery SetParam(string parameter, object value)
 		{
+			if (value == null)
+				value = DBNull.Value;
+
 			if (Command.Parameters.Contains(parameter))
 			{
 				Command.Parameters[parameter].Value = value;
@@ -167,20 +170,21 @@ namespace Hayden
 		
 		public static T GetValue<T>(this IDataRecord row, string column)
 		{
-			object value = row[column];
-
-			if (value == null || value == DBNull.Value)
-				return default;
-
-			return (T)value;
+			return ConvertValue<T>(row[column]);
 		}
 		
 		public static T GetValue<T>(this DataRow row, string column)
 		{
-			object value = row[column];
+			return ConvertValue<T>(row[column]);
+		}
 
+		private static T ConvertValue<T>(object value)
+		{
 			if (value == null || value == DBNull.Value)
 				return default;
+
+			if (typeof(T) == typeof(bool))
+				return (T)(object)Convert.ToBoolean(value);
 
 			return (T)value;
 		}

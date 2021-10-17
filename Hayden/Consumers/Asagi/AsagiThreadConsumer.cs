@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Data;
 using System.IO;
@@ -12,7 +11,6 @@ using Hayden.Contract;
 using Hayden.Models;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
-using Thread = Hayden.Models.Thread;
 
 namespace Hayden.Consumers
 {
@@ -37,14 +35,12 @@ namespace Hayden.Consumers
 				CreateTables(board).Wait();
 			}
 		}
-
-		private ConcurrentDictionary<ThreadPointer, SortedList<ulong, int>> ThreadHashes { get; } = new ConcurrentDictionary<ThreadPointer, SortedList<ulong, int>>();
-
+		
 		/// <inheritdoc/>
-		public async Task<IList<QueuedImageDownload>> ConsumeThread(Thread thread, string board)
+		public async Task<IList<QueuedImageDownload>> ConsumeThread(ThreadUpdateInfo threadUpdateInfo)
 		{
-			var hashObject = new ThreadPointer(board, thread.OriginalPost.PostNumber);
-			List<QueuedImageDownload> imageDownloads = new List<QueuedImageDownload>(thread.Posts.Length);
+			List<QueuedImageDownload> imageDownloads = new List<QueuedImageDownload>();
+			string board = threadUpdateInfo.ThreadPointer.Board;
 
 			async Task ProcessImages(Post post)
 			{
@@ -95,113 +91,28 @@ namespace Hayden.Consumers
 					}
 				}
 			}
+			
+			await UpdatePostExif(threadUpdateInfo.Thread.OriginalPost, board);
 
-			if (!ThreadHashes.TryGetValue(hashObject, out var threadHashes))
+			foreach (var post in threadUpdateInfo.NewPosts)
 			{
-				// Rebuild hashes from database, if they exist
+				await ProcessImages(post);
+			}
+			
+			await InsertPosts(threadUpdateInfo.NewPosts, board);
 
-				var hashes = await GetHashesOfThread(hashObject.ThreadId, board);
+			foreach (var post in threadUpdateInfo.UpdatedPosts)
+			{
+				Program.Log($"[Asagi] Post /{board}/{post.PostNumber} has been modified", true);
 
-				threadHashes = new SortedList<ulong, int>();
-
-				foreach (var hashPair in hashes)
-				{
-					threadHashes.Add(hashPair.Key, hashPair.Value);
-
-					var currentPost = thread.Posts.FirstOrDefault(post => post.PostNumber == hashPair.Key);
-
-					if (currentPost != null)
-						await ProcessImages(currentPost);
-				}
-
-				ThreadHashes.TryAdd(hashObject, threadHashes);
+				await UpdatePost(post, board, false);
 			}
 
-			List<Post> postsToAdd = new List<Post>(thread.Posts.Length);
-
-			foreach (var post in thread.Posts)
+			foreach (var postNumber in threadUpdateInfo.DeletedPosts)
 			{
-				if (threadHashes.TryGetValue(post.PostNumber, out int existingHash))
-				{
-					int hash = CalculateAsagiHash(post, true);
+				Program.Log($"[Asagi] Post /{board}/{postNumber} has been deleted", true);
 
-					if (hash != existingHash)
-					{
-						// Post has changed since we last saved it to the database
-
-						Program.Log($"[Asagi] Post /{board}/{post.PostNumber} has been modified", true);
-
-						await UpdatePost(post, board, false);
-
-						threadHashes[post.PostNumber] = hash;
-					}
-					else
-					{
-						// Post has not changed
-
-						if (post.ReplyPostNumber == 0)
-						{
-							// OP post
-							await UpdatePostExif(post, board);
-						}
-					}
-				}
-				else
-				{
-					// Post has not yet been inserted into the database
-
-					postsToAdd.Add(post);
-
-					await ProcessImages(post);
-				}
-			}
-
-			if (threadHashes.Count == 0)
-			{
-				// We are inserting the thread for the first time.
-
-				await InsertPosts(thread.Posts, board);
-			}
-			else
-			{
-				if (postsToAdd.Count > 0)
-					await InsertPosts(postsToAdd, board);
-			}
-
-			foreach (var post in postsToAdd)
-				threadHashes[post.PostNumber] = CalculateAsagiHash(post, true);
-
-			Program.Log($"[Asagi] {postsToAdd.Count} posts have been inserted from thread /{board}/{thread.OriginalPost.PostNumber} ({imageDownloads.Count} media items enqueued)", true);
-
-			List<ulong> postNumbersToDelete = new List<ulong>(thread.Posts.Length);
-
-			foreach (var postNumber in threadHashes.Keys)
-			{
-				if (thread.Posts.All(x => x.PostNumber != postNumber))
-				{
-					// Post has been deleted
-
-					Program.Log($"[Asagi] Post /{board}/{postNumber} has been deleted", true);
-
-					await SetUntracked(postNumber, board, true);
-
-					postNumbersToDelete.Add(postNumber);
-				}
-			}
-
-			// workaround for not being able to remove from a collection while enumerating it
-			foreach (var postNumber in postNumbersToDelete)
-				threadHashes.Remove(postNumber, out _);
-
-
-			threadHashes.TrimExcess();
-
-			if (thread.OriginalPost.Archived == true)
-			{
-				// We don't need the hashes if the thread is archived, since it will never change
-				// If it does change, we can just grab a new set from the database
-
-				ThreadHashes.TryRemove(hashObject, out _);
+				await SetUntracked(postNumber, board, true);
 			}
 
 			return imageDownloads;
@@ -211,38 +122,6 @@ namespace Hayden.Consumers
 		public async Task ThreadUntracked(ulong threadId, string board, bool deleted)
 		{
 			await SetUntracked(threadId, board, deleted);
-
-			ThreadHashes.TryRemove(new ThreadPointer(board, threadId), out _);
-		}
-
-		/// <summary>
-		/// Calculates a 32bit hash for a specific 4chan post, used for tracking post content changes.
-		/// </summary>
-		/// <param name="sticky">Post is a sticky</param>
-		/// <param name="closed">Post is closed (archived or pruned)</param>
-		/// <param name="comment">The text attached to a post</param>
-		/// <param name="originalFilename">The filename of the image attached (null if no image)</param>
-		/// <returns>Hash of the post.</returns>
-		public static int CalculateAsagiHash(bool? sticky, bool? closed, string comment, string originalFilename)
-		{
-			int hashCode = Utility.FNV1aHash32(comment ?? "u\0001");
-			hashCode = Utility.FNV1aHash32(sticky == true ? 2 : 1, hashCode);
-			hashCode = Utility.FNV1aHash32(closed == true ? 2 : 1, hashCode);
-			hashCode = Utility.FNV1aHash32(originalFilename ?? "u\0001", hashCode);
-			return hashCode;
-		}
-
-		/// <summary>
-		/// Calculates a 32bit hash for a specific 4chan post, used for tracking post content changes.
-		/// </summary>
-		/// <param name="post">The post object.</param>
-		/// <param name="cleanComment">True to clean the comment and convert it to BBCode, false to use the text as-is.</param>
-		/// <returns>Hash of the post.</returns>
-		public static int CalculateAsagiHash(Post post, bool cleanComment)
-		{
-			string comment = cleanComment ? CleanComment(post.Comment) : post.Comment;
-
-			return CalculateAsagiHash(post.Sticky, post.Closed, comment, post.OriginalFilename);
 		}
 
 
@@ -371,6 +250,9 @@ namespace Hayden.Consumers
 		/// <param name="board">The board of the posts.</param>
 		public async Task InsertPosts(ICollection<Post> posts, string board)
 		{
+			if (posts.Count == 0)
+				return;
+
 			string insertQuerySql = $"INSERT INTO `{board}`"
 									+ "  (poster_ip, num, subnum, thread_num, op, timestamp, timestamp_expired, preview_orig, preview_w, preview_h,"
 									+ "  media_filename, media_w, media_h, media_size, media_hash, media_orig, spoiler, deleted,"
@@ -557,37 +439,6 @@ namespace Hayden.Consumers
 		}
 
 		/// <summary>
-		/// Returns a list of hashes generated by <see cref="CalculateAsagiHash(Post,bool)"/>, for every post in a specified thread.
-		/// </summary>
-		/// <param name="threadNumber">The post number of the thread.</param>
-		/// <param name="board">The board of the thread.</param>
-		public async Task<IEnumerable<KeyValuePair<ulong, int>>> GetHashesOfThread(ulong threadNumber, string board)
-		{
-			var threadHashes = new List<KeyValuePair<ulong, int>>();
-
-			await using var rentedConnection = await ConnectionPool.RentConnectionAsync();
-
-			var table = await rentedConnection.Object.CreateQuery($"SELECT num, locked, sticky, comment, media_filename FROM `{board}` WHERE thread_num = @thread_no")
-											  .SetParam("@thread_no", (uint)threadNumber)
-											  .ExecuteTableAsync();
-
-			foreach (DataRow row in table.Rows)
-			{
-				uint postNumber = row.GetValue<uint>("num");
-				bool? closed = row.GetValue<bool?>("locked");
-				bool? sticky = row.GetValue<bool?>("sticky");
-				string comment = row.GetValue<string>("comment");
-
-				string originalFilename = row.GetValue<string>("media_filename")
-											 ?.Substring(0, ((string)row["media_filename"]).LastIndexOf('.'));
-
-				threadHashes.Add(new KeyValuePair<ulong, int>(postNumber, CalculateAsagiHash(sticky, closed, comment, originalFilename)));
-			}
-
-			return threadHashes;
-		}
-
-		/// <summary>
 		/// Retrieves media info for a specific image hash from the database.
 		/// </summary>
 		/// <param name="md5Hash">A base64 encoded string of the MD5 hash.</param>
@@ -615,7 +466,7 @@ namespace Hayden.Consumers
 		}
 
 		/// <inheritdoc/>
-		public async Task<ICollection<(ulong threadId, DateTimeOffset lastPostTime)>> CheckExistingThreads(IEnumerable<ulong> threadIdsToCheck, string board, bool archivedOnly, bool getTimestamps = true)
+		public async Task<ICollection<ExistingThreadInfo>> CheckExistingThreads(IEnumerable<ulong> threadIdsToCheck, string board, bool archivedOnly, bool getMetadata = true)
 		{
 			int archivedInt = archivedOnly ? 1 : 0;
 
@@ -623,7 +474,7 @@ namespace Hayden.Consumers
 
 			string query;
 
-			if (getTimestamps)
+			if (getMetadata)
 			{
 				query = $@"
 				SELECT TABLE1.num, MAX(TABLE2.timestamp)
@@ -653,11 +504,19 @@ namespace Hayden.Consumers
 
 			var chainedQuery = rentedConnection.Object.CreateQuery(query);
 
-			List<(ulong threadId, DateTimeOffset lastPostTime)> items = new List<(ulong threadId, DateTimeOffset lastPostTime)>();
-
+			var items = new List<ExistingThreadInfo>();
+			
 			await foreach (var row in chainedQuery.ExecuteRowsAsync())
 			{
-				items.Add(((ulong)(uint)row[0], Utility.ConvertNewYorkTimestamp((uint)row[1]).UtcDateTime));
+				// So normally we'd calculate the hash of a post here, and then TrackedThread will know which posts have actually been modified.
+				// However this isn't possible in this case because Asagi keeps comments as converted BBCode instead of HTML like the API returns.
+				
+				// We return a null hash instead, and then TrackedThread will assume that all posts have been newly added and then resubmit them to the backend.
+				// This won't happen all at once, because it will only happen for threads that have been updated since the last time they were committed to Asagi (i.e. never ones in archive)
+				
+				// This can only be fixed by reworking TrackedThread to be Backend-specific, however right now Asagi is legacy code and not that high of a priority.
+
+				items.Add(new ExistingThreadInfo((ulong)(uint)row[0], Utility.ConvertNewYorkTimestamp((uint)row[1]).UtcDateTime, null));
 			}
 
 			return items;
