@@ -78,6 +78,7 @@ body {
     color: #c5c8c6;
     font-family: arial,helvetica,sans-serif;
     /*font-size: 10pt;*/
+    line-height: normal;
 }
 
 .reply {
@@ -140,4 +141,18 @@ a.quotelink {
 
 a:hover {
     color: #adc9e0 !important;
+}
+
+blockquote > span.quote {
+    color: #b5bd68;
+}
+
+s:hover, s:focus, s:hover a {
+    color: #fff !important;
+}
+
+s, s a:not(:hover) {
+    color: #000 !important;
+    background: #000 !important;
+    text-decoration: none;
 }
