@@ -33,8 +33,10 @@ namespace Hayden.Consumers
 			string board = threadUpdateInfo.ThreadPointer.Board;
 
 			{ // delete this block when not testing
-				string threadFileName = Path.Combine(Config.DownloadLocation, board, "thread",
-					$"{threadUpdateInfo.ThreadPointer.ThreadId}.json");
+				string threadDirectory = Path.Combine(Config.DownloadLocation, board, "thread");
+				string threadFileName = Path.Combine(threadDirectory, $"{threadUpdateInfo.ThreadPointer.ThreadId}.json");
+
+				Directory.CreateDirectory(threadDirectory);
 
 				FilesystemThreadConsumer.PerformJsonThreadUpdate(threadUpdateInfo, threadFileName);
 			}
