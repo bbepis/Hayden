@@ -225,9 +225,15 @@ namespace Hayden
 
 				requeuedImages.Clear();
 
+				threadQueue = threadQueue
+					.Where(x => x.Board != null && x != default) // Very rarely a null value can slip into here. Not sure why, but just added for safety
+					.ToList();
+
 				// We create a round-robin queue that each worker task/thread is able to consume.
 				// Round-robin is used specifically since we want to balance out downloaded threads per boards, otherwise it would be downloading a single board at a time
-				using var roundRobinQueue = threadQueue.RoundRobin(x => x.Board).GetEnumerator();
+				using var roundRobinQueue = threadQueue
+					.RoundRobin(x => x.Board)
+					.GetEnumerator();
 
 				// This is really only used for debugging purposes
 				IDictionary<int, string> workerStatuses = new ConcurrentDictionary<int, string>();

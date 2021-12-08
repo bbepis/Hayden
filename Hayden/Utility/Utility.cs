@@ -150,8 +150,9 @@ namespace Hayden
 		public static IEnumerable<TItem> RoundRobin<TItem, TKey>(this IList<TItem> source, Func<TItem, TKey> predicate)
 		{
 			List<TKey> keys = source.Select(predicate)
-									.Distinct()
-									.ToList();
+				.Where(x => x != null) // safety check
+				.Distinct()
+				.ToList();
 
 			SortedList<TKey, int> queueIndices = new SortedList<TKey, int>();
 
