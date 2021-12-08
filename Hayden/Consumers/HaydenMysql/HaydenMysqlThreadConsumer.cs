@@ -302,7 +302,7 @@ namespace Hayden.Consumers
 
 				await foreach (var row in chainedQuery.ExecuteRowsAsync())
 				{
-					items.Add(new ExistingThreadInfo((uint)row[0]));
+					items.Add(new ExistingThreadInfo((ulong)row[0]));
 				}
 
 				return items;
