@@ -1,0 +1,170 @@
+﻿/* Please see documentation at https://docs.microsoft.com/aspnet/core/client-side/bundling-and-minification
+for details on configuring this project to bundle and minify static web assets. */
+
+a.navbar-brand {
+  white-space: normal;
+  text-align: center;
+  word-break: break-all;
+}
+
+/* Provide sufficient contrast against white background */
+a {
+  color: #0366d6;
+}
+
+.btn-primary {
+  color: #fff;
+  background-color: #1b6ec2;
+  border-color: #1861ac;
+}
+
+.nav-pills .nav-link.active, .nav-pills .show > .nav-link {
+  color: #fff;
+  background-color: #1b6ec2;
+  border-color: #1861ac;
+}
+
+/* Sticky footer styles
+-------------------------------------------------- */
+html {
+  font-size: 14px;
+}
+@media (min-width: 768px) {
+  html {
+    font-size: 16px;
+  }
+}
+
+.border-top {
+  border-top: 1px solid #e5e5e5;
+}
+.border-bottom {
+  border-bottom: 1px solid #e5e5e5;
+}
+
+.box-shadow {
+  box-shadow: 0 .25rem .75rem rgba(0, 0, 0, .05);
+}
+
+button.accept-policy {
+  font-size: 1rem;
+  line-height: inherit;
+}
+
+/* Sticky footer styles
+-------------------------------------------------- */
+html {
+  position: relative;
+  min-height: 100%;
+}
+
+body {
+  /* Margin bottom by footer height */
+  margin-bottom: 60px;
+}
+
+.footer {
+  position: absolute;
+  bottom: 0;
+  width: 100%;
+  white-space: nowrap;
+  line-height: 60px; /* Vertically center the text there */
+}
+
+/* 4chan styling */
+
+.post {
+    margin: 4px 0;
+    overflow: hidden;
+    color: #c5c8c6;
+    font-family: arial,helvetica,sans-serif;
+    /*font-size: 10pt;*/
+    line-height: normal;
+}
+
+.subject {
+  color: #b294bb;
+  font-weight: 700;
+}
+
+.reply {
+    background-color: #282a2e;
+    border: 1px solid #282a2e;
+    display: table;
+    padding: 2px;
+}
+
+.reply:target, .reply.highlight {
+  background: #1d1d21 !important;
+  border: 1px solid #111 !important;
+  padding: 2px;
+}
+
+.postInfo {
+    display: block;
+    width: 100%;
+}
+
+div.post div.postInfo {
+    display: block;
+    width: 100%;
+    margin-left: 5px;
+    margin-right: 5px;
+}
+
+.nameBlock {
+    display: inline-block;
+}
+
+.name {
+    color: #c5c8c6;
+    font-weight: 700;
+}
+
+blockquote {
+    margin: 16px 40px !important;
+}
+
+.fileText {
+    word-wrap: break-word;
+    max-width: calc(100vw - 90px);
+    margin: 0 20px;
+}
+
+.fileThumb {
+    float: left;
+    margin-left: 20px;
+    margin-right: 20px;
+    margin-top: 3px;
+    margin-bottom: 5px;
+
+    /*max-width: 125px;
+    max-height: 125px;*/
+}
+
+a, a:visited {
+    color: #81a2be !important;
+    text-decoration: none;
+}
+
+a.quotelink {
+    text-decoration: underline;
+}
+
+a:hover {
+    color: #adc9e0 !important;
+}
+
+blockquote > span.quote {
+    color: #b5bd68;
+}
+
+s:hover, s:focus, s:hover a {
+    color: #fff !important;
+}
+
+s, s a:not(:hover) {
+    color: #000 !important;
+    background: #000 !important;
+    text-decoration: none;
+}

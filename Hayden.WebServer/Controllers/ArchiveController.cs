@@ -13,7 +13,6 @@ using Newtonsoft.Json.Linq;
 
 namespace Hayden.WebServer.Controllers
 {
-	[Route("")]
 	public class ArchiveController : Controller
 	{
 		protected IOptions<Config> Config { get; set; }

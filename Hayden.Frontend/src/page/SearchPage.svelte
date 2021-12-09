@@ -1,0 +1,39 @@
+<script lang="ts">
+    import Thread from "../component/Thread.svelte";
+    import { ThreadModel, Utility } from "../data";
+
+    let query: string = "";
+    let dataPromise: Promise<ThreadModel[]> = null;
+
+    function search() {
+        dataPromise = Utility.FetchData("/search", {
+            query: query
+        });
+    }
+
+    function enterHandler(event: KeyboardEvent) {
+        if (event.key === "Enter") {
+            event.preventDefault();
+            search();
+        }
+    }
+</script>
+
+<input bind:value={query} on:keyup={enterHandler}>
+<button on:click={search}>Search</button>
+
+{#if dataPromise}
+    {#await dataPromise}
+        <p>Loading...</p>
+    {:then data} 
+        {#each data as thread ({a: thread.thread.board, b: thread.thread.threadId}) }
+        
+            <br/>
+            <hr/>
+
+            <Thread {thread} />
+        {/each}
+    {:catch}
+        <p>Error 2</p>
+    {/await}
+{/if}

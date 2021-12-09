@@ -1,30 +1,23 @@
-<script>
-	export let name;
+<script lang="ts">
+	import Layout from "./Layout.svelte"
+	import { Route, router } from 'tinro'; 
+	import { InfoObject, Utility } from "./data";
+	import IndexPage from "./page/IndexPage.svelte";
+	import ThreadPage from "./page/ThreadPage.svelte";
+import SearchPage from "./page/SearchPage.svelte";
+
+	export let info : InfoObject;
+
+	Utility.infoObject = info;
 </script>
 
-<main>
-	<h1>Hello {name}!</h1>
-	<p>Visit the <a href="https://svelte.dev/tutorial">Svelte tutorial</a> to learn how to build Svelte apps.</p>
-</main>
+<Layout>
+	<Route path="/"><IndexPage /></Route>
+	<Route path="/:board/thread/:threadid" let:meta><ThreadPage board={meta.params.board} threadId={Number(meta.params.threadid)} /></Route>
+	<Route path="/Search"><SearchPage /></Route>
+	<Route path="/Privacy"><h1>This is the privacy page</h1></Route>
+</Layout>
 
 <style>
-	main {
-		text-align: center;
-		padding: 1em;
-		max-width: 240px;
-		margin: 0 auto;
-	}
-
-	h1 {
-		color: #ff3e00;
-		text-transform: uppercase;
-		font-size: 4em;
-		font-weight: 100;
-	}
-
-	@media (min-width: 640px) {
-		main {
-			max-width: none;
-		}
-	}
+	
 </style>

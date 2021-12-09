@@ -6,7 +6,7 @@ namespace Hayden.WebServer.View
 	{
 		public DBPost Post { get; set; }
 
-		public PostPartialViewModel(DBPost post)
+		public PostPartialViewModel(DBPost post, Config config)
 		{
 			Post = post;
 
@@ -15,8 +15,16 @@ namespace Hayden.WebServer.View
 				string b36Name = Utility.ConvertToBase(Post.MediaHash);
 				string extension = Post.MediaFilename.Remove(0, Post.MediaFilename.LastIndexOf('.'));
 
-				ImageUrl = $"/image/{Post.Board}/image/{b36Name}{extension}";
-				ThumbnailUrl = $"/image/{Post.Board}/thumb/{b36Name}.jpg";
+				if (config.ImagePrefix != null)
+				{
+					ImageUrl = $"{config.ImagePrefix}/{Post.Board}/image/{b36Name}{extension}";
+					ThumbnailUrl = $"{config.ImagePrefix}/{Post.Board}/thumb/{b36Name}.jpg";
+				}
+				else
+				{
+					ImageUrl = $"/image/{Post.Board}/image/{b36Name}{extension}";
+					ThumbnailUrl = $"/image/{Post.Board}/thumb/{b36Name}.jpg";
+				}
 			}
 		}
 

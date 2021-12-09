@@ -1,9 +1,12 @@
-﻿@using Hayden.WebServer.View
+﻿@using Hayden.WebServer
+@using Hayden.WebServer.View
+@using Microsoft.Extensions.Options
 @model Hayden.WebServer.View.ThreadPartialViewModel
+@inject IOptions<Config> Config;
 
 <div class="thread">
 	@foreach (var post in Model.Posts)
 	{
-		@await Html.PartialAsync("/View/PostPartialView.cshtml", new PostPartialViewModel(post))
+		@await Html.PartialAsync("/View/PostPartialView.cshtml", new PostPartialViewModel(post, Config.Value))
 	}
 </div>

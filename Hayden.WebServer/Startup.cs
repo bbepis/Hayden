@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using System;
 using Hayden.WebServer.DB;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 using Pomelo.EntityFrameworkCore.MySql.Infrastructure;
 using Pomelo.EntityFrameworkCore.MySql.Storage;
@@ -20,6 +21,8 @@ namespace Hayden.WebServer
 
 		public IConfiguration Configuration { get; }
 
+		private Config Config { get; set; }
+
 		// This method gets called by the runtime. Use this method to add services to the container.
 		public void ConfigureServices(IServiceCollection services)
 		{
@@ -29,6 +32,7 @@ namespace Hayden.WebServer
 
 			var section = Configuration.GetSection("config");
 
+			Config = section.Get<Config>();
 			services.Configure<Config>(section);
 
 			services.AddDbContext<HaydenDbContext>(x =>
@@ -56,6 +60,11 @@ namespace Hayden.WebServer
 				app.UseHsts();
 			}
 
+			app.UseForwardedHeaders(new ForwardedHeadersOptions
+			{
+				ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
+			});
+
 			app.UseHttpsRedirection();
 			app.UseStaticFiles();
 
@@ -63,9 +72,17 @@ namespace Hayden.WebServer
 
 			app.UseAuthorization();
 
-			app.UseMvc();
-
-			app.UseEndpoints(endpoints => { endpoints.MapRazorPages(); });
+			app.UseMvc(routes =>
+			{
+				if (Config.ApiMode)
+				{
+					routes.MapRoute("api", "api/{action=Index}", new { controller = "ArchiveApi" });
+				}
+				else
+				{
+					routes.MapRoute("default", "{controller=Archive}/{action=Index}");
+				}
+			});
 		}
 	}
 }
