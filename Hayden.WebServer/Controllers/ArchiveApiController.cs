@@ -1,6 +1,7 @@
 ﻿using System.Linq;
 using System.Threading.Tasks;
 using Hayden.WebServer.DB;
+using Hayden.WebServer.Routing;
 using Hayden.WebServer.View;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -8,6 +9,7 @@ using Microsoft.Extensions.Options;
 
 namespace Hayden.WebServer.Controllers
 {
+	[ApiModeActionFilter(true)]
 	[Route("api")]
 	public class ArchiveApiController : Controller
 	{
@@ -67,8 +69,7 @@ namespace Hayden.WebServer.Controllers
 			return Json(array);
 		}
 
-		[HttpGet]
-		[Route("{board}/thread/{threadid}")]
+		[HttpGet("{board}/thread/{threadid}")]
 		public async Task<IActionResult> ThreadIndex(string board, ulong threadid, [FromServices] HaydenDbContext dbContext)
 		{
 			Response.Headers.Add("Access-Control-Allow-Origin", "*");

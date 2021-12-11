@@ -72,17 +72,7 @@ namespace Hayden.WebServer
 
 			app.UseAuthorization();
 
-			app.UseMvc(routes =>
-			{
-				if (Config.ApiMode)
-				{
-					routes.MapRoute("api", "api/{action=Index}", new { controller = "ArchiveApi" });
-				}
-				else
-				{
-					routes.MapRoute("default", "{controller=Archive}/{action=Index}");
-				}
-			});
+			app.UseMvc();
 		}
 	}
 }

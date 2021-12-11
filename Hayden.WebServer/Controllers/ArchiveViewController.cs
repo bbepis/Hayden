@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using Hayden.Models;
 using Hayden.WebServer.DB;
+using Hayden.WebServer.Routing;
 using Hayden.WebServer.View;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -13,11 +14,13 @@ using Newtonsoft.Json.Linq;
 
 namespace Hayden.WebServer.Controllers
 {
-	public class ArchiveController : Controller
+	[ApiModeActionFilter(false)]
+	[Route("")]
+	public class ArchiveViewController : Controller
 	{
 		protected IOptions<Config> Config { get; set; }
 
-		public ArchiveController(IOptions<Config> config)
+		public ArchiveViewController(IOptions<Config> config)
 		{
 			Config = config;
 		}
@@ -53,6 +56,13 @@ namespace Hayden.WebServer.Controllers
 				return NotFound(); // RedirectToAction("Index");
 
 			return View("~/View/ThreadView.cshtml", new ThreadPartialViewModel(thread, posts, false));
+		}
+
+		[HttpGet]
+		[Route("search")]
+		public IActionResult Search()
+		{
+			return NotFound();
 		}
 
 		[NonAction]
