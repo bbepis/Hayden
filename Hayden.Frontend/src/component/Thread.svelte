@@ -1,8 +1,10 @@
 <script lang="ts">
     import type { ThreadModel, PostModel } from "../data";
+	import { onMount } from "svelte";
 	import Post from "./Post.svelte"
 
     export let thread: ThreadModel;
+    export let jumpToHash: boolean = false;
 
 	function calculateBackquotes(post: PostModel): number[] {
 		return thread.posts.filter(x => {
@@ -14,6 +16,12 @@
 		})
 		.map(x => x.post.postId);
 	}
+
+	onMount(() => {
+		if (jumpToHash) {
+			window.location.hash = window.location.hash;
+		}
+	});
 </script>
 
 <div class="thread">

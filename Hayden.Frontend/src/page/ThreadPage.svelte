@@ -11,7 +11,7 @@
 {#await dataPromise}
     <p>Loading...</p>
 {:then thread} 
-    <Thread {thread} />
+    <Thread {thread} jumpToHash={true} />
 {:catch}
     <p>Error</p>
 {/await}
