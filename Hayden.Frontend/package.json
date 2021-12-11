@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
+    "publish": "rollup -c -o ../Hayden.WebServer/wwwroot/build/bundle.js",
     "build": "rollup -c",
     "dev": "rollup -c -w",
     "start": "sirv public --no-clear"
