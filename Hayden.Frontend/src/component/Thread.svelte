@@ -17,7 +17,7 @@
 </script>
 
 <div class="thread">
-	{#each thread.posts as post, index}
+	{#each thread.posts as post, index (post.post.postId)}
 		<Post post={post} subject={index === 0 ? thread.thread.title : null} backquotes={calculateBackquotes(post)}></Post>
 	{/each}
 </div>
