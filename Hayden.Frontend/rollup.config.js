@@ -31,12 +31,16 @@ function serve() {
 }
 
 export default {
+	external: ["moment"],
 	input: 'src/main.js',
 	output: {
 		sourcemap: !production,
 		format: 'iife',
 		name: 'app',
-		file: 'public/build/bundle.js'
+		file: 'public/build/bundle.js',
+		globals: {
+			"moment": "moment"
+		},
 	},
 	plugins: [
 		svelte({
