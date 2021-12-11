@@ -35,7 +35,7 @@
     }
 
     onMount(() => {
-        img.addEventListener("load", () => {
+        jQuery(img).on("load", () => {
             loading = false;
         });
     });

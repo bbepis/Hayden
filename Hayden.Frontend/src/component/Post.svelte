@@ -11,8 +11,7 @@
     const time = moment(post.post.dateTime + "Z");
 
     onMount(() => {
-        let $ = (<any>window).$;
-        $(".post-contents a").attr("tinro-ignore", "true");
+        jQuery(".post-contents a").attr("tinro-ignore", "true");
     });
 </script>
 

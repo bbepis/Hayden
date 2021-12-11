@@ -31,7 +31,7 @@ function serve() {
 }
 
 export default {
-	external: ["moment"],
+	external: ["moment", "jquery"],
 	input: 'src/main.js',
 	output: {
 		sourcemap: !production,
@@ -39,7 +39,8 @@ export default {
 		name: 'app',
 		file: 'public/build/bundle.js',
 		globals: {
-			"moment": "moment"
+			"moment": "moment",
+			"jquery": "jQuery"
 		},
 	},
 	plugins: [
