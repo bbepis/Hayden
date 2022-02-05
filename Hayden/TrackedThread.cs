@@ -34,16 +34,13 @@ namespace Hayden
 					: 2;
 			}
 
-			// Empty/null strings evaluate to "u\0001" because of safety? I don't remember the exact reason but it might have to do with the previous hashing method I used
-			const string emptyPlaceholder = "u\0001";
-
 			// The HTML content of a post can change due to public warnings and bans.
-			uint hashCode = Utility.FNV1aHash32(postHtml ?? emptyPlaceholder);
+			uint hashCode = Utility.FNV1aHash32(postHtml);
 
 			// Attached files can be removed, and have their spoiler status changed
 			hashCode = Utility.FNV1aHash32(EvaluateNullableBool(spoilerImage), hashCode);
 			hashCode = Utility.FNV1aHash32(EvaluateNullableBool(fileDeleted), hashCode);
-			hashCode = Utility.FNV1aHash32(originalFilenameNoExt ?? emptyPlaceholder, hashCode);
+			hashCode = Utility.FNV1aHash32(originalFilenameNoExt, hashCode);
 
 			// The OP of a thread can have numerous properties change.
 			// As such, these properties are only considered mutable for OPs (because that's the only place they can exist) and immutable for replies.

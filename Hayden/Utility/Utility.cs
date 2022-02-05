@@ -243,10 +243,22 @@ namespace Hayden
 		[MethodImpl(MethodImplOptions.AggressiveInlining)]
 		public static uint FNV1aHash32(int input, uint state)
 		{
+			FNV1aHash32(input, ref state);
+			return state;
+		}
+
+		/// <summary>
+		/// Iterates an 32-bit FV1a hash with a new 32-bit value.
+		/// </summary>
+		/// <param name="input">The new input to iterate the hash with.</param>
+		/// <param name="state">The current state of the hash.</param>
+		/// <returns>A 32-bit FV1a hash.</returns>
+		[MethodImpl(MethodImplOptions.AggressiveInlining)]
+		public static void FNV1aHash32(int input, ref uint state)
+		{
 			const uint FNV32Prime = 0x1000193;
 
-			state = (uint)(state ^ input);
-			return state * FNV32Prime;
+			state = (uint)(state ^ input) * FNV32Prime;
 		}
 
 		/// <summary>
@@ -258,13 +270,22 @@ namespace Hayden
 		[MethodImpl(MethodImplOptions.AggressiveInlining)]
 		public static uint FNV1aHash32(string input, uint state)
 		{
-			foreach (char c in input)
+			if (input != null)
 			{
-				ushort charValue = c;
+				foreach (char c in input)
+				{
+					ushort charValue = c;
 
-				state = FNV1aHash32(charValue >> 8, state);
-				state = FNV1aHash32(charValue & 0xFF, state);
+					FNV1aHash32(charValue >> 8, ref state);
+					FNV1aHash32(charValue & 0xFF, ref state);
+				}
 			}
+			
+			// Precaution against empty strings.
+			// Say you have string A = "test" and string B = ""
+			// Hash(A + B) and Hash(B + A) would produce the exact same result, if this additional character is not included
+
+			FNV1aHash32(0x00, ref state);
 
 			return state;
 		}
