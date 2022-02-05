@@ -1,49 +1,4 @@
-export class InfoObject {
-    endpoint: string;
-}
-
-export class Thread {
-    board: string;
-    threadId: number;
-
-    title: string;
-
-    lastModified: string;
-
-    isArchived: boolean;
-    isDeleted: boolean;
-}
-
-export class PostModel {
-    post: Post;
-    hasFile: boolean;
-    imageUrl: string;
-    thumbnailUrl: string;
-}
-
-export class Post {
-    board: string;
-    postId: number;
-    threadId: number;
-
-    html: string | null;
-
-    author: string;
-    mediaHash: Uint8Array;
-
-    mediaFilename: string;
-
-    dateTime: string;
-
-    isSpoiler: boolean;
-    isDeleted: boolean;
-    isImageDeleted: boolean;
-}
-
-export class ThreadModel {
-    thread: Thread;
-    posts: PostModel[];
-}
+import type { InfoObject } from "./data";
 
 export class Utility {
     static byteToHex: string[] = [];
@@ -114,4 +69,19 @@ export class Utility {
 
 		return await result.json();
 	}
+
+    static ToInstance<T>(obj: T, json: string) : T {
+        var jsonObj = JSON.parse(json);
+
+        if (typeof obj["fromJSON"] === "function") {
+            obj["fromJSON"](jsonObj);
+        }
+        else {
+            for (var propName in jsonObj) {
+                obj[propName] = jsonObj[propName]
+            }
+        }
+
+        return obj;
+    }
 }

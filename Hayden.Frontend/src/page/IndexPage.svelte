@@ -1,6 +1,7 @@
 <script lang="ts">
     import Thread from "../component/Thread.svelte";
-    import { ThreadModel, Utility } from "../data";
+    import type { ThreadModel } from "../data/data";
+    import { Utility } from "../data/utility";
 
     let dataPromise: Promise<ThreadModel[]> = Utility.FetchData("/index");
 </script>

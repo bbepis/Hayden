@@ -1,10 +1,12 @@
 <script lang="ts">
 	import Layout from "./Layout.svelte"
 	import { Route, router } from 'tinro'; 
-	import { InfoObject, Utility } from "./data";
+	import type { InfoObject } from "./data/data";
+    import { Utility } from "./data/utility";
+
 	import IndexPage from "./page/IndexPage.svelte";
 	import ThreadPage from "./page/ThreadPage.svelte";
-import SearchPage from "./page/SearchPage.svelte";
+	import SearchPage from "./page/SearchPage.svelte";
 
 	export let info : InfoObject;
 

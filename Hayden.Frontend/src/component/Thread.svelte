@@ -1,6 +1,6 @@
 <script lang="ts">
-    import type { ThreadModel, PostModel } from "../data";
 	import { onMount } from "svelte";
+    import type { ThreadModel, PostModel } from "../data/data";
 	import Post from "./Post.svelte"
 
     export let thread: ThreadModel;

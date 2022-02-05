@@ -1,5 +1,5 @@
 <script lang="ts">
-    import type { PostModel } from "../data";
+    import type { PostModel } from "../data/data";
     import moment from "moment";
     import ExpandableImage from "./ExpandableImage.svelte";
     import { onMount } from "svelte";

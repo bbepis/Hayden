@@ -1,6 +1,8 @@
 <script lang="ts">
     import Thread from "../component/Thread.svelte";
-    import { ThreadModel, Utility } from "../data";
+    import type { ThreadModel } from "../data/data";
+    import { Utility } from "../data/utility";
+
 
     export let board: string;
     export let threadId: number;
