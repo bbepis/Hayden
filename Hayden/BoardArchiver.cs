@@ -454,13 +454,21 @@ namespace Hayden
 
 			var result = false;
 
-			if (rules.ThreadTitleRegex == null && rules.OPContentRegex == null)
+			if (rules.ThreadTitleRegex == null
+				&& rules.OPContentRegex == null
+				&& rules.AnyFilter == null)
 				return true;
 
-			if (rules.ThreadTitleRegex != null && subject != null && rules.ThreadTitleRegex.IsMatch(subject))
+			if (!result && rules.ThreadTitleRegex != null && subject != null && rules.ThreadTitleRegex.IsMatch(subject))
 				result = true;
 
-			if (rules.OPContentRegex != null && html != null && rules.OPContentRegex.IsMatch(html))
+			if (!result && rules.OPContentRegex != null
+						&& html != null && rules.OPContentRegex.IsMatch(html))
+				result = true;
+
+			if (!result && rules.AnyFilter != null 
+						&& ((html != null && rules.AnyFilter.IsMatch(html))
+							|| (subject != null && rules.AnyFilter.IsMatch(subject))))
 				result = true;
 
 			return result;
@@ -928,6 +936,7 @@ namespace Hayden
 	{
 		public Regex ThreadTitleRegex { get; set; }
 		public Regex OPContentRegex { get; set; }
+		public Regex AnyFilter { get; set; }
 
 		public BoardRules(BoardRulesConfig config)
 		{
@@ -939,6 +948,11 @@ namespace Hayden
 			if (!string.IsNullOrWhiteSpace(config.OPContentRegexFilter))
 			{
 				OPContentRegex = new Regex(config.OPContentRegexFilter, RegexOptions.IgnoreCase | RegexOptions.Compiled);
+			}
+
+			if (!string.IsNullOrWhiteSpace(config.AnyFilter))
+			{
+				AnyFilter = new Regex(config.AnyFilter, RegexOptions.IgnoreCase | RegexOptions.Compiled);
 			}
 		}
 	}

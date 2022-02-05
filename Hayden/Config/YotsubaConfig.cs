@@ -39,5 +39,10 @@ namespace Hayden.Config
 		/// The filter for thread OP post content. Only archives a thread if its OP's content matches this regex.
 		/// </summary>
 		public string OPContentRegexFilter { get; set; }
+
+		/// <summary>
+		/// The regex filter for either the thread subject or OP post content.
+		/// </summary>
+		public string AnyFilter { get; set; }
 	}
 }
