@@ -38,19 +38,19 @@ namespace Hayden
 			uint hashCode = Utility.FNV1aHash32(postHtml);
 
 			// Attached files can be removed, and have their spoiler status changed
-			hashCode = Utility.FNV1aHash32(EvaluateNullableBool(spoilerImage), hashCode);
-			hashCode = Utility.FNV1aHash32(EvaluateNullableBool(fileDeleted), hashCode);
-			hashCode = Utility.FNV1aHash32(originalFilenameNoExt, hashCode);
+			Utility.FNV1aHash32(EvaluateNullableBool(spoilerImage), ref hashCode);
+			Utility.FNV1aHash32(EvaluateNullableBool(fileDeleted), ref hashCode);
+			Utility.FNV1aHash32(originalFilenameNoExt, ref hashCode);
 
 			// The OP of a thread can have numerous properties change.
 			// As such, these properties are only considered mutable for OPs (because that's the only place they can exist) and immutable for replies.
-			hashCode = Utility.FNV1aHash32(EvaluateNullableBool(archived), hashCode);
-			hashCode = Utility.FNV1aHash32(EvaluateNullableBool(closed), hashCode);
-			hashCode = Utility.FNV1aHash32(EvaluateNullableBool(bumpLimit), hashCode);
-			hashCode = Utility.FNV1aHash32(EvaluateNullableBool(imageLimit), hashCode);
-			hashCode = Utility.FNV1aHash32((int?)replyCount ?? -1, hashCode);
-			hashCode = Utility.FNV1aHash32(imageCount ?? -1, hashCode);
-			hashCode = Utility.FNV1aHash32(uniqueIpAddresses ?? -1, hashCode);
+			Utility.FNV1aHash32(EvaluateNullableBool(archived), ref hashCode);
+			Utility.FNV1aHash32(EvaluateNullableBool(closed), ref hashCode);
+			Utility.FNV1aHash32(EvaluateNullableBool(bumpLimit), ref hashCode);
+			Utility.FNV1aHash32(EvaluateNullableBool(imageLimit), ref hashCode);
+			Utility.FNV1aHash32((int?)replyCount ?? -1, ref hashCode);
+			Utility.FNV1aHash32(imageCount ?? -1, ref hashCode);
+			Utility.FNV1aHash32(uniqueIpAddresses ?? -1, ref hashCode);
 
 			return hashCode;
 		}

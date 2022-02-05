@@ -270,6 +270,19 @@ namespace Hayden
 		[MethodImpl(MethodImplOptions.AggressiveInlining)]
 		public static uint FNV1aHash32(string input, uint state)
 		{
+			FNV1aHash32(input, ref state);
+			return state;
+		}
+
+		/// <summary>
+		/// Iterates an 32-bit FV1a hash with a string value.
+		/// </summary>
+		/// <param name="input">The new input to iterate the hash with.</param>
+		/// <param name="state">The current state of the hash.</param>
+		/// <returns>A 32-bit FV1a hash.</returns>
+		[MethodImpl(MethodImplOptions.AggressiveInlining)]
+		public static void FNV1aHash32(string input, ref uint state)
+		{
 			if (input != null)
 			{
 				foreach (char c in input)
@@ -286,8 +299,6 @@ namespace Hayden
 			// Hash(A + B) and Hash(B + A) would produce the exact same result, if this additional character is not included
 
 			FNV1aHash32(0x00, ref state);
-
-			return state;
 		}
 	}
 }
