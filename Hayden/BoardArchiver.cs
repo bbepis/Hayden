@@ -854,7 +854,7 @@ namespace Hayden
 	/// <summary>
 	/// A struct containing information about a specific thread.
 	/// </summary>
-	public struct ThreadPointer : IComparable<ThreadPointer>, IEquatable<ThreadPointer>
+	public readonly struct ThreadPointer : IComparable<ThreadPointer>, IEquatable<ThreadPointer>
 	{
 		public string Board { get; }
 

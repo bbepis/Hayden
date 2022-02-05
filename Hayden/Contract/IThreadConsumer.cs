@@ -88,7 +88,7 @@ namespace Hayden.Contract
 		/// </summary>
 		public bool HasChanges => NewPosts.Count + UpdatedPosts.Count + DeletedPosts.Count > 0;
 
-		public ThreadUpdateInfo(ThreadPointer threadPointer, Thread thread, bool isNewThread)
+		public ThreadUpdateInfo(in ThreadPointer threadPointer, Thread thread, bool isNewThread)
 		{
 			ThreadPointer = threadPointer;
 			Thread = thread;
@@ -98,7 +98,7 @@ namespace Hayden.Contract
 			DeletedPosts = new List<ulong>();
 		}
 
-		public ThreadUpdateInfo(ThreadPointer threadPointer, Thread thread, bool isNewThread, ICollection<Post> newPosts, ICollection<Post> updatedPosts, ICollection<ulong> deletedPosts)
+		public ThreadUpdateInfo(in ThreadPointer threadPointer, Thread thread, bool isNewThread, ICollection<Post> newPosts, ICollection<Post> updatedPosts, ICollection<ulong> deletedPosts)
 		{
 			ThreadPointer = threadPointer;
 			Thread = thread;

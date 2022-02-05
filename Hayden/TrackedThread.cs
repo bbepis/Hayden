@@ -112,7 +112,7 @@ namespace Hayden
 		/// <param name="threadPointer">The thread pointer referring to the polled thread.</param>
 		/// <param name="updatedThread">The new thread to calculate change information from.</param>
 		/// <returns>A <see cref="ThreadUpdateInfo"/> object calculated from <param name="updatedThread">updatedThread</param>.</returns>
-		public ThreadUpdateInfo ProcessThreadUpdates(ThreadPointer threadPointer, Thread updatedThread)
+		public ThreadUpdateInfo ProcessThreadUpdates(in ThreadPointer threadPointer, Thread updatedThread)
 		{
 			var updateInfo = new ThreadUpdateInfo(threadPointer, updatedThread, false);
 
