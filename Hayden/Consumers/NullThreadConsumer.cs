@@ -4,9 +4,9 @@ using Hayden.Contract;
 
 namespace Hayden.Consumers
 {
-	public class NullThreadConsumer : IThreadConsumer
+	public class NullThreadConsumer<TThread, TPost>
 	{
-		public Task<IList<QueuedImageDownload>> ConsumeThread(ThreadUpdateInfo threadUpdateInfo)
+		public Task<IList<QueuedImageDownload>> ConsumeThread(ThreadUpdateInfo<TThread, TPost> threadUpdateInfo)
 			=> Task.FromResult<IList<QueuedImageDownload>>(new List<QueuedImageDownload>());
 
 		public Task ThreadUntracked(ulong threadId, string board, bool deleted)

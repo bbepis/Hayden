@@ -3,7 +3,12 @@ using Newtonsoft.Json;
 
 namespace Hayden.Models
 {
-	public class Post
+	public interface IPost
+	{
+		ulong PostNumber { get; set; }
+	}
+
+	public class Post : IPost
 	{
 		// I comment out properties that are part of the API spec, but not used by Hayden.
 		// I don't leave them in anyway, since we get a performance benefit by not having to deserialize them and keep them loaded in memory.

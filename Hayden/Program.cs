@@ -8,10 +8,12 @@ using Hayden.Cache;
 using Hayden.Config;
 using Hayden.Consumers;
 using Hayden.Contract;
+using Hayden.Models;
 using Hayden.Proxy;
 using Mono.Unix;
 using Mono.Unix.Native;
 using Newtonsoft.Json.Linq;
+using Thread = System.Threading.Thread;
 
 namespace Hayden
 {
@@ -32,7 +34,7 @@ namespace Hayden
 
 			var rawConfigFile = JObject.Parse(File.ReadAllText(args[0]));
 
-			IThreadConsumer consumer;
+			IThreadConsumer<Models.Thread, Post> consumer;
 
 			// Figure out what backend the user wants to use, and load it
 			// This entire section is more of a stop-gap than actual clean code
@@ -87,7 +89,7 @@ namespace Hayden
 
 			var stateStore = new LiteDbStateStore(Path.Combine(haydenDirectory, "imagequeue.db"));
 			
-			var boardArchiver = new BoardArchiver(yotsubaConfig, consumer, stateStore, proxyProvider);
+			var boardArchiver = new BoardArchiver<Models.Thread, Post>(yotsubaConfig, consumer, stateStore, proxyProvider);
 
 			var tokenSource = new CancellationTokenSource();
 

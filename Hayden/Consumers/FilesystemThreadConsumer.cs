@@ -5,13 +5,14 @@ using System.Linq;
 using System.Threading.Tasks;
 using Hayden.Config;
 using Hayden.Contract;
+using Hayden.Models;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using Thread = Hayden.Models.Thread;
 
 namespace Hayden.Consumers
 {
-	public class FilesystemThreadConsumer : IThreadConsumer
+	public class FilesystemThreadConsumer : IThreadConsumer<Thread, Post>
 	{
 		public string ArchiveDirectory { get; set; }
 		public FilesystemConfig Config { get; set; }
@@ -46,7 +47,7 @@ namespace Hayden.Consumers
 			return JToken.Load(reader).ToObject<Thread>();
 		}
 
-		public async Task<IList<QueuedImageDownload>> ConsumeThread(ThreadUpdateInfo threadUpdateInfo)
+		public async Task<IList<QueuedImageDownload>> ConsumeThread(ThreadUpdateInfo<Thread, Post> threadUpdateInfo)
 		{
 			var pointer = threadUpdateInfo.ThreadPointer;
 
@@ -96,7 +97,7 @@ namespace Hayden.Consumers
 			return imageDownloads;
 		}
 
-		internal static void PerformJsonThreadUpdate(ThreadUpdateInfo threadUpdateInfo, string threadFileName)
+		internal static void PerformJsonThreadUpdate(ThreadUpdateInfo<Thread, Post> threadUpdateInfo, string threadFileName)
 		{
 			if (!File.Exists(threadFileName))
 			{
@@ -229,7 +230,7 @@ namespace Hayden.Consumers
 						// We don't return deleted posts, otherwise Hayden will think the post still exists
 						continue;
 
-					threadHashList.Add((post.PostNumber, TrackedThread.CalculateYotsubaPostHash(post)));
+					threadHashList.Add((post.PostNumber, HaydenMysqlThreadConsumer.HaydenTrackedThread.CalculateYotsubaPostHash(post)));
 				}
 
 				existingThreads.Add(new ExistingThreadInfo(threadId,
@@ -238,6 +239,16 @@ namespace Hayden.Consumers
 			}
 
 			return Task.FromResult<ICollection<ExistingThreadInfo>>(existingThreads);
+		}
+
+		public TrackedThread<Thread, Post> StartTrackingThread(ExistingThreadInfo existingThreadInfo)
+		{
+			return HaydenMysqlThreadConsumer.HaydenTrackedThread.StartTrackingThread(existingThreadInfo);
+		}
+
+		public TrackedThread<Thread, Post> StartTrackingThread()
+		{
+			return HaydenMysqlThreadConsumer.HaydenTrackedThread.StartTrackingThread();
 		}
 
 		public void Dispose() { }

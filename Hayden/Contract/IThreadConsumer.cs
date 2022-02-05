@@ -8,7 +8,7 @@ namespace Hayden.Contract
 	/// <summary>
 	/// An interface for consuming and storing threads from the archiver process.
 	/// </summary>
-	public interface IThreadConsumer : IDisposable
+	public interface IThreadConsumer<TThread, TPost> : IDisposable where TPost : IPost where TThread : IThread<TPost>
 	{
 		/// <summary>
 		/// Consumes a thread, and returns a list of images to be downloaded.
@@ -16,7 +16,7 @@ namespace Hayden.Contract
 		/// </summary>
 		/// <param name="threadUpdateInfo">Data object containing information about the thread's updates.</param>
 		/// <returns>A list of images to be downloaded</returns>
-		Task<IList<QueuedImageDownload>> ConsumeThread(ThreadUpdateInfo threadUpdateInfo);
+		Task<IList<QueuedImageDownload>> ConsumeThread(ThreadUpdateInfo<TThread, TPost> threadUpdateInfo);
 
 		/// <summary>
 		/// Executed when a thread has been pruned or deleted, to mark it as complete.
@@ -35,6 +35,20 @@ namespace Hayden.Contract
 		/// <param name="getMetadata">True to return timestamps alongside the thread numbers, otherwise false to return minimum values.</param>
 		/// <returns>A list of threads that are already stored in the consumer.</returns>
 		Task<ICollection<ExistingThreadInfo>> CheckExistingThreads(IEnumerable<ulong> threadIdsToCheck, string board, bool archivedOnly, bool getMetadata = true);
+
+		/// <summary>
+		/// Creates a new <see cref="TrackedThread{,}"/> instance, utilizing information derived from an <see cref="IThreadConsumer{,}"/> implementation.
+		/// </summary>
+		/// <param name="existingThreadInfo">The thread information to initialize with.</param>
+		/// <returns>An initialized <see cref="TrackedThread{,}"/> instance.</returns>
+		TrackedThread<TThread, TPost> StartTrackingThread(ExistingThreadInfo existingThreadInfo);
+
+
+		/// <summary>
+		/// Creates a blank <see cref="TrackedThread{,}"/> instance. Intended for completely new threads, or threads that the backend hasn't encountered before.
+		/// </summary>
+		/// <returns>A blank <see cref="TrackedThread{,}"/> instance.</returns>
+		TrackedThread<TThread, TPost> StartTrackingThread();
 	}
 
 	public struct ExistingThreadInfo
@@ -58,10 +72,10 @@ namespace Hayden.Contract
 		}
 	}
 
-	public struct ThreadUpdateInfo
+	public struct ThreadUpdateInfo<TThread, TPost>
 	{
 		public ThreadPointer ThreadPointer;
-		public Thread Thread;
+		public TThread Thread;
 
 		/// <summary>
 		/// True if this thread is the first time Hayden has encountered it (and it does not exist in the backend), otherwise false.
@@ -71,12 +85,12 @@ namespace Hayden.Contract
 		/// <summary>
 		/// A collection of posts that have not been added to the database yet.
 		/// </summary>
-		public ICollection<Post> NewPosts;
+		public ICollection<TPost> NewPosts;
 
 		/// <summary>
 		/// A collection of posts that have been modified since the last time they were committed to the backend.
 		/// </summary>
-		public ICollection<Post> UpdatedPosts;
+		public ICollection<TPost> UpdatedPosts;
 
 		/// <summary>
 		/// A collection of post numbers that exist in the backend, but are no longer present in the thread (i.e. they have been deleted).
@@ -88,17 +102,17 @@ namespace Hayden.Contract
 		/// </summary>
 		public bool HasChanges => NewPosts.Count + UpdatedPosts.Count + DeletedPosts.Count > 0;
 
-		public ThreadUpdateInfo(in ThreadPointer threadPointer, Thread thread, bool isNewThread)
+		public ThreadUpdateInfo(in ThreadPointer threadPointer, TThread thread, bool isNewThread)
 		{
 			ThreadPointer = threadPointer;
 			Thread = thread;
 			IsNewThread = isNewThread;
-			NewPosts = new List<Post>();
-			UpdatedPosts = new List<Post>();
+			NewPosts = new List<TPost>();
+			UpdatedPosts = new List<TPost>();
 			DeletedPosts = new List<ulong>();
 		}
 
-		public ThreadUpdateInfo(in ThreadPointer threadPointer, Thread thread, bool isNewThread, ICollection<Post> newPosts, ICollection<Post> updatedPosts, ICollection<ulong> deletedPosts)
+		public ThreadUpdateInfo(in ThreadPointer threadPointer, TThread thread, bool isNewThread, ICollection<TPost> newPosts, ICollection<TPost> updatedPosts, ICollection<ulong> deletedPosts)
 		{
 			ThreadPointer = threadPointer;
 			Thread = thread;

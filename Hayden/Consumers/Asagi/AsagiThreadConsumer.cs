@@ -17,7 +17,7 @@ namespace Hayden.Consumers
 	/// <summary>
 	/// A thread consumer for the Asagi MySQL backend.
 	/// </summary>
-	public class AsagiThreadConsumer : IThreadConsumer
+	public class AsagiThreadConsumer : IThreadConsumer<Thread, Post>
 	{
 		private AsagiConfig Config { get; }
 
@@ -37,7 +37,7 @@ namespace Hayden.Consumers
 		}
 		
 		/// <inheritdoc/>
-		public async Task<IList<QueuedImageDownload>> ConsumeThread(ThreadUpdateInfo threadUpdateInfo)
+		public async Task<IList<QueuedImageDownload>> ConsumeThread(ThreadUpdateInfo<Thread, Post> threadUpdateInfo)
 		{
 			List<QueuedImageDownload> imageDownloads = new List<QueuedImageDownload>();
 			string board = threadUpdateInfo.ThreadPointer.Board;
@@ -516,7 +516,7 @@ namespace Hayden.Consumers
 				
 				// This can only be fixed by reworking TrackedThread to be Backend-specific, however right now Asagi is legacy code and not that high of a priority.
 
-				items.Add(new ExistingThreadInfo((ulong)(uint)row[0], Utility.ConvertNewYorkTimestamp((uint)row[1]).UtcDateTime, null));
+				items.Add(new ExistingThreadInfo((uint)row[0], Utility.ConvertNewYorkTimestamp((uint)row[1]).UtcDateTime, null));
 			}
 
 			return items;
@@ -531,6 +531,94 @@ namespace Hayden.Consumers
 		{
 			ConnectionPool.Dispose();
 		}
+
+		#region Thread tracking
+
+		/// <inheritdoc />
+		public TrackedThread<Thread, Post> StartTrackingThread(ExistingThreadInfo existingThreadInfo) => AsagiTrackedThread.StartTrackingThread(existingThreadInfo);
+
+		/// <inheritdoc />
+		public TrackedThread<Thread, Post> StartTrackingThread() => AsagiTrackedThread.StartTrackingThread();
+
+		internal class AsagiTrackedThread : TrackedThread<Thread, Post>
+		{
+			/// <summary>
+			/// Calculates a hash from mutable properties of a post. Used for tracking if a post has been modified
+			/// </summary>
+			public static uint CalculatePostHash(string postHtml, bool? spoilerImage, bool? fileDeleted, string originalFilenameNoExt,
+				bool? archived, bool? closed, bool? bumpLimit, bool? imageLimit, uint? replyCount, ushort? imageCount, int? uniqueIpAddresses)
+			{
+				// Null bool? values should evaluate to false everywhere
+				static int EvaluateNullableBool(bool? value)
+				{
+					return value.HasValue
+						? (value.Value ? 1 : 2)
+						: 2;
+				}
+
+				// The HTML content of a post can change due to public warnings and bans.
+				uint hashCode = Utility.FNV1aHash32(postHtml);
+
+				// Attached files can be removed, and have their spoiler status changed
+				Utility.FNV1aHash32(EvaluateNullableBool(spoilerImage), ref hashCode);
+				Utility.FNV1aHash32(EvaluateNullableBool(fileDeleted), ref hashCode);
+				Utility.FNV1aHash32(originalFilenameNoExt, ref hashCode);
+
+				// The OP of a thread can have numerous properties change.
+				// As such, these properties are only considered mutable for OPs (because that's the only place they can exist) and immutable for replies.
+				Utility.FNV1aHash32(EvaluateNullableBool(archived), ref hashCode);
+				Utility.FNV1aHash32(EvaluateNullableBool(closed), ref hashCode);
+				Utility.FNV1aHash32(EvaluateNullableBool(bumpLimit), ref hashCode);
+				Utility.FNV1aHash32(EvaluateNullableBool(imageLimit), ref hashCode);
+				Utility.FNV1aHash32((int?)replyCount ?? -1, ref hashCode);
+				Utility.FNV1aHash32(imageCount ?? -1, ref hashCode);
+				Utility.FNV1aHash32(uniqueIpAddresses ?? -1, ref hashCode);
+
+				return hashCode;
+			}
+
+			/// <summary>
+			/// Creates a new <see cref="TrackedThread"/> instance, utilizing information derived from an <see cref="IThreadConsumer"/> implementation.
+			/// </summary>
+			/// <param name="existingThreadInfo">The thread information to initialize with.</param>
+			/// <returns>An initialized <see cref="TrackedThread"/> instance.</returns>
+			public static TrackedThread<Thread, Post> StartTrackingThread(ExistingThreadInfo existingThreadInfo)
+			{
+				var trackedThread = new AsagiTrackedThread();
+
+				trackedThread.PostHashes = new();
+
+				if (existingThreadInfo.PostHashes != null)
+				{
+					foreach (var hash in existingThreadInfo.PostHashes)
+						trackedThread.PostHashes[hash.PostId] = hash.PostHash;
+
+					trackedThread.PostCount = existingThreadInfo.PostHashes.Count;
+				}
+				else
+				{
+					trackedThread.PostCount = 0;
+				}
+
+				return trackedThread;
+			}
+			
+			public static TrackedThread<Thread, Post> StartTrackingThread()
+			{
+				var trackedThread = new AsagiTrackedThread();
+
+				trackedThread.PostHashes = new();
+				trackedThread.PostCount = 0;
+
+				return trackedThread;
+			}
+
+			public override uint CalculatePostHash(Post post)
+				=> CalculatePostHash(CleanComment(post.Comment), post.SpoilerImage, post.FileDeleted, post.OriginalFilename,
+					post.Archived, post.Closed, post.BumpLimit, post.ImageLimit, post.TotalReplies, post.TotalImages, post.UniqueIps);
+		}
+
+		#endregion
 
 		/// <summary>
 		/// Information relating to a single media object tracked in the database.

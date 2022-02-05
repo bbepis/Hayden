@@ -3,7 +3,12 @@ using Newtonsoft.Json;
 
 namespace Hayden.Models
 {
-	public class Thread
+	public interface IThread<TPost> where TPost : IPost
+	{
+		List<TPost> Posts { get; set; }
+	}
+
+	public class Thread : IThread<Post>
 	{
 		[JsonProperty("posts")]
 		public List<Post> Posts { get; set; }

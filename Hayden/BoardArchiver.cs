@@ -20,19 +20,19 @@ namespace Hayden
 	/// <summary>
 	/// Handles the core archival logic, independent of any API or consumer implementations.
 	/// </summary>
-	public class BoardArchiver
+	public class BoardArchiver<TThread, TPost> where TPost : IPost where TThread : IThread<TPost>
 	{
 		/// <summary>
 		/// Configuration for the Yotsuba API given by the constructor.
 		/// </summary>
 		public YotsubaConfig Config { get; }
 
-		protected IThreadConsumer ThreadConsumer { get; }
+		protected IThreadConsumer<TThread, TPost> ThreadConsumer { get; }
 		protected IStateStore StateStore { get; }
 		protected ProxyProvider ProxyProvider { get; }
 
 		protected List<ThreadPointer> ThreadIdBlacklist { get; } = new();
-		protected SortedList<ThreadPointer, TrackedThread> TrackedThreads { get; } = new();
+		protected SortedList<ThreadPointer, TrackedThread<TThread, TPost>> TrackedThreads { get; } = new();
 
 		protected Dictionary<string, BoardRules> BoardRules { get; } = new();
 
@@ -46,7 +46,7 @@ namespace Hayden
 		/// </summary>
 		public TimeSpan ApiCooldownTimespan { get; set; }
 
-		public BoardArchiver(YotsubaConfig config, IThreadConsumer threadConsumer, IStateStore stateStore = null, ProxyProvider proxyProvider = null)
+		public BoardArchiver(YotsubaConfig config, IThreadConsumer<TThread, TPost> threadConsumer, IStateStore stateStore = null, ProxyProvider proxyProvider = null)
 		{
 			Config = config;
 			ThreadConsumer = threadConsumer;
@@ -106,6 +106,9 @@ namespace Hayden
 
 					lock (threadQueue)
 						threadQueue.AddRange(modifiedThreads);
+					
+					if (modifiedThreads.Any(pointer => pointer.Board == null))
+						System.Diagnostics.Debugger.Break();
 
 					// If allThreads is null, then the board hasn't changed since we last checked
 					if (allThreads != null)
@@ -122,6 +125,9 @@ namespace Hayden
 							// This thread is missing from the board listing, but the last time we checked it it was still alive.
 							// Add it to the re-examination queue
 							threadQueue.Add(pointer);
+
+							if (pointer.Board == null)
+								System.Diagnostics.Debugger.Break();
 						}
 					}
 
@@ -607,7 +613,7 @@ namespace Hayden
 							// Start tracking the thread
 
 							lock (TrackedThreads)
-								TrackedThreads[new ThreadPointer(board, existingThread.ThreadId)] = TrackedThread.StartTrackingThread(existingThread);
+								TrackedThreads[new ThreadPointer(board, existingThread.ThreadId)] = ThreadConsumer.StartTrackingThread(existingThread);
 						}
 					}
 
@@ -713,7 +719,7 @@ namespace Hayden
 
 						// Process the thread data with its assigned TrackedThread instance, then pass the results to the consumer
 
-						TrackedThread trackedThread;
+						TrackedThread<TThread, TPost> trackedThread;
 
 						bool isNewThread = false;
 
@@ -721,12 +727,12 @@ namespace Hayden
 							if (!TrackedThreads.TryGetValue(threadPointer, out trackedThread))
 							{
 								// this is a brand new thread that hasn't been tracked yet
-								trackedThread = TrackedThread.StartTrackingThread();
+								trackedThread = ThreadConsumer.StartTrackingThread();
 								TrackedThreads[threadPointer] = trackedThread;
 								isNewThread = true;
 							}
 
-						var threadUpdateInfo = trackedThread.ProcessThreadUpdates(threadPointer, response.Data);
+						var threadUpdateInfo = trackedThread.ProcessThreadUpdates(threadPointer, (TThread)(object)response.Data); // FIXME
 						threadUpdateInfo.IsNewThread = isNewThread;
 
 						if (!threadUpdateInfo.HasChanges)
