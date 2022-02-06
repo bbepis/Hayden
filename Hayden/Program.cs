@@ -131,10 +131,10 @@ namespace Hayden
 
 			if (sourceType == "LynxChan")
 			{
-				var lynxChanConfig = rawConfigFile["source"].ToObject<LynxChanConfig>();
-				config = lynxChanConfig;
+				var altchanConfig = rawConfigFile["source"].ToObject<AltchanConfig>();
+				config = altchanConfig;
 
-				var frontend = new LynxChanApi(lynxChanConfig.ImageboardWebsite);
+				var frontend = new LynxChanApi(altchanConfig.ImageboardWebsite);
 				IThreadConsumer<LynxChanThread, LynxChanPost> consumer;
 
 				switch (backendType)
@@ -143,7 +143,31 @@ namespace Hayden
 						var filesystemConfig = rawConfigFile["backend"].ToObject<FilesystemConfig>();
 
 						downloadLocation = filesystemConfig.DownloadLocation;
-						consumer = new LynxChanFilesystemThreadConsumer(lynxChanConfig.ImageboardWebsite, filesystemConfig);
+						consumer = new LynxChanFilesystemThreadConsumer(altchanConfig.ImageboardWebsite, filesystemConfig);
+						break;
+
+					default:
+						throw new ArgumentException($"Unknown backend type {backendType}");
+				}
+
+				return await GenericInitialize(frontend, consumer);
+			}
+
+			if (sourceType == "Vichan")
+			{
+				var altchanConfig = rawConfigFile["source"].ToObject<AltchanConfig>();
+				config = altchanConfig;
+
+				var frontend = new VichanApi(altchanConfig.ImageboardWebsite);
+				IThreadConsumer<VichanThread, VichanPost> consumer;
+
+				switch (backendType)
+				{
+					case "Filesystem":
+						var filesystemConfig = rawConfigFile["backend"].ToObject<FilesystemConfig>();
+
+						downloadLocation = filesystemConfig.DownloadLocation;
+						consumer = new VichanFilesystemThreadConsumer(altchanConfig.ImageboardWebsite, filesystemConfig);
 						break;
 
 					default:

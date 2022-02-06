@@ -20,7 +20,13 @@ namespace Hayden.Api
 		/// <param name="uri">The uri of the request.</param>
 		/// <param name="modifiedSince">The value to use in the If-Modified-Since header.</param>
 		/// <returns></returns>
-		protected abstract HttpRequestMessage CreateRequest(Uri uri, DateTimeOffset? modifiedSince);
+		protected virtual HttpRequestMessage CreateRequest(Uri uri, DateTimeOffset? modifiedSince)
+		{
+			var request = new HttpRequestMessage(HttpMethod.Get, uri);
+			request.Headers.IfModifiedSince = modifiedSince;
+
+			return request;
+		}
 
 		protected virtual async Task<ApiResponse<T>> MakeJsonApiCall<T>(Uri uri, HttpClient client, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default)
 		{

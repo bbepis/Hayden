@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Globalization;
 using System.Linq;
 using System.Net.Http;
 using System.Threading;
@@ -15,14 +14,6 @@ namespace Hayden
 	/// </summary>
 	public class LynxChanApi : BaseApi<LynxChanThread>
 	{
-		protected override HttpRequestMessage CreateRequest(Uri uri, DateTimeOffset? modifiedSince)
-		{
-			var request = new HttpRequestMessage(HttpMethod.Get, uri);
-			request.Headers.IfModifiedSince = modifiedSince;
-
-			return request;
-		}
-
 		public string ImageboardWebsite { get; }
 
 		public LynxChanApi(string imageboardWebsite)
