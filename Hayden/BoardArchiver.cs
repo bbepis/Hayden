@@ -572,7 +572,7 @@ namespace Hayden
 			var threads = new List<ThreadPointer>();
 			List<ThreadPointer> allThreads = null;
 
-			var pagesRequest = await NetworkPolicies.GenericRetryPolicy<ApiResponse<PageThread[]>>(12).ExecuteAsync(async () =>
+			var pagesRequest = await NetworkPolicies.GenericRetryPolicy<ApiResponse<PageThread[]>>(12).ExecuteAsync(async (token) =>
 			{
 				token.ThrowIfCancellationRequested();
 				Program.Log($"Requesting threads from board /{board}/...");
@@ -581,7 +581,7 @@ namespace Hayden
 					boardClient.Object.Client,
 					lastDateTimeCheck,
 					token);
-			});
+			}, token);
 
 			switch (pagesRequest.ResponseType)
 			{
