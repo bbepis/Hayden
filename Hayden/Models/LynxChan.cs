@@ -51,7 +51,7 @@ namespace Hayden.Models
 		public string Subject { get; set; }
 		
 		[JsonProperty("creation")]
-		public string CreationDateTime { get; set; }
+		public DateTimeOffset CreationDateTime { get; set; }
 		
 		[JsonProperty("markdown")]
 		public string Markdown { get; set; }
@@ -80,7 +80,7 @@ namespace Hayden.Models
 		string IPost.Content => Message;
 
 		[JsonIgnore]
-		uint IPost.UnixTimestamp => (uint)DateTimeOffset.Parse(CreationDateTime).ToUnixTimeSeconds();
+		uint IPost.UnixTimestamp => (uint)CreationDateTime.ToUnixTimeSeconds();
 
 		#endregion
 	}

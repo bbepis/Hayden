@@ -87,10 +87,7 @@ namespace Hayden
 			
 			var response = new ApiResponse<PageThread[]>(ResponseType.Ok, result.Data.Select(x =>
 				{
-					var timestamp = Utility.GetGMTTimestamp(new DateTimeOffset(DateTime.ParseExact(x.lastBump, "MM/dd/yyyy HH:mm:ss",
-						CultureInfo.InvariantCulture), TimeSpan.Zero));
-
-					return new PageThread(x.threadId, timestamp, x.subject, x.message);
+					return new PageThread(x.threadId, (ulong)x.lastBump.ToUnixTimeSeconds(), x.subject, x.message);
 				})
 				.ToArray());
 
@@ -105,7 +102,7 @@ namespace Hayden
 
 		private struct LynxChanCatalogItem
 		{
-			public string lastBump;
+			public DateTimeOffset lastBump;
 			public string message;
 			public ulong threadId;
 			public string subject;
@@ -119,8 +116,8 @@ namespace Hayden
 			[JsonProperty("subject")]
 			public string Subject { get; set; }
 
-			[JsonProperty("sticky")]
-			public string CreationDateTime { get; set; }
+			[JsonProperty("creation")]
+			public DateTimeOffset CreationDateTime { get; set; }
 
 			[JsonProperty("markdown")]
 			public string Markdown { get; set; }
