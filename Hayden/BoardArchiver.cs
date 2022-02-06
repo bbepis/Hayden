@@ -799,10 +799,12 @@ namespace Hayden
 				return;
 
 			Program.Log($"Downloading image {Path.GetFileName(downloadPath)}", true);
-
-			var request = new HttpRequestMessage(HttpMethod.Get, imageUrl);
-			using var response = await NetworkPolicies.HttpApiPolicy.ExecuteAsync(
-				() => httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead))
+			
+			using var response = await NetworkPolicies.HttpApiPolicy.ExecuteAsync(() =>
+				{
+					var request = new HttpRequestMessage(HttpMethod.Get, imageUrl);
+					return httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
+				})
 				.ConfigureAwait(false);
 
 			await using (var webStream = await response.Content.ReadAsStreamAsync())
