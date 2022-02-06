@@ -1,14 +1,33 @@
 ﻿using System;
+using System.Collections.Generic;
+using Hayden.Contract;
 using Newtonsoft.Json;
 
 namespace Hayden.Models
 {
-	public interface IPost
+	public class YotsubaThread : IThread<YotsubaPost>
 	{
-		ulong PostNumber { get; set; }
+		[JsonProperty("posts")]
+		public List<YotsubaPost> Posts { get; set; }
+
+		[JsonIgnore]
+		public YotsubaPost OriginalPost => Posts[0];
+
+		[JsonIgnore]
+		public bool Archived => OriginalPost.Archived ?? false;
+
+		[JsonIgnore]
+		string IThread<YotsubaPost>.Title => OriginalPost.Subject;
+
+		#region Hayden-specific and non-standard
+
+		[JsonProperty("extension_isdeleted")]
+		public bool? IsDeleted { get; set; }
+
+		#endregion
 	}
 
-	public class Post : IPost
+	public class YotsubaPost : IPost
 	{
 		// I comment out properties that are part of the API spec, but not used by Hayden.
 		// I don't leave them in anyway, since we get a performance benefit by not having to deserialize them and keep them loaded in memory.
@@ -30,43 +49,43 @@ namespace Hayden.Models
 		[JsonConverter(typeof(BoolIntConverter))]
 		[JsonProperty("archived")]
 		public bool? Archived { get; set; }
-		
+
 		[JsonProperty("time")]
 		public uint UnixTimestamp { get; set; }
-		
+
 		[JsonProperty("name")]
 		public string Name { get; set; }
-		
+
 		[JsonProperty("trip")]
 		public string Trip { get; set; }
-		
+
 		[JsonProperty("id")]
 		public string PosterID { get; set; }
-		
+
 		[JsonProperty("capcode")]
 		public string Capcode { get; set; }
-		
+
 		[JsonProperty("country")]
 		public string CountryCode { get; set; }
 
 		[JsonProperty("sub")]
 		public string Subject { get; set; }
-		
+
 		[JsonProperty("com")]
 		public string Comment { get; set; }
-		
+
 		[JsonProperty("tim")]
 		public ulong? TimestampedFilename { get; set; }
-		
+
 		[JsonProperty("filename")]
 		public string OriginalFilename { get; set; }
-		
+
 		[JsonProperty("ext")]
 		public string FileExtension { get; set; }
-		
+
 		[JsonProperty("fsize")]
 		public uint? FileSize { get; set; }
-		
+
 		[JsonProperty("md5")]
 		public string FileMd5 { get; set; }
 
@@ -138,7 +157,7 @@ namespace Hayden.Models
 		public string SemanticUrl { get; set; }
 
 		#endregion
-		
+
 		#region Hayden-specific and non-standard
 
 		[JsonProperty("extension_isdeleted")]
@@ -151,5 +170,8 @@ namespace Hayden.Models
 
 		[JsonIgnore]
 		public string TimestampedFilenameFull => FileMd5 != null ? TimestampedFilename + FileExtension : null;
+
+		[JsonIgnore]
+		string IPost.Content => Comment;
 	}
 }

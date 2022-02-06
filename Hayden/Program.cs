@@ -13,7 +13,6 @@ using Hayden.Proxy;
 using Mono.Unix;
 using Mono.Unix.Native;
 using Newtonsoft.Json.Linq;
-using Thread = System.Threading.Thread;
 
 namespace Hayden
 {
@@ -34,74 +33,9 @@ namespace Hayden
 
 			var rawConfigFile = JObject.Parse(File.ReadAllText(args[0]));
 
-			IThreadConsumer<Models.Thread, Post> consumer;
-
-			// Figure out what backend the user wants to use, and load it
-			// This entire section is more of a stop-gap than actual clean code
-
-			string backendType = rawConfigFile["backend"]["type"].Value<string>();
-
-			var yotsubaConfig = rawConfigFile["source"].ToObject<YotsubaConfig>();
-			string downloadLocation = null;
-
-			switch (backendType)
-			{
-				case "Asagi":
-					var asagiConfig = rawConfigFile["backend"].ToObject<AsagiConfig>();
-
-					downloadLocation = asagiConfig.DownloadLocation;
-					consumer = new AsagiThreadConsumer(asagiConfig, yotsubaConfig.Boards.Keys);
-					break;
-					
-				case "Hayden":
-					var haydenConfig = rawConfigFile["backend"].ToObject<HaydenMysqlConfig>();
-
-					downloadLocation = haydenConfig.DownloadLocation;
-					consumer = new HaydenMysqlThreadConsumer(haydenConfig);
-					break;
-
-				case "Filesystem":
-					var filesystemConfig = rawConfigFile["backend"].ToObject<FilesystemConfig>();
-
-					downloadLocation = filesystemConfig.DownloadLocation;
-					consumer = new FilesystemThreadConsumer(filesystemConfig);
-					break;
-
-				default:
-					throw new ArgumentException($"Unknown backend type {backendType}");
-			}
-
-			HaydenConfig = rawConfigFile["hayden"]?.ToObject<HaydenConfigOptions>() ?? new HaydenConfigOptions();
-
-			ProxyProvider proxyProvider = null;
-
-			if (rawConfigFile["proxies"] != null)
-			{
-				proxyProvider = new ConfigProxyProvider((JArray)rawConfigFile["proxies"], HaydenConfig.ResolveDnsLocally);
-				await proxyProvider.InitializeAsync();
-			}
-
-			Log("Initialized.");
-			Log("Press Q to stop archival.");
-
-			var haydenDirectory = Path.Combine(downloadLocation, "hayden");
-			Directory.CreateDirectory(haydenDirectory);
-
-			var stateStore = new LiteDbStateStore(Path.Combine(haydenDirectory, "imagequeue.db"));
-			
-			var boardArchiver = new BoardArchiver<Models.Thread, Post>(yotsubaConfig, consumer, stateStore, proxyProvider);
-
 			var tokenSource = new CancellationTokenSource();
 
-			var archivalTask = boardArchiver.Execute(tokenSource.Token)
-				.ContinueWith(task =>
-				{
-					if (task.IsFaulted)
-					{
-						Log("!! FATAL EXCEPTION !!");
-						Log(task.Exception.ToString());
-					}
-				});
+			var archivalTask = (await CreateBoardArchiverExecutor(rawConfigFile, tokenSource))();
 
 			var terminateTask = WaitForTerminateAsync();
 			await Task.WhenAny(archivalTask, terminateTask).ConfigureAwait(false);
@@ -112,6 +46,114 @@ namespace Hayden
 				tokenSource.Cancel();
 
 			await archivalTask.ConfigureAwait(false);
+		}
+
+		private static async Task<Func<Task>> CreateBoardArchiverExecutor(JObject rawConfigFile, CancellationTokenSource tokenSource)
+		{
+			YotsubaConfig config;
+			string downloadLocation = null;
+
+			async Task<Func<Task>> GenericInitialize<TThread, TPost>(IFrontendApi<TThread> frontend, IThreadConsumer<TThread, TPost> consumer)
+				where TPost : IPost where TThread : IThread<TPost>
+			{
+				HaydenConfig = rawConfigFile["hayden"]?.ToObject<HaydenConfigOptions>() ?? new HaydenConfigOptions();
+
+				ProxyProvider proxyProvider = null;
+
+				if (rawConfigFile["proxies"] != null)
+				{
+					proxyProvider = new ConfigProxyProvider((JArray)rawConfigFile["proxies"], HaydenConfig.ResolveDnsLocally);
+					await proxyProvider.InitializeAsync();
+				}
+
+				Log("Initialized.");
+				Log("Press Q to stop archival.");
+
+				var haydenDirectory = Path.Combine(downloadLocation, "hayden");
+				Directory.CreateDirectory(haydenDirectory);
+
+				var stateStore = new LiteDbStateStore(Path.Combine(haydenDirectory, "imagequeue.db"));
+
+				var boardArchiver = new BoardArchiver<TThread, TPost>(config, frontend, consumer, stateStore, proxyProvider);
+
+				return () => boardArchiver.Execute(tokenSource.Token)
+					.ContinueWith(task =>
+					{
+						if (task.IsFaulted)
+						{
+							Log("!! FATAL EXCEPTION !!");
+							Log(task.Exception.ToString());
+						}
+					});
+			}
+
+			// Figure out what backend the user wants to use, and load it
+			// This entire section is more of a stop-gap than actual clean code
+
+			string sourceType = rawConfigFile["source"]["type"].Value<string>();
+			string backendType = rawConfigFile["backend"]["type"].Value<string>();
+
+			if (sourceType == "4chan")
+			{
+				config = rawConfigFile["source"].ToObject<YotsubaConfig>();
+				var frontend = new YotsubaApi();
+				IThreadConsumer<YotsubaThread, YotsubaPost> consumer;
+
+				switch (backendType)
+				{
+					case "Asagi":
+						var asagiConfig = rawConfigFile["backend"].ToObject<AsagiConfig>();
+
+						downloadLocation = asagiConfig.DownloadLocation;
+						consumer = new AsagiThreadConsumer(asagiConfig, config.Boards.Keys);
+						break;
+
+					case "Hayden":
+						var haydenConfig = rawConfigFile["backend"].ToObject<HaydenMysqlConfig>();
+
+						downloadLocation = haydenConfig.DownloadLocation;
+						consumer = new HaydenMysqlThreadConsumer(haydenConfig);
+						break;
+
+					case "Filesystem":
+						var filesystemConfig = rawConfigFile["backend"].ToObject<FilesystemConfig>();
+
+						downloadLocation = filesystemConfig.DownloadLocation;
+						consumer = new YotsubaFilesystemThreadConsumer(filesystemConfig);
+						break;
+
+					default:
+						throw new ArgumentException($"Unknown backend type {backendType}");
+				}
+
+				return await GenericInitialize(frontend, consumer);
+			}
+
+			if (sourceType == "LynxChan")
+			{
+				var lynxChanConfig = rawConfigFile["source"].ToObject<LynxChanConfig>();
+				config = lynxChanConfig;
+
+				var frontend = new LynxChanApi(lynxChanConfig.ImageboardWebsite);
+				IThreadConsumer<LynxChanThread, LynxChanPost> consumer;
+
+				switch (backendType)
+				{
+					case "Filesystem":
+						var filesystemConfig = rawConfigFile["backend"].ToObject<FilesystemConfig>();
+
+						downloadLocation = filesystemConfig.DownloadLocation;
+						consumer = new LynxChanFilesystemThreadConsumer(lynxChanConfig.ImageboardWebsite, filesystemConfig);
+						break;
+
+					default:
+						throw new ArgumentException($"Unknown backend type {backendType}");
+				}
+
+				return await GenericInitialize(frontend, consumer);
+			}
+
+			throw new ArgumentException($"Unknown source type {sourceType}");
 		}
 
 

@@ -4,6 +4,22 @@ namespace Hayden.Models
 {
 	public struct PageThread
 	{
+		public PageThread()
+		{
+			ThreadNumber = 0;
+			LastModified = 0;
+			Subject = null;
+			Html = null;
+		}
+
+		public PageThread(ulong threadNumber, ulong lastModified, string subject, string html)
+		{
+			ThreadNumber = threadNumber;
+			LastModified = lastModified;
+			Subject = subject;
+			Html = html;
+		}
+
 		[JsonProperty("no")]
 		public ulong ThreadNumber { get; set; }
 

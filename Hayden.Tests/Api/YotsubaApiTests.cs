@@ -34,6 +34,8 @@ namespace Hayden.Tests.Api
 			return handlerMock;
 		}
 
+		private YotsubaApi yotsubaApi = new YotsubaApi();
+
 		private HttpClient CreateMockClient(HttpStatusCode code, string response)
 			=> new HttpClient(CreateMockClientHandler(code, response).Object);
 
@@ -45,7 +47,7 @@ namespace Hayden.Tests.Api
 		{
 			var mockClient = CreateMockClient(HttpStatusCode.NotFound, null);
 
-			var result = await YotsubaApi.GetThread("a", 1234, mockClient);
+			var result = await yotsubaApi.GetThread("a", 1234, mockClient);
 
 			Assert.IsNotNull(result);
 			Assert.AreEqual(ResponseType.NotFound, result.ResponseType);
@@ -56,7 +58,7 @@ namespace Hayden.Tests.Api
 		{
 			var mockClient = CreateMockClient(HttpStatusCode.NotModified, null);
 
-			var result = await YotsubaApi.GetThread("a", 1234, mockClient);
+			var result = await yotsubaApi.GetThread("a", 1234, mockClient);
 
 			Assert.IsNotNull(result);
 			Assert.AreEqual(ResponseType.NotModified, result.ResponseType);
@@ -97,7 +99,7 @@ namespace Hayden.Tests.Api
 
 			var mockClient = CreateMockClient(HttpStatusCode.OK, testResponse);
 
-			var result = await YotsubaApi.GetThread("a", 1234, mockClient);
+			var result = await yotsubaApi.GetThread("a", 1234, mockClient);
 
 			Assert.AreEqual(ResponseType.Ok, result.ResponseType);
 			Assert.IsNotNull(result.Data);
@@ -121,7 +123,7 @@ namespace Hayden.Tests.Api
 
 			var mockHandler = CreateMockClientHandler(HttpStatusCode.NotFound, null);
 
-			await YotsubaApi.GetThread(board, threadNumber, new HttpClient(mockHandler.Object));
+			await yotsubaApi.GetThread(board, threadNumber, new HttpClient(mockHandler.Object));
 
 			mockHandler.Protected().Verify(
 				"SendAsync",
@@ -142,7 +144,7 @@ namespace Hayden.Tests.Api
 
 			var baseDateTimeOffset = DateTimeOffset.Parse("12/3/2007 12:00:00 AM -08:00");
 
-			await YotsubaApi.GetThread("a", 1234, client, baseDateTimeOffset);
+			await yotsubaApi.GetThread("a", 1234, client, baseDateTimeOffset);
 
 			mockHandler.Protected().Verify(
 				"SendAsync",
@@ -163,7 +165,7 @@ namespace Hayden.Tests.Api
 		{
 			var mockClient = CreateMockClient(HttpStatusCode.NotFound, null);
 
-			var result = await YotsubaApi.GetBoard("a", mockClient);
+			var result = await yotsubaApi.GetBoard("a", mockClient);
 
 			Assert.IsNotNull(result);
 			Assert.AreEqual(ResponseType.NotFound, result.ResponseType);
@@ -174,7 +176,7 @@ namespace Hayden.Tests.Api
 		{
 			var mockClient = CreateMockClient(HttpStatusCode.NotModified, null);
 
-			var result = await YotsubaApi.GetBoard("a", mockClient);
+			var result = await yotsubaApi.GetBoard("a", mockClient);
 
 			Assert.IsNotNull(result);
 			Assert.AreEqual(ResponseType.NotModified, result.ResponseType);
@@ -188,19 +190,18 @@ namespace Hayden.Tests.Api
 
 			var mockClient = CreateMockClient(HttpStatusCode.OK, testResponse);
 
-			var result = await YotsubaApi.GetBoard("a", mockClient);
+			var result = await yotsubaApi.GetBoard("a", mockClient);
 
 			Assert.AreEqual(ResponseType.Ok, result.ResponseType);
 			Assert.IsNotNull(result.Data);
 
 			Assert.AreEqual(1, result.Data.Length);
 
-			var page = result.Data[0];
-
-			Assert.AreEqual(1U, page.PageNumber);
-			Assert.AreEqual(2, page.Threads.Length);
-			Assert.AreEqual(51971506UL, page.Threads[0].ThreadNumber);
-			Assert.AreEqual(1576181967UL, page.Threads[0].LastModified);
+			var firstThread = result.Data[0];
+			
+			Assert.AreEqual(2, result.Data.Length);
+			Assert.AreEqual(51971506UL, firstThread.ThreadNumber);
+			Assert.AreEqual(1576181967UL, firstThread.LastModified);
 		}
 
 		[Test]
@@ -210,7 +211,7 @@ namespace Hayden.Tests.Api
 
 			var mockHandler = CreateMockClientHandler(HttpStatusCode.NotFound, null);
 
-			await YotsubaApi.GetBoard(board, new HttpClient(mockHandler.Object));
+			await yotsubaApi.GetBoard(board, new HttpClient(mockHandler.Object));
 
 			mockHandler.Protected().Verify(
 				"SendAsync",
@@ -231,7 +232,7 @@ namespace Hayden.Tests.Api
 
 			var baseDateTimeOffset = DateTimeOffset.Parse("12/3/2007 12:00:00 AM -08:00");
 
-			await YotsubaApi.GetBoard("a", client, baseDateTimeOffset);
+			await yotsubaApi.GetBoard("a", client, baseDateTimeOffset);
 
 			mockHandler.Protected().Verify(
 				"SendAsync",
@@ -252,7 +253,7 @@ namespace Hayden.Tests.Api
 		{
 			var mockClient = CreateMockClient(HttpStatusCode.NotFound, null);
 
-			var result = await YotsubaApi.GetArchive("a", mockClient);
+			var result = await yotsubaApi.GetArchive("a", mockClient);
 
 			Assert.IsNotNull(result);
 			Assert.AreEqual(ResponseType.NotFound, result.ResponseType);
@@ -263,7 +264,7 @@ namespace Hayden.Tests.Api
 		{
 			var mockClient = CreateMockClient(HttpStatusCode.NotModified, null);
 
-			var result = await YotsubaApi.GetArchive("a", mockClient);
+			var result = await yotsubaApi.GetArchive("a", mockClient);
 
 			Assert.IsNotNull(result);
 			Assert.AreEqual(ResponseType.NotModified, result.ResponseType);
@@ -276,7 +277,7 @@ namespace Hayden.Tests.Api
 
 			var mockClient = CreateMockClient(HttpStatusCode.OK, testResponse);
 
-			var result = await YotsubaApi.GetArchive("a", mockClient);
+			var result = await yotsubaApi.GetArchive("a", mockClient);
 
 			Assert.AreEqual(ResponseType.Ok, result.ResponseType);
 			Assert.IsNotNull(result.Data);
@@ -295,7 +296,7 @@ namespace Hayden.Tests.Api
 
 			var mockHandler = CreateMockClientHandler(HttpStatusCode.NotFound, null);
 
-			await YotsubaApi.GetArchive(board, new HttpClient(mockHandler.Object));
+			await yotsubaApi.GetArchive(board, new HttpClient(mockHandler.Object));
 
 			mockHandler.Protected().Verify(
 				"SendAsync",
@@ -316,7 +317,7 @@ namespace Hayden.Tests.Api
 
 			var baseDateTimeOffset = DateTimeOffset.Parse("12/3/2007 12:00:00 AM -08:00");
 
-			await YotsubaApi.GetArchive("a", client, baseDateTimeOffset);
+			await yotsubaApi.GetArchive("a", client, baseDateTimeOffset);
 
 			mockHandler.Protected().Verify(
 				"SendAsync",

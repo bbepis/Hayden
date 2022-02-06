@@ -5,31 +5,29 @@ using System.Linq;
 using System.Threading.Tasks;
 using Hayden.Config;
 using Hayden.Contract;
-using Hayden.Models;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
-using Thread = Hayden.Models.Thread;
 
 namespace Hayden.Consumers
 {
-	public class FilesystemThreadConsumer : IThreadConsumer<Thread, Post>
+	public abstract class BaseFilesystemThreadConsumer<TThread, TPost> : IThreadConsumer<TThread, TPost> where TPost : IPost where TThread : IThread<TPost>
 	{
 		public string ArchiveDirectory { get; set; }
 		public FilesystemConfig Config { get; set; }
 
-		public FilesystemThreadConsumer(FilesystemConfig config)
+		protected BaseFilesystemThreadConsumer(FilesystemConfig config)
 		{
 			Config = config;
 			ArchiveDirectory = config.DownloadLocation;
 		}
 
-		private static readonly JsonSerializer Serializer = new JsonSerializer
+		private static readonly JsonSerializer Serializer = new()
 		{
 			NullValueHandling = NullValueHandling.Ignore,
 			Formatting = Formatting.None
 		};
 
-		private static void WriteJson(string filename, Thread thread)
+		protected void WriteJson(string filename, TThread thread)
 		{
 			using (var threadFileStream = new FileStream(filename, FileMode.Create))
 			using (var streamWriter = new StreamWriter(threadFileStream))
@@ -39,15 +37,15 @@ namespace Hayden.Consumers
 			}
 		}
 
-		private static Thread ReadJson(string filename)
+		protected TThread ReadJson(string filename)
 		{
 			using StreamReader streamReader = new StreamReader(File.OpenRead(filename));
 			using JsonReader reader = new JsonTextReader(streamReader);
 
-			return JToken.Load(reader).ToObject<Thread>();
+			return JToken.Load(reader).ToObject<TThread>();
 		}
 
-		public async Task<IList<QueuedImageDownload>> ConsumeThread(ThreadUpdateInfo<Thread, Post> threadUpdateInfo)
+		public async Task<IList<QueuedImageDownload>> ConsumeThread(ThreadUpdateInfo<TThread, TPost> threadUpdateInfo)
 		{
 			var pointer = threadUpdateInfo.ThreadPointer;
 
@@ -71,33 +69,15 @@ namespace Hayden.Consumers
 
 			// download files from new posts only
 			
-			List<QueuedImageDownload> imageDownloads = new List<QueuedImageDownload>();
-
-			foreach (var post in threadUpdateInfo.NewPosts.Where(x => x.TimestampedFilename.HasValue))
-			{
-				if (Config.FullImagesEnabled)
-				{
-					string fullImageFilename = Path.Combine(threadDirectory, post.TimestampedFilenameFull);
-					string fullImageUrl = $"https://i.4cdn.org/{pointer.Board}/{post.TimestampedFilenameFull}";
-
-					if (!File.Exists(fullImageFilename))
-						imageDownloads.Add(new QueuedImageDownload(new Uri(fullImageUrl), fullImageFilename));
-				}
-
-				if (Config.ThumbnailsEnabled)
-				{
-					string thumbFilename = Path.Combine(threadThumbsDirectory, $"{post.TimestampedFilename}s.jpg");
-					string thumbUrl = $"https://i.4cdn.org/{pointer.Board}/{post.TimestampedFilename}s.jpg";
-
-					if (!File.Exists(thumbFilename))
-						imageDownloads.Add(new QueuedImageDownload(new Uri(thumbUrl), thumbFilename));
-				}
-			}
-
-			return imageDownloads;
+			return CalculateImageDownloads(threadUpdateInfo, threadDirectory, pointer, threadThumbsDirectory);
 		}
 
-		internal static void PerformJsonThreadUpdate(ThreadUpdateInfo<Thread, Post> threadUpdateInfo, string threadFileName)
+		protected abstract IList<QueuedImageDownload> CalculateImageDownloads(ThreadUpdateInfo<TThread, TPost> threadUpdateInfo,
+			string threadDirectory,
+			ThreadPointer pointer,
+			string threadThumbsDirectory);
+
+		public void PerformJsonThreadUpdate(ThreadUpdateInfo<TThread, TPost> threadUpdateInfo, string threadFileName)
 		{
 			if (!File.Exists(threadFileName))
 			{
@@ -113,36 +93,7 @@ namespace Hayden.Consumers
 
 				// overwrite any modified posts
 
-				foreach (var modifiedPost in threadUpdateInfo.UpdatedPosts)
-				{
-					var existingPost = writtenThread.Posts.First(x => x.PostNumber == modifiedPost.PostNumber);
-
-					// We can't just overwrite the post because we might mangle some properties we want to preserve (i.e. file info)
-
-					// So copy over the mutable properties
-
-					existingPost.Comment = modifiedPost.Comment;
-
-					if (modifiedPost.SpoilerImage.HasValue) // This might be null if the image is deleted
-						existingPost.SpoilerImage = modifiedPost.SpoilerImage;
-
-					// To mark deleted images, we still set this property but leave all other image-related properties intact
-					existingPost.FileDeleted = modifiedPost.FileDeleted;
-
-					// These are all OP-only properties. They're always null for replies so there's no harm in ignoring them
-
-					if (existingPost.ReplyPostNumber == 0) // OP check
-					{
-						existingPost.Archived = modifiedPost.Archived;
-						existingPost.ArchivedOn = modifiedPost.ArchivedOn;
-						existingPost.Closed = modifiedPost.Closed;
-						existingPost.BumpLimit = modifiedPost.BumpLimit;
-						existingPost.ImageLimit = modifiedPost.ImageLimit;
-						existingPost.TotalReplies = modifiedPost.TotalReplies;
-						existingPost.TotalImages = modifiedPost.TotalImages;
-						existingPost.UniqueIps = modifiedPost.UniqueIps;
-					}
-				}
+				PerformThreadUpdate(threadUpdateInfo, writtenThread);
 
 				// mark any deleted posts
 
@@ -163,6 +114,8 @@ namespace Hayden.Consumers
 				WriteJson(threadFileName, writtenThread);
 			}
 		}
+
+		protected abstract void PerformThreadUpdate(ThreadUpdateInfo<TThread, TPost> threadUpdateInfo, TThread writtenThread);
 
 		public Task ThreadUntracked(ulong threadId, string board, bool deleted)
 		{
@@ -213,7 +166,7 @@ namespace Hayden.Consumers
 					continue;
 				}
 
-				if (archivedOnly && writtenThread.OriginalPost.Archived != true)
+				if (archivedOnly && writtenThread.Archived != true)
 					continue;
 
 				if (!getMetadata)
@@ -230,7 +183,7 @@ namespace Hayden.Consumers
 						// We don't return deleted posts, otherwise Hayden will think the post still exists
 						continue;
 
-					threadHashList.Add((post.PostNumber, HaydenMysqlThreadConsumer.HaydenTrackedThread.CalculateYotsubaPostHash(post)));
+					threadHashList.Add((post.PostNumber, CalculateHash(post)));
 				}
 
 				existingThreads.Add(new ExistingThreadInfo(threadId,
@@ -241,15 +194,11 @@ namespace Hayden.Consumers
 			return Task.FromResult<ICollection<ExistingThreadInfo>>(existingThreads);
 		}
 
-		public TrackedThread<Thread, Post> StartTrackingThread(ExistingThreadInfo existingThreadInfo)
-		{
-			return HaydenMysqlThreadConsumer.HaydenTrackedThread.StartTrackingThread(existingThreadInfo);
-		}
+		public abstract TrackedThread<TThread, TPost> StartTrackingThread(ExistingThreadInfo existingThreadInfo);
 
-		public TrackedThread<Thread, Post> StartTrackingThread()
-		{
-			return HaydenMysqlThreadConsumer.HaydenTrackedThread.StartTrackingThread();
-		}
+		public abstract TrackedThread<TThread, TPost> StartTrackingThread();
+
+		protected abstract uint CalculateHash(TPost post);
 
 		public void Dispose() { }
 	}

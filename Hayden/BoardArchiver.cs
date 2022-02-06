@@ -28,6 +28,7 @@ namespace Hayden
 		public YotsubaConfig Config { get; }
 
 		protected IThreadConsumer<TThread, TPost> ThreadConsumer { get; }
+		protected IFrontendApi<TThread> FrontendApi { get; }
 		protected IStateStore StateStore { get; }
 		protected ProxyProvider ProxyProvider { get; }
 
@@ -46,9 +47,10 @@ namespace Hayden
 		/// </summary>
 		public TimeSpan ApiCooldownTimespan { get; set; }
 
-		public BoardArchiver(YotsubaConfig config, IThreadConsumer<TThread, TPost> threadConsumer, IStateStore stateStore = null, ProxyProvider proxyProvider = null)
+		public BoardArchiver(YotsubaConfig config, IFrontendApi<TThread> frontendApi, IThreadConsumer<TThread, TPost> threadConsumer, IStateStore stateStore = null, ProxyProvider proxyProvider = null)
 		{
 			Config = config;
+			FrontendApi = frontendApi;
 			ThreadConsumer = threadConsumer;
 			ProxyProvider = proxyProvider ?? new NullProxyProvider();
 			StateStore = stateStore ?? new NullStateStore();
@@ -131,7 +133,7 @@ namespace Hayden
 						}
 					}
 
-					if (firstRun && Config.ReadArchive)
+					if (firstRun && Config.ReadArchive && FrontendApi.SupportsArchive)
 					{
 						// Get a list of archived threads to include to be scraped.
 						var archivedThreads = await GetArchivedBoardThreads(token, board, lastDateTimeCheck);
@@ -517,7 +519,7 @@ namespace Hayden
 			{
 				token.ThrowIfCancellationRequested();
 				await using var boardClient = await ProxyProvider.RentHttpClient();
-				return await YotsubaApi.GetArchive(board, boardClient.Object.Client, lastDateTimeCheck, token);
+				return await FrontendApi.GetArchive(board, boardClient.Object.Client, lastDateTimeCheck, token);
 			});
 
 			switch (archiveRequest.ResponseType)
@@ -570,12 +572,12 @@ namespace Hayden
 			var threads = new List<ThreadPointer>();
 			List<ThreadPointer> allThreads = null;
 
-			var pagesRequest = await NetworkPolicies.GenericRetryPolicy<ApiResponse<Page[]>>(12).ExecuteAsync(async () =>
+			var pagesRequest = await NetworkPolicies.GenericRetryPolicy<ApiResponse<PageThread[]>>(12).ExecuteAsync(async () =>
 			{
 				token.ThrowIfCancellationRequested();
 				Program.Log($"Requesting threads from board /{board}/...");
 				await using var boardClient = await ProxyProvider.RentHttpClient();
-				return await YotsubaApi.GetBoard(board,
+				return await FrontendApi.GetBoard(board,
 					boardClient.Object.Client,
 					lastDateTimeCheck,
 					token);
@@ -586,7 +588,7 @@ namespace Hayden
 				case ResponseType.Ok:
 
 					// Flatten all threads.
-					var threadList = pagesRequest.Data.SelectMany(x => x.Threads)
+					var threadList = pagesRequest.Data
 						.Where(x => ThreadIdFilter(new ThreadPointer(board, x.ThreadNumber)) // Exclude any that are already blacklisted
 									&& ThreadFilter(x.Subject, x.Html, board)) // and exclude any that don't conform to our filter(s)
 						.ToList();
@@ -672,7 +674,7 @@ namespace Hayden
 				// We should be passing in the last scrape time here, but I don't remember why we don't
 				// I think it's because we only get to this point when we know for sure that the thread has changed?
 				// Or maybe there are properties that *can* change without updating last_modified
-				var response = await YotsubaApi.GetThread(board, threadNumber, client.Client, null, token);
+				var response = await FrontendApi.GetThread(board, threadNumber, client.Client, null, token);
 
 				token.ThrowIfCancellationRequested();
 
@@ -682,7 +684,7 @@ namespace Hayden
 
 						var threadPointer = new ThreadPointer(board, threadNumber);
 
-						if (response.Data != null && !ThreadFilter(response.Data.OriginalPost?.Subject, response.Data.OriginalPost?.Comment, board))
+						if (response.Data != null && !ThreadFilter(response.Data.Title, response.Data.OriginalPost?.Content, board))
 						{
 							Program.Log($"{workerId,-2}: Blacklisting thread /{board}/{threadNumber} due to title filter", true);
 							
@@ -732,7 +734,7 @@ namespace Hayden
 								isNewThread = true;
 							}
 
-						var threadUpdateInfo = trackedThread.ProcessThreadUpdates(threadPointer, (TThread)(object)response.Data); // FIXME
+						var threadUpdateInfo = trackedThread.ProcessThreadUpdates(threadPointer, response.Data);
 						threadUpdateInfo.IsNewThread = isNewThread;
 
 						if (!threadUpdateInfo.HasChanges)
@@ -748,7 +750,7 @@ namespace Hayden
 
 						var images = await ThreadConsumer.ConsumeThread(threadUpdateInfo);
 
-						if (response.Data.OriginalPost.Archived == true)
+						if (response.Data.Archived == true)
 						{
 							Program.Log($"{workerId,-2}: Thread /{board}/{threadNumber} has been archived", true);
 
@@ -758,7 +760,7 @@ namespace Hayden
 
 						return new ThreadUpdateTaskResult(true,
 							images,
-							response.Data.OriginalPost.Archived == true ? ThreadUpdateStatus.Archived : ThreadUpdateStatus.Ok,
+							response.Data.Archived == true ? ThreadUpdateStatus.Archived : ThreadUpdateStatus.Ok,
 							threadUpdateInfo.NewPosts.Count - threadUpdateInfo.DeletedPosts.Count);
 
 					case ResponseType.NotModified:

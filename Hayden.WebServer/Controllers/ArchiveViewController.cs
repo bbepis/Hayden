@@ -66,12 +66,12 @@ namespace Hayden.WebServer.Controllers
 		}
 
 		[NonAction]
-		private static Thread ReadJson(string filename)
+		private static YotsubaThread ReadJson(string filename)
 		{
 			using StreamReader streamReader = new StreamReader(System.IO.File.OpenRead(filename));
 			using JsonReader reader = new JsonTextReader(streamReader);
 
-			return JToken.Load(reader).ToObject<Thread>();
+			return JToken.Load(reader).ToObject<YotsubaThread>();
 		}
 
 		/// <summary>

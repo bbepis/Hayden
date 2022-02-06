@@ -13,7 +13,7 @@ namespace Hayden.Consumers
 	/// <summary>
 	/// A thread consumer for the HaydenMysql MySQL backend.
 	/// </summary>
-	public class HaydenMysqlThreadConsumer : IThreadConsumer<Thread, Post>
+	public class HaydenMysqlThreadConsumer : IThreadConsumer<YotsubaThread, YotsubaPost>
 	{
 		private HaydenMysqlConfig Config { get; }
 
@@ -27,7 +27,7 @@ namespace Hayden.Consumers
 		}
 
 		/// <inheritdoc/>
-		public async Task<IList<QueuedImageDownload>> ConsumeThread(ThreadUpdateInfo<Thread, Post> threadUpdateInfo)
+		public async Task<IList<QueuedImageDownload>> ConsumeThread(ThreadUpdateInfo<YotsubaThread, YotsubaPost> threadUpdateInfo)
 		{
 			List<QueuedImageDownload> imageDownloads = new List<QueuedImageDownload>();
 
@@ -39,10 +39,10 @@ namespace Hayden.Consumers
 
 				Directory.CreateDirectory(threadDirectory);
 
-				FilesystemThreadConsumer.PerformJsonThreadUpdate(threadUpdateInfo, threadFileName);
+				YotsubaFilesystemThreadConsumer.PerformJsonThreadUpdate(threadUpdateInfo, threadFileName);
 			}
 
-			void ProcessImages(Post post)
+			void ProcessImages(YotsubaPost post)
 			{
 				if (!Config.FullImagesEnabled && !Config.ThumbnailsEnabled)
 					return; // skip the DB check since we're not even bothering with images
@@ -120,7 +120,7 @@ namespace Hayden.Consumers
 		/// </summary>
 		/// <param name="posts">The posts to insert.</param>
 		/// <param name="board">The board of the posts.</param>
-		public async Task InsertPosts(ICollection<Post> posts, string board)
+		public async Task InsertPosts(ICollection<YotsubaPost> posts, string board)
 		{
 			string insertQuerySql = "INSERT INTO posts"
 									+ "         (board, postid, threadid, html, author, mediahash, mediafilename, datetime, isspoiler, isdeleted, isimagedeleted)"
@@ -152,7 +152,7 @@ namespace Hayden.Consumers
 		/// </summary>
 		/// <param name="thread">The thread to insert.</param>
 		/// <param name="board">The board of the thread.</param>
-		public async Task InsertThread(Thread thread, string board)
+		public async Task InsertThread(YotsubaThread thread, string board)
 		{
 			string insertQuerySql = "INSERT INTO threads"
 									+ "         (board, threadid, title, lastmodified, isarchived, isdeleted)"
@@ -175,7 +175,7 @@ namespace Hayden.Consumers
 		/// <param name="post">The post to update.</param>
 		/// <param name="board">The board that the post belongs to.</param>
 		/// <param name="deleted">True if the post was explicitly deleted, false if it was not.</param>
-		public async Task UpdatePost(Post post, string board, bool deleted)
+		public async Task UpdatePost(YotsubaPost post, string board, bool deleted)
 		{
 			await using var rentedConnection = await ConnectionPool.RentConnectionAsync();
 
@@ -325,12 +325,12 @@ namespace Hayden.Consumers
 		#region Thread tracking
 
 		/// <inheritdoc />
-		public TrackedThread<Thread, Post> StartTrackingThread(ExistingThreadInfo existingThreadInfo) => HaydenTrackedThread.StartTrackingThread(existingThreadInfo);
+		public TrackedThread<YotsubaThread, YotsubaPost> StartTrackingThread(ExistingThreadInfo existingThreadInfo) => HaydenTrackedThread.StartTrackingThread(existingThreadInfo);
 
 		/// <inheritdoc />
-		public TrackedThread<Thread, Post> StartTrackingThread() => HaydenTrackedThread.StartTrackingThread();
+		public TrackedThread<YotsubaThread, YotsubaPost> StartTrackingThread() => HaydenTrackedThread.StartTrackingThread();
 
-		internal class HaydenTrackedThread : TrackedThread<Thread, Post>
+		internal class HaydenTrackedThread : TrackedThread<YotsubaThread, YotsubaPost>
 		{
 			/// <summary>
 			/// Calculates a hash from mutable properties of a post. Used for tracking if a post has been modified
@@ -372,7 +372,7 @@ namespace Hayden.Consumers
 			/// </summary>
 			/// <param name="existingThreadInfo">The thread information to initialize with.</param>
 			/// <returns>An initialized <see cref="TrackedThread{,}"/> instance.</returns>
-			public static TrackedThread<Thread, Post> StartTrackingThread(ExistingThreadInfo existingThreadInfo)
+			public static TrackedThread<YotsubaThread, YotsubaPost> StartTrackingThread(ExistingThreadInfo existingThreadInfo)
 			{
 				var trackedThread = new HaydenTrackedThread();
 
@@ -394,10 +394,10 @@ namespace Hayden.Consumers
 			}
 
 			/// <summary>
-			/// Creates a blank <see cref="TrackedThread"/> instance. Intended for completely new threads, or threads that the backend hasn't encountered before.
+			/// Creates a blank <see cref="TrackedThread{,}"/> instance. Intended for completely new threads, or threads that the backend hasn't encountered before.
 			/// </summary>
-			/// <returns>A blank <see cref="TrackedThread"/> instance.</returns>
-			public static TrackedThread<Thread, Post> StartTrackingThread()
+			/// <returns>A blank <see cref="TrackedThread{,}"/> instance.</returns>
+			public static TrackedThread<YotsubaThread, YotsubaPost> StartTrackingThread()
 			{
 				var trackedThread = new HaydenTrackedThread();
 
@@ -407,11 +407,11 @@ namespace Hayden.Consumers
 				return trackedThread;
 			}
 
-			public static uint CalculateYotsubaPostHash(Post post)
+			public static uint CalculateYotsubaPostHash(YotsubaPost post)
 				=> CalculatePostHash(post.Comment, post.SpoilerImage, post.FileDeleted, post.OriginalFilename,
 					post.Archived, post.Closed, post.BumpLimit, post.ImageLimit, post.TotalReplies, post.TotalImages, post.UniqueIps);
 
-			public override uint CalculatePostHash(Post post)
+			public override uint CalculatePostHash(YotsubaPost post)
 				=> CalculateYotsubaPostHash(post);
 		}
 		

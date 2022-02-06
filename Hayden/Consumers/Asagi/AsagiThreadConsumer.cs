@@ -17,7 +17,7 @@ namespace Hayden.Consumers
 	/// <summary>
 	/// A thread consumer for the Asagi MySQL backend.
 	/// </summary>
-	public class AsagiThreadConsumer : IThreadConsumer<Thread, Post>
+	public class AsagiThreadConsumer : IThreadConsumer<YotsubaThread, YotsubaPost>
 	{
 		private AsagiConfig Config { get; }
 
@@ -37,12 +37,12 @@ namespace Hayden.Consumers
 		}
 		
 		/// <inheritdoc/>
-		public async Task<IList<QueuedImageDownload>> ConsumeThread(ThreadUpdateInfo<Thread, Post> threadUpdateInfo)
+		public async Task<IList<QueuedImageDownload>> ConsumeThread(ThreadUpdateInfo<YotsubaThread, YotsubaPost> threadUpdateInfo)
 		{
 			List<QueuedImageDownload> imageDownloads = new List<QueuedImageDownload>();
 			string board = threadUpdateInfo.ThreadPointer.Board;
 
-			async Task ProcessImages(Post post)
+			async Task ProcessImages(YotsubaPost post)
 			{
 				if (!Config.FullImagesEnabled && !Config.ThumbnailsEnabled)
 					return; // skip the DB check since we're not even bothering with images
@@ -248,7 +248,7 @@ namespace Hayden.Consumers
 		/// </summary>
 		/// <param name="posts">The posts to insert.</param>
 		/// <param name="board">The board of the posts.</param>
-		public async Task InsertPosts(ICollection<Post> posts, string board)
+		public async Task InsertPosts(ICollection<YotsubaPost> posts, string board)
 		{
 			if (posts.Count == 0)
 				return;
@@ -322,7 +322,7 @@ namespace Hayden.Consumers
 		/// Generates the string for the Exif column in an Asagi schema database, from a post.
 		/// </summary>
 		/// <param name="post">The post to generate the string from.</param>
-		private static string GenerateExifColumnData(Post post)
+		private static string GenerateExifColumnData(YotsubaPost post)
 		{
 			var exifJson = new JObject();
 
@@ -375,7 +375,7 @@ namespace Hayden.Consumers
 		/// <param name="post">The post to update.</param>
 		/// <param name="board">The board that the post belongs to.</param>
 		/// <param name="deleted">True if the post was explicitly deleted, false if it was not.</param>
-		public async Task UpdatePost(Post post, string board, bool deleted)
+		public async Task UpdatePost(YotsubaPost post, string board, bool deleted)
 		{
 			await using var rentedConnection = await ConnectionPool.RentConnectionAsync();
 
@@ -404,7 +404,7 @@ namespace Hayden.Consumers
 		/// </summary>
 		/// <param name="post">The post to update.</param>
 		/// <param name="board">The board of the post.</param>
-		public async Task UpdatePostExif(Post post, string board)
+		public async Task UpdatePostExif(YotsubaPost post, string board)
 		{
 			await using var rentedConnection = await ConnectionPool.RentConnectionAsync();
 
@@ -535,12 +535,12 @@ namespace Hayden.Consumers
 		#region Thread tracking
 
 		/// <inheritdoc />
-		public TrackedThread<Thread, Post> StartTrackingThread(ExistingThreadInfo existingThreadInfo) => AsagiTrackedThread.StartTrackingThread(existingThreadInfo);
+		public TrackedThread<YotsubaThread, YotsubaPost> StartTrackingThread(ExistingThreadInfo existingThreadInfo) => AsagiTrackedThread.StartTrackingThread(existingThreadInfo);
 
 		/// <inheritdoc />
-		public TrackedThread<Thread, Post> StartTrackingThread() => AsagiTrackedThread.StartTrackingThread();
+		public TrackedThread<YotsubaThread, YotsubaPost> StartTrackingThread() => AsagiTrackedThread.StartTrackingThread();
 
-		internal class AsagiTrackedThread : TrackedThread<Thread, Post>
+		internal class AsagiTrackedThread : TrackedThread<YotsubaThread, YotsubaPost>
 		{
 			/// <summary>
 			/// Calculates a hash from mutable properties of a post. Used for tracking if a post has been modified
@@ -578,11 +578,11 @@ namespace Hayden.Consumers
 			}
 
 			/// <summary>
-			/// Creates a new <see cref="TrackedThread"/> instance, utilizing information derived from an <see cref="IThreadConsumer"/> implementation.
+			/// Creates a new <see cref="TrackedThread{,}"/> instance, utilizing information derived from an <see cref="IThreadConsumer{,}"/> implementation.
 			/// </summary>
 			/// <param name="existingThreadInfo">The thread information to initialize with.</param>
-			/// <returns>An initialized <see cref="TrackedThread"/> instance.</returns>
-			public static TrackedThread<Thread, Post> StartTrackingThread(ExistingThreadInfo existingThreadInfo)
+			/// <returns>An initialized <see cref="TrackedThread{,}"/> instance.</returns>
+			public static TrackedThread<YotsubaThread, YotsubaPost> StartTrackingThread(ExistingThreadInfo existingThreadInfo)
 			{
 				var trackedThread = new AsagiTrackedThread();
 
@@ -603,7 +603,7 @@ namespace Hayden.Consumers
 				return trackedThread;
 			}
 			
-			public static TrackedThread<Thread, Post> StartTrackingThread()
+			public static TrackedThread<YotsubaThread, YotsubaPost> StartTrackingThread()
 			{
 				var trackedThread = new AsagiTrackedThread();
 
@@ -613,7 +613,7 @@ namespace Hayden.Consumers
 				return trackedThread;
 			}
 
-			public override uint CalculatePostHash(Post post)
+			public override uint CalculatePostHash(YotsubaPost post)
 				=> CalculatePostHash(CleanComment(post.Comment), post.SpoilerImage, post.FileDeleted, post.OriginalFilename,
 					post.Archived, post.Closed, post.BumpLimit, post.ImageLimit, post.TotalReplies, post.TotalImages, post.UniqueIps);
 		}
