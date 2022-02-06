@@ -488,10 +488,41 @@ namespace Hayden.Consumers
 					)
 					AND TABLE1.num IN ({string.Join(',', threadIdsToCheck)})
 				GROUP BY TABLE1.num";
+
+				var table = await rentedConnection.Object.CreateQuery(query).ExecuteTableAsync();
+
+				var items = new List<ExistingThreadInfo>();
+
+				foreach (DataRow row in table.Rows)
+				{
+					var hashes = new List<(ulong PostId, uint PostHash)>();
+
+					var rows = rentedConnection.Object
+						.CreateQuery($"SELECT num, comment, spoiler, locked, media_filename " +
+									 $"FROM `{board}` " +
+									 $"WHERE thread_num = @threadid AND deleted = 0")
+						.SetParam("@threadid", (uint)row[0])
+						.ExecuteRowsAsync();
+
+					await foreach (var postRow in rows)
+					{
+						string filenameNoExt = postRow.GetValue<string>("media_filename");
+						filenameNoExt = filenameNoExt?.Substring(0, filenameNoExt.IndexOf('.'));
+
+						var hash = AsagiTrackedThread.CalculatePostHash(postRow.GetValue<string>("comment"), postRow.GetValue<bool>("spoiler"),
+							filenameNoExt, postRow.GetValue<bool>("locked"));
+
+						hashes.Add(((uint)postRow[0], hash));
+					}
+
+					items.Add(new ExistingThreadInfo((uint)row[0], Utility.ConvertNewYorkTimestamp((uint)row[1]).UtcDateTime, hashes));
+				}
+
+				return items;
 			}
 			else
 			{
-				query = $@"SELECT num, CAST(0 AS UNSIGNED)
+				query = $@"SELECT num
 						   FROM `{board}`
 						   WHERE op = 1
 							 AND (
@@ -500,26 +531,18 @@ namespace Hayden.Consumers
 							 	OR deleted = {archivedInt}
 							 )
 							 AND num IN ({string.Join(',', threadIdsToCheck)})";
+
+				var chainedQuery = rentedConnection.Object.CreateQuery(query);
+
+				var items = new List<ExistingThreadInfo>();
+
+				await foreach (var row in chainedQuery.ExecuteRowsAsync())
+				{
+					items.Add(new ExistingThreadInfo((uint)row[0]));
+				}
+
+				return items;
 			}
-
-			var chainedQuery = rentedConnection.Object.CreateQuery(query);
-
-			var items = new List<ExistingThreadInfo>();
-			
-			await foreach (var row in chainedQuery.ExecuteRowsAsync())
-			{
-				// So normally we'd calculate the hash of a post here, and then TrackedThread will know which posts have actually been modified.
-				// However this isn't possible in this case because Asagi keeps comments as converted BBCode instead of HTML like the API returns.
-				
-				// We return a null hash instead, and then TrackedThread will assume that all posts have been newly added and then resubmit them to the backend.
-				// This won't happen all at once, because it will only happen for threads that have been updated since the last time they were committed to Asagi (i.e. never ones in archive)
-				
-				// This can only be fixed by reworking TrackedThread to be Backend-specific, however right now Asagi is legacy code and not that high of a priority.
-
-				items.Add(new ExistingThreadInfo((uint)row[0], Utility.ConvertNewYorkTimestamp((uint)row[1]).UtcDateTime, null));
-			}
-
-			return items;
 		}
 
 		#endregion
@@ -545,8 +568,7 @@ namespace Hayden.Consumers
 			/// <summary>
 			/// Calculates a hash from mutable properties of a post. Used for tracking if a post has been modified
 			/// </summary>
-			public static uint CalculatePostHash(string postHtml, bool? spoilerImage, bool? fileDeleted, string originalFilenameNoExt,
-				bool? archived, bool? closed, bool? bumpLimit, bool? imageLimit, uint? replyCount, ushort? imageCount, int? uniqueIpAddresses)
+			public static uint CalculatePostHash(string cleanedPostComment, bool? spoilerImage, string originalFilenameNoExt, bool? closed)
 			{
 				// Null bool? values should evaluate to false everywhere
 				static int EvaluateNullableBool(bool? value)
@@ -557,22 +579,15 @@ namespace Hayden.Consumers
 				}
 
 				// The HTML content of a post can change due to public warnings and bans.
-				uint hashCode = Utility.FNV1aHash32(postHtml);
+				uint hashCode = Utility.FNV1aHash32(cleanedPostComment);
 
 				// Attached files can be removed, and have their spoiler status changed
 				Utility.FNV1aHash32(EvaluateNullableBool(spoilerImage), ref hashCode);
-				Utility.FNV1aHash32(EvaluateNullableBool(fileDeleted), ref hashCode);
 				Utility.FNV1aHash32(originalFilenameNoExt, ref hashCode);
 
 				// The OP of a thread can have numerous properties change.
 				// As such, these properties are only considered mutable for OPs (because that's the only place they can exist) and immutable for replies.
-				Utility.FNV1aHash32(EvaluateNullableBool(archived), ref hashCode);
 				Utility.FNV1aHash32(EvaluateNullableBool(closed), ref hashCode);
-				Utility.FNV1aHash32(EvaluateNullableBool(bumpLimit), ref hashCode);
-				Utility.FNV1aHash32(EvaluateNullableBool(imageLimit), ref hashCode);
-				Utility.FNV1aHash32((int?)replyCount ?? -1, ref hashCode);
-				Utility.FNV1aHash32(imageCount ?? -1, ref hashCode);
-				Utility.FNV1aHash32(uniqueIpAddresses ?? -1, ref hashCode);
 
 				return hashCode;
 			}
@@ -614,8 +629,7 @@ namespace Hayden.Consumers
 			}
 
 			public override uint CalculatePostHash(YotsubaPost post)
-				=> CalculatePostHash(CleanComment(post.Comment), post.SpoilerImage, post.FileDeleted, post.OriginalFilename,
-					post.Archived, post.Closed, post.BumpLimit, post.ImageLimit, post.TotalReplies, post.TotalImages, post.UniqueIps);
+				=> CalculatePostHash(CleanComment(post.Comment), post.SpoilerImage, post.OriginalFilename, post.Closed);
 		}
 
 		#endregion
