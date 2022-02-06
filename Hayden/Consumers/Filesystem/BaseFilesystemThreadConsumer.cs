@@ -158,7 +158,12 @@ namespace Hayden.Consumers
 					continue;
 				}
 
-				var writtenThread = ReadJson(Path.Combine(threadDir, "thread.json"));
+				var jsonFilePath = Path.Combine(threadDir, "thread.json");
+
+				if (!File.Exists(jsonFilePath))
+					continue;
+
+				var writtenThread = ReadJson(jsonFilePath);
 
 				if (writtenThread == null || writtenThread.Posts.Count == 0)
 				{
