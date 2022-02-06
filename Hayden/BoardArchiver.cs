@@ -227,12 +227,6 @@ namespace Hayden
 					Program.Log($"{enqueuedImages.Count} media items loaded from queue cache");
 				}
 
-				// Add any images that were previously requeued from failure
-				foreach (var queuedImage in requeuedImages)
-					enqueuedImages.Enqueue(queuedImage);
-
-				requeuedImages.Clear();
-
 				threadQueue = threadQueue
 					.Where(x => x.Board != null && x != default) // Very rarely a null value can slip into here. Not sure why, but just added for safety
 					.ToList();
@@ -315,7 +309,7 @@ namespace Hayden
 								case ThreadUpdateStatus.NotModified:  threadStatus = "N"; break;
 								case ThreadUpdateStatus.DoNotArchive: threadStatus = "S"; break;
 								case ThreadUpdateStatus.Error:        threadStatus = "E"; break;
-								default:                              threadStatus = " "; break;
+								default:                              threadStatus = "?"; break;
 							}
 
 							if (!success)
@@ -407,7 +401,12 @@ namespace Hayden
 				Program.Log($"Completed {threadCompletedCount} / {threadQueue.Count} threads");
 				Program.Log($"Waiting for next board update interval ({secondsRemaining:0.0}s)");
 				Program.Log("");
+				
+				// Add any images that were previously requeued from failure
+				foreach (var queuedImage in requeuedImages)
+					enqueuedImages.Enqueue(queuedImage);
 
+				requeuedImages.Clear();
 
 				await StateStore.WriteDownloadQueue(enqueuedImages);
 
@@ -439,7 +438,7 @@ namespace Hayden
 			await using var client = await ProxyProvider.RentHttpClient();
 
 			var threadWaitTask = Task.Delay(ApiCooldownTimespan);
-
+			
 			try
 			{
 				await action(client.Object);
