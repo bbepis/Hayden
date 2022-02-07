@@ -177,6 +177,30 @@ namespace Hayden
 				return await GenericInitialize(frontend, consumer);
 			}
 
+			if (sourceType == "InfinityNext")
+			{
+				var altchanConfig = rawConfigFile["source"].ToObject<AltchanConfig>();
+				config = altchanConfig;
+
+				var frontend = new InfinityNextApi(altchanConfig.ImageboardWebsite);
+				IThreadConsumer<InfinityNextThread, InfinityNextPost> consumer;
+
+				switch (backendType)
+				{
+					case "Filesystem":
+						var filesystemConfig = rawConfigFile["backend"].ToObject<FilesystemConfig>();
+
+						downloadLocation = filesystemConfig.DownloadLocation;
+						consumer = new InfinityNextFilesystemThreadConsumer(altchanConfig.ImageboardWebsite, filesystemConfig);
+						break;
+
+					default:
+						throw new ArgumentException($"Unknown backend type {backendType}");
+				}
+
+				return await GenericInitialize(frontend, consumer);
+			}
+
 			throw new ArgumentException($"Unknown source type {sourceType}");
 		}
 

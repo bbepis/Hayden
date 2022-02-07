@@ -262,6 +262,33 @@ namespace Hayden
 		}
 
 		/// <summary>
+		/// Iterates an 32-bit FV1a hash with a new 32-bit value.
+		/// </summary>
+		/// <param name="input">The new input to iterate the hash with.</param>
+		/// <param name="state">The current state of the hash.</param>
+		/// <returns>A 32-bit FV1a hash.</returns>
+		[MethodImpl(MethodImplOptions.AggressiveInlining)]
+		public static void FNV1aHash32(uint input, ref uint state)
+		{
+			const uint FNV32Prime = 0x1000193;
+
+			state = (state ^ input) * FNV32Prime;
+		}
+
+		/// <summary>
+		/// Iterates an 32-bit FV1a hash with a new 32-bit value.
+		/// </summary>
+		/// <param name="input">The new input to iterate the hash with.</param>
+		/// <param name="state">The current state of the hash.</param>
+		/// <returns>A 32-bit FV1a hash.</returns>
+		[MethodImpl(MethodImplOptions.AggressiveInlining)]
+		public static void FNV1aHash32(ulong input, ref uint state)
+		{
+			FNV1aHash32((uint)(input >> 32), ref state);
+			FNV1aHash32((uint)(input & 0xFFFFFFFF), ref state);
+		}
+
+		/// <summary>
 		/// Iterates an 32-bit FV1a hash with a string value.
 		/// </summary>
 		/// <param name="input">The new input to iterate the hash with.</param>

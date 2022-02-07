@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
 using System.Threading;
@@ -37,33 +38,14 @@ namespace Hayden
 
 			var rawThread = rawThreadResponse.Data;
 
-			var opPost = new LynxChanPost()
-			{
-				CreationDateTime = rawThread.CreationDateTime,
-				Email = rawThread.Email,
-				Files = rawThread.Files,
-				Markdown = rawThread.Markdown,
-				Message = rawThread.Message,
-				Name = rawThread.Name,
-				PostNumber = rawThread.ThreadId,
-				Subject = rawThread.Subject,
-				SignedRole = rawThread.SignedRole
-			};
+			var opPost = rawThread.MapToPost();
+
+			if (rawThread.Posts == null)
+				rawThread.Posts = new List<LynxChanPost>();
 
 			rawThread.Posts.Insert(0, opPost);
 
-			var thread = new LynxChanThread()
-			{
-				Posts = rawThread.Posts,
-				Archived = rawThread.Archived,
-				AutoSage = rawThread.AutoSage,
-				Cyclic = rawThread.Cyclic,
-				IsDeleted = rawThread.IsDeleted,
-				Locked = rawThread.Locked,
-				Pinned = rawThread.Pinned,
-				ThreadId = rawThread.ThreadId,
-				Title = rawThread.Title
-			};
+			var thread = rawThread.MapToThread();
 
 			return new ApiResponse<LynxChanThread>(ResponseType.Ok, thread);
 		}
@@ -77,9 +59,7 @@ namespace Hayden
 				return new ApiResponse<PageThread[]>(result.ResponseType, null);
 			
 			var response = new ApiResponse<PageThread[]>(ResponseType.Ok, result.Data.Select(x =>
-				{
-					return new PageThread(x.threadId, (ulong)x.lastBump.ToUnixTimeSeconds(), x.subject, x.message);
-				})
+					new PageThread(x.threadId, (ulong)x.lastBump.ToUnixTimeSeconds(), x.subject, x.message))
 				.ToArray());
 
 			return response;
@@ -127,6 +107,38 @@ namespace Hayden
 
 			[JsonProperty("files")]
 			public LynxChanPostFile[] Files { get; set; }
+
+			public LynxChanPost MapToPost()
+			{
+				return new LynxChanPost
+				{
+					CreationDateTime = CreationDateTime,
+					Email = Email,
+					Files = Files,
+					Markdown = Markdown,
+					Message = Message,
+					Name = Name,
+					PostNumber = ThreadId,
+					Subject = Subject,
+					SignedRole = SignedRole
+				};
+			}
+
+			public LynxChanThread MapToThread()
+			{
+				return new LynxChanThread
+				{
+					Posts = Posts,
+					Archived = Archived,
+					AutoSage = AutoSage,
+					Cyclic = Cyclic,
+					IsDeleted = IsDeleted,
+					Locked = Locked,
+					Pinned = Pinned,
+					ThreadId = ThreadId,
+					Title = Title
+				};
+			}
 		}
 	}
 }
