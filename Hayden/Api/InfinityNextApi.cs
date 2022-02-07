@@ -45,6 +45,8 @@ namespace Hayden
 
 			rawThread.Posts.Insert(0, opPost);
 
+			rawThread.Posts = rawThread.Posts.OrderBy(x => x.PostNumber).ToList();
+
 			var thread = rawThread.MapToThread();
 
 			return new ApiResponse<InfinityNextThread>(ResponseType.Ok, thread);
