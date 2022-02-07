@@ -1,15 +1,24 @@
 # Hayden
 
-Hayden is a 4chan / (x)chan archiver written in .NET Core for ultra-low resource usage and high performance.
+Hayden is a 4chan / altchan archiver written in .NET Core for ultra-low resource usage and high performance.
 
 It was originally writen as a drop-in alternative to [Asagi](https://github.com/eksopl/asagi), however Asagi compatibility currently has no guarantees.
 
 Developer documentation is in `ARCHITECTURE.md`.
 
+### Supported imageboard software
+
+| Software                                                                                                              | Supports archives  | Example sites                 |
+|-----------------------------------------------------------------------------------------------------------------------|--------------------|-------------------------------|
+| Yotsuba                                                                                                               | ✅                 | 4chan.org                     |
+| [LynxChan](https://gitgud.io/LynxChan/LynxChan)                                                                       | ❌                 | 8chan.moe <br> endchan.org    |
+| [Vichan](https://github.com/vichan-devel/vichan)/[Infinity](https://github.com/ctrlcctrlv/infinity) (not OpenIB/8kun) | ❌                 | sportschan.org <br> smuglo.li |
+| [InfinityNext](https://github.com/infinity-next/infinity-next/)                                                       | ❌                 | 9chan.tw                      |
+
 ### Features
 
 - Much smaller memory consumption than Asagi.
-  - For comparison, Hayden requires roughly 10MB of working memory to archive a single board (including all archived threads), while Asagi consumes several gigabytes to do the same.
+  - For comparison, Hayden requires roughly 40MB of working memory to archive a single board (including all archived threads), while Asagi consumes several gigabytes to do the same.
 
 - Uses a much more efficient algorithm to perform API calls, reducing overall network calls made considerably and eliminates cloudflare rate limit issues.
 
@@ -28,12 +37,6 @@ Developer documentation is in `ARCHITECTURE.md`.
 
 &nbsp;
 
-### Supported data sources
-
-4chan is currently the only supported data source. 8chan/vichan can theoretically be easily supported, however I have not had a demand for it myself, nor has anyone requested it. If you have an interest let me know.
-
-Other, more divergant imageboards (such as 2chan) would require more code restructuring (and by extension more effort). The previous offer regarding interest in it is also applicable.
-
 ### Supported data stores
 
 There are currently 3 supported data stores:
@@ -47,6 +50,14 @@ There are currently 3 supported data stores:
 
 - Hayden MySQL datastore
   - A prototype database schema intended for usage with the Hayden.WebServer HTTP frontend, with a similar goal of FoolFuuka of being able to display archived threads as webpages.
+
+A table of which API frontends support which backends:
+
+|            | Yotsuba | LynxChan | Vichan/Infinity | InfinityNext |
+|------------|---------|----------|-----------------|--------------|
+| Asagi      | ✅      | ❌      | ❌              | ❌          |
+| Filesystem | ✅      | ✅      | ✅              | ✅          |
+| Hayden     | ✅      | ❌      | ❌              | ❌          |
 
 &nbsp;
 
@@ -72,7 +83,7 @@ Here is an example:
 			"tg": {}
 		},
 		"apiDelay" : 1,
-		"boardDelay" : 30,
+		"boardScrapeDelay" : 30,
 		"readArchive": false
 	},
 	
@@ -88,15 +99,19 @@ Here is an example:
 
 The configuration is more or less self-explanatory, except for a few parts.
 
+`source.type` specifies the source. Can be four types: `4chan`, `LynxChan`, `Vichan` and `InfinityNext`.
+
+When using the latter two source types, an additional `source.imageboardWebsite` property is required containing the base URL of the imageboard. So if the website has a /v/ board at `https://8chan.moe/v/`, you should set `imageboardWebsite` to `https://8chan.moe/`.
+
 `apiDelay` specifies the amount of seconds Hayden should wait (at minimum) inbetween making API calls. (This is specifically per connection, including proxies). Can be a decimal number
 
-`boardDelay` is the amount of seconds Hayden should wait at minimum before attempting to scrape the board thread listings again. If a single scrape run takes longer than this time, then the next board scrape will happen immediately. Can be a decimal number.
+`boardScrapeDelay` is the amount of seconds Hayden should wait at minimum before attempting to scrape the board thread listings again. If a single scrape run takes longer than this time, then the next board scrape will happen immediately. Can be a decimal number.
 
-`readArchive` specifies either `true` or `false` that Hayden should read the archives for each board on startup (only applicable to boards that have an archive). Obviously incurs a speed penalty for the initial scrape.
+`readArchive` specifies either `true` or `false` that Hayden should read the archives for each board on startup (only applicable to boards and imageboard software that support and have an archive). Obviously incurs a speed penalty for the initial scrape.
 
 &nbsp;
 
-Individual objects under `source.boards` support a small amount of filters. Here is an example of the only two currently supported filters:
+Individual objects under `source.boards` support a small amount of filters. Here is an example of two of the currently supported filters:
 
 ```json
 ...
@@ -105,6 +120,8 @@ Individual objects under `source.boards` support a small amount of filters. Here
 ```
 
 Hayden will only enqueue threads from /tg/ if either the title/subject line matches the regex of "`big.+`", **or** the post content of OP contains the regex "`chungus.*`". The regexes are also compiled as case-insensitive.
+
+There is an additional `"AnyFilter"` that combines the both, i.e. it'll run the regex on both the OP content and subject fields, and succeed if any of them match.
 
 &nbsp;
 
