@@ -119,6 +119,19 @@ namespace Hayden
 		}
 
 		/// <summary>
+		/// Converts a <see cref="DateTime"/> value into it's respective Unix timestamp.
+		/// </summary>
+		/// <param name="dateTime">The <see cref="DateTime"/> value to convert.</param>
+		/// <returns>Unix timestamp.</returns>
+		public static uint GetLocalTimezoneTimestamp(DateTime dateTime)
+		{
+			return (uint)(ZonedDateTime.FromDateTimeOffset(new DateTimeOffset(dateTime, TimeZoneInfo.Local.GetUtcOffset(dateTime)))
+									   .WithZone(DateTimeZone.Utc)
+									   .ToDateTimeUnspecified()
+						  - DateTime.UnixEpoch).TotalSeconds;
+		}
+
+		/// <summary>
 		/// Converts a Unix timestamp into it's respective <see cref="DateTimeOffset"/> value, taking into account the <value>America/New_York</value> timezone.
 		/// </summary>
 		/// <param name="timestamp">The timestamp to convert.</param>

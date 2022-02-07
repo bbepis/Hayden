@@ -4,6 +4,8 @@ using System.Net;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
+using AngleSharp.Html.Dom;
+using AngleSharp.Html.Parser;
 using Hayden.Contract;
 using Hayden.Models;
 using Newtonsoft.Json;
@@ -28,10 +30,10 @@ namespace Hayden.Api
 			return request;
 		}
 
-		protected virtual async Task<ApiResponse<T>> MakeJsonApiCall<T>(Uri uri, HttpClient client, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default)
+		private async Task<(bool, HttpResponseMessage, ResponseType)> MakeApiCallInternal(Uri uri, HttpClient client, DateTimeOffset? modifiedSince, CancellationToken cancellationToken)
 		{
 			int callCount = 0;
-			using var response = await NetworkPolicies.HttpApiPolicy.ExecuteAsync(_ =>
+			var httpResponse = await NetworkPolicies.HttpApiPolicy.ExecuteAsync(_ =>
 			{
 				Program.Log($"HttpApiPolicy call ({callCount}): {uri.AbsoluteUri}", true);
 
@@ -40,22 +42,63 @@ namespace Hayden.Api
 				return client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
 			}, new Context(uri.AbsoluteUri)).ConfigureAwait(false);
 
-			if (response.StatusCode == HttpStatusCode.NotModified)
-				return new ApiResponse<T>(ResponseType.NotModified, default);
+			if (httpResponse.StatusCode == HttpStatusCode.NotModified)
+			{
+				return (false, httpResponse, ResponseType.NotModified);
+			}
 
-			if (response.StatusCode == HttpStatusCode.NotFound)
-				return new ApiResponse<T>(ResponseType.NotFound, default);
+			if (httpResponse.StatusCode == HttpStatusCode.NotFound)
+			{
+				return (false, httpResponse, ResponseType.NotFound);
+			}
 
-			if (!response.IsSuccessStatusCode)
-				throw new WebException($"Received an error code: {response.StatusCode}");
+			if (!httpResponse.IsSuccessStatusCode)
+				throw new WebException($"Received an error code: {httpResponse.StatusCode}");
 
-			await using var responseStream = await response.Content.ReadAsStreamAsync();
+			return (true, httpResponse, ResponseType.Ok);
+		}
+
+		protected virtual async Task<ApiResponse<T>> MakeJsonApiCall<T>(Uri uri, HttpClient client, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default)
+		{
+			var (success, message, responseType) = await MakeApiCallInternal(uri, client, modifiedSince, cancellationToken);
+
+			if (!success)
+			{
+				message.Dispose();
+				return new ApiResponse<T>(responseType, default);
+			}
+
+			await using var responseStream = await message.Content.ReadAsStreamAsync();
 			using StreamReader streamReader = new StreamReader(responseStream);
 			using JsonReader reader = new JsonTextReader(streamReader);
 
 			var obj = (await JToken.LoadAsync(reader, cancellationToken)).ToObject<T>();
 
+			message.Dispose();
+
 			return new ApiResponse<T>(ResponseType.Ok, obj);
+		}
+
+		protected virtual async Task<ApiResponse<IHtmlDocument>> MakeHtmlCall(Uri uri, HttpClient client, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default)
+		{
+			var (success, message, responseType) = await MakeApiCallInternal(uri, client, modifiedSince, cancellationToken);
+
+			if (!success)
+			{
+				message.Dispose();
+				return new ApiResponse<IHtmlDocument>(responseType, null);
+			}
+
+			// maybe this can be a static property?
+			var parser = new HtmlParser();
+
+			await using var responseStream = await message.Content.ReadAsStreamAsync();
+			
+			var document = await parser.ParseDocumentAsync(responseStream);
+
+			message.Dispose();
+
+			return new ApiResponse<IHtmlDocument>(ResponseType.Ok, document);
 		}
 
 		public abstract bool SupportsArchive { get; }
