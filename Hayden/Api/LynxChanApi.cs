@@ -25,6 +25,15 @@ namespace Hayden
 				ImageboardWebsite += "/";
 		}
 
+		protected override HttpRequestMessage CreateRequest(Uri uri, DateTimeOffset? modifiedSince)
+		{
+			var request = new HttpRequestMessage(HttpMethod.Get, uri);
+			request.Headers.IfModifiedSince = modifiedSince;
+			request.Headers.Referrer = new Uri(ImageboardWebsite);
+
+			return request;
+		}
+
 		/// <inheritdoc />
 		public override bool SupportsArchive => false; // should be changed later
 
