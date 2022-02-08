@@ -17,7 +17,7 @@ namespace Hayden.Models
 		public ulong ThreadId { get; set; }
 
 		[JsonProperty("subject")]
-		public string Title { get; set; }
+		public string Subject { get; set; }
 
 		[JsonProperty("archived")]
 		public bool Archived { get; set; }
@@ -40,6 +40,9 @@ namespace Hayden.Models
 		public bool? IsDeleted { get; set; }
 
 		#endregion
+
+		[JsonIgnore]
+		string IThread<LynxChanPost>.Title => Subject;
 	}
 
 	public class LynxChanPost : IPost

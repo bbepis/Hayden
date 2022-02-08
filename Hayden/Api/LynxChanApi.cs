@@ -93,9 +93,6 @@ namespace Hayden
 			[JsonProperty("postId")]
 			public ulong PostNumber { get; set; }
 
-			[JsonProperty("subject")]
-			public string Subject { get; set; }
-
 			[JsonProperty("creation")]
 			public DateTimeOffset CreationDateTime { get; set; }
 
@@ -145,7 +142,7 @@ namespace Hayden
 					Locked = Locked,
 					Pinned = Pinned,
 					ThreadId = ThreadId,
-					Title = Title
+					Subject = Subject
 				};
 			}
 		}
