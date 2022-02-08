@@ -91,10 +91,10 @@ namespace Hayden.Models
 		public ushort? ImageHeight { get; set; }
 
 		[JsonProperty("tn_w")]
-		public byte? ThumbnailWidth { get; set; }
+		public ushort? ThumbnailWidth { get; set; }
 
 		[JsonProperty("tn_h")]
-		public byte? ThumbnailHeight { get; set; }
+		public ushort? ThumbnailHeight { get; set; }
 		
 		[JsonProperty("country_name")]
 		public string CountryName { get; set; }
@@ -152,9 +152,9 @@ namespace Hayden.Models
 		public ushort? ImageHeight { get; set; }
 
 		[JsonProperty("tn_w")]
-		public byte? ThumbnailWidth { get; set; }
+		public ushort? ThumbnailWidth { get; set; }
 
 		[JsonProperty("tn_h")]
-		public byte? ThumbnailHeight { get; set; }
+		public ushort? ThumbnailHeight { get; set; }
 	}
 }
