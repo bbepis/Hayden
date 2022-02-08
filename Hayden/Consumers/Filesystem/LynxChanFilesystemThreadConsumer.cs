@@ -76,79 +76,19 @@ namespace Hayden.Consumers
 				//existingPost.FileDeleted = modifiedPost.FileDeleted;
 			}
 		}
-		
-		#region Thread tracking
 
-		/// <inheritdoc />
-		public override TrackedThread<LynxChanThread, LynxChanPost> StartTrackingThread(ExistingThreadInfo existingThreadInfo) => LynxChanTrackedThread.StartTrackingThread(existingThreadInfo);
-
-		/// <inheritdoc />
-		public override TrackedThread<LynxChanThread, LynxChanPost> StartTrackingThread() => LynxChanTrackedThread.StartTrackingThread();
-
-		protected override uint CalculateHash(LynxChanPost post) => LynxChanTrackedThread.CalculatePostHashObject(post);
-
-		internal class LynxChanTrackedThread : TrackedThread<LynxChanThread, LynxChanPost>
+		public static uint CalculatePostHash(string postMessage, string postMarkdown) // I have no idea how to check for deleted images
 		{
-			/// <summary>
-			/// Calculates a hash from mutable properties of a post. Used for tracking if a post has been modified
-			/// </summary>
-			public static uint CalculatePostHash(string postMessage, string postMarkdown) // I have no idea how to check for deleted images
-			{
-				// The HTML content of a post can change due to public warnings and bans.
-				uint hashCode = Utility.FNV1aHash32(postMessage);
-				
-				Utility.FNV1aHash32(postMarkdown, ref hashCode);
+			// The HTML content of a post can change due to public warnings and bans.
+			uint hashCode = Utility.FNV1aHash32(postMessage);
 
-				return hashCode;
-			}
+			Utility.FNV1aHash32(postMarkdown, ref hashCode);
 
-			/// <summary>
-			/// Creates a new <see cref="TrackedThread{,}"/> instance, utilizing information derived from an <see cref="IThreadConsumer{,}"/> implementation.
-			/// </summary>
-			/// <param name="existingThreadInfo">The thread information to initialize with.</param>
-			/// <returns>An initialized <see cref="TrackedThread{,}"/> instance.</returns>
-			public static TrackedThread<LynxChanThread, LynxChanPost> StartTrackingThread(ExistingThreadInfo existingThreadInfo)
-			{
-				var trackedThread = new LynxChanTrackedThread();
-
-				trackedThread.PostHashes = new();
-
-				if (existingThreadInfo.PostHashes != null)
-				{
-					foreach (var hash in existingThreadInfo.PostHashes)
-						trackedThread.PostHashes[hash.PostId] = hash.PostHash;
-
-					trackedThread.PostCount = existingThreadInfo.PostHashes.Count;
-				}
-				else
-				{
-					trackedThread.PostCount = 0;
-				}
-
-				return trackedThread;
-			}
-
-			/// <summary>
-			/// Creates a blank <see cref="TrackedThread{,}"/> instance. Intended for completely new threads, or threads that the backend hasn't encountered before.
-			/// </summary>
-			/// <returns>A blank <see cref="TrackedThread{,}"/> instance.</returns>
-			public static TrackedThread<LynxChanThread, LynxChanPost> StartTrackingThread()
-			{
-				var trackedThread = new LynxChanTrackedThread();
-
-				trackedThread.PostHashes = new();
-				trackedThread.PostCount = 0;
-
-				return trackedThread;
-			}
-
-			public static uint CalculatePostHashObject(LynxChanPost post)
-				=> CalculatePostHash(post.Message, post.Markdown);
-
-			public override uint CalculatePostHash(LynxChanPost post)
-				=> CalculatePostHashObject(post);
+			return hashCode;
 		}
-
-		#endregion
+		
+		/// <inheritdoc />
+		public override uint CalculateHash(LynxChanPost post)
+			=> CalculatePostHash(post.Message, post.Markdown);
 	}
 }

@@ -509,7 +509,7 @@ namespace Hayden.Consumers
 						string filenameNoExt = postRow.GetValue<string>("media_filename");
 						filenameNoExt = filenameNoExt?.Substring(0, filenameNoExt.IndexOf('.'));
 
-						var hash = AsagiTrackedThread.CalculatePostHash(postRow.GetValue<string>("comment"), postRow.GetValue<bool>("spoiler"),
+						var hash = CalculatePostHash(postRow.GetValue<string>("comment"), postRow.GetValue<bool>("spoiler"),
 							filenameNoExt, postRow.GetValue<bool>("locked"));
 
 						hashes.Add(((uint)postRow[0], hash));
@@ -547,6 +547,34 @@ namespace Hayden.Consumers
 
 		#endregion
 
+		public static uint CalculatePostHash(string cleanedPostComment, bool? spoilerImage, string originalFilenameNoExt, bool? closed)
+		{
+			// Null bool? values should evaluate to false everywhere
+			static int EvaluateNullableBool(bool? value)
+			{
+				return value.HasValue
+					? (value.Value ? 1 : 2)
+					: 2;
+			}
+
+			// The HTML content of a post can change due to public warnings and bans.
+			uint hashCode = Utility.FNV1aHash32(cleanedPostComment);
+
+			// Attached files can be removed, and have their spoiler status changed
+			Utility.FNV1aHash32(EvaluateNullableBool(spoilerImage), ref hashCode);
+			Utility.FNV1aHash32(originalFilenameNoExt, ref hashCode);
+
+			// The OP of a thread can have numerous properties change.
+			// As such, these properties are only considered mutable for OPs (because that's the only place they can exist) and immutable for replies.
+			Utility.FNV1aHash32(EvaluateNullableBool(closed), ref hashCode);
+
+			return hashCode;
+		}
+
+		/// <inheritdoc />
+		public uint CalculateHash(YotsubaPost post)
+			=> CalculatePostHash(CleanComment(post.Comment), post.SpoilerImage, post.OriginalFilename, post.Closed);
+
 		/// <summary>
 		/// Disposes the object.
 		/// </summary>
@@ -554,85 +582,6 @@ namespace Hayden.Consumers
 		{
 			ConnectionPool.Dispose();
 		}
-
-		#region Thread tracking
-
-		/// <inheritdoc />
-		public TrackedThread<YotsubaThread, YotsubaPost> StartTrackingThread(ExistingThreadInfo existingThreadInfo) => AsagiTrackedThread.StartTrackingThread(existingThreadInfo);
-
-		/// <inheritdoc />
-		public TrackedThread<YotsubaThread, YotsubaPost> StartTrackingThread() => AsagiTrackedThread.StartTrackingThread();
-
-		internal class AsagiTrackedThread : TrackedThread<YotsubaThread, YotsubaPost>
-		{
-			/// <summary>
-			/// Calculates a hash from mutable properties of a post. Used for tracking if a post has been modified
-			/// </summary>
-			public static uint CalculatePostHash(string cleanedPostComment, bool? spoilerImage, string originalFilenameNoExt, bool? closed)
-			{
-				// Null bool? values should evaluate to false everywhere
-				static int EvaluateNullableBool(bool? value)
-				{
-					return value.HasValue
-						? (value.Value ? 1 : 2)
-						: 2;
-				}
-
-				// The HTML content of a post can change due to public warnings and bans.
-				uint hashCode = Utility.FNV1aHash32(cleanedPostComment);
-
-				// Attached files can be removed, and have their spoiler status changed
-				Utility.FNV1aHash32(EvaluateNullableBool(spoilerImage), ref hashCode);
-				Utility.FNV1aHash32(originalFilenameNoExt, ref hashCode);
-
-				// The OP of a thread can have numerous properties change.
-				// As such, these properties are only considered mutable for OPs (because that's the only place they can exist) and immutable for replies.
-				Utility.FNV1aHash32(EvaluateNullableBool(closed), ref hashCode);
-
-				return hashCode;
-			}
-
-			/// <summary>
-			/// Creates a new <see cref="TrackedThread{,}"/> instance, utilizing information derived from an <see cref="IThreadConsumer{,}"/> implementation.
-			/// </summary>
-			/// <param name="existingThreadInfo">The thread information to initialize with.</param>
-			/// <returns>An initialized <see cref="TrackedThread{,}"/> instance.</returns>
-			public static TrackedThread<YotsubaThread, YotsubaPost> StartTrackingThread(ExistingThreadInfo existingThreadInfo)
-			{
-				var trackedThread = new AsagiTrackedThread();
-
-				trackedThread.PostHashes = new();
-
-				if (existingThreadInfo.PostHashes != null)
-				{
-					foreach (var hash in existingThreadInfo.PostHashes)
-						trackedThread.PostHashes[hash.PostId] = hash.PostHash;
-
-					trackedThread.PostCount = existingThreadInfo.PostHashes.Count;
-				}
-				else
-				{
-					trackedThread.PostCount = 0;
-				}
-
-				return trackedThread;
-			}
-			
-			public static TrackedThread<YotsubaThread, YotsubaPost> StartTrackingThread()
-			{
-				var trackedThread = new AsagiTrackedThread();
-
-				trackedThread.PostHashes = new();
-				trackedThread.PostCount = 0;
-
-				return trackedThread;
-			}
-
-			public override uint CalculatePostHash(YotsubaPost post)
-				=> CalculatePostHash(CleanComment(post.Comment), post.SpoilerImage, post.OriginalFilename, post.Closed);
-		}
-
-		#endregion
 
 		/// <summary>
 		/// Information relating to a single media object tracked in the database.

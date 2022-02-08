@@ -614,7 +614,8 @@ namespace Hayden
 							// Start tracking the thread
 
 							lock (TrackedThreads)
-								TrackedThreads[new ThreadPointer(board, existingThread.ThreadId)] = ThreadConsumer.StartTrackingThread(existingThread);
+								TrackedThreads[new ThreadPointer(board, existingThread.ThreadId)] = 
+									TrackedThread<TThread, TPost>.StartTrackingThread(ThreadConsumer.CalculateHash, existingThread);
 						}
 					}
 
@@ -728,7 +729,7 @@ namespace Hayden
 							if (!TrackedThreads.TryGetValue(threadPointer, out trackedThread))
 							{
 								// this is a brand new thread that hasn't been tracked yet
-								trackedThread = ThreadConsumer.StartTrackingThread();
+								trackedThread = TrackedThread<TThread, TPost>.StartTrackingThread(ThreadConsumer.CalculateHash);
 								TrackedThreads[threadPointer] = trackedThread;
 								isNewThread = true;
 							}

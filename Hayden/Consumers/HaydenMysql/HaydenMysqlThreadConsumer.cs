@@ -280,7 +280,7 @@ namespace Hayden.Consumers
 						string filenameNoExt = postRow.GetValue<string>("MediaFilename");
 						filenameNoExt = filenameNoExt?.Substring(0, filenameNoExt.IndexOf('.'));
 
-						var hash = HaydenTrackedThread.CalculatePostHash(postRow.GetValue<string>("Html"), postRow.GetValue<bool>("IsSpoiler"),
+						var hash = CalculatePostHash(postRow.GetValue<string>("Html"), postRow.GetValue<bool>("IsSpoiler"),
 							postRow.GetValue<bool>("IsImageDeleted"), filenameNoExt, null, null, null, null, null, null, null);
 
 						hashes.Add(((ulong)postRow[0], hash));
@@ -314,6 +314,43 @@ namespace Hayden.Consumers
 
 		#endregion
 
+		public static uint CalculatePostHash(string postHtml, bool? spoilerImage, bool? fileDeleted, string originalFilenameNoExt,
+			bool? archived, bool? closed, bool? bumpLimit, bool? imageLimit, uint? replyCount, ushort? imageCount, int? uniqueIpAddresses)
+		{
+			// Null bool? values should evaluate to false everywhere
+			static int EvaluateNullableBool(bool? value)
+			{
+				return value.HasValue
+					? (value.Value ? 1 : 2)
+					: 2;
+			}
+
+			// The HTML content of a post can change due to public warnings and bans.
+			uint hashCode = Utility.FNV1aHash32(postHtml);
+
+			// Attached files can be removed, and have their spoiler status changed
+			Utility.FNV1aHash32(EvaluateNullableBool(spoilerImage), ref hashCode);
+			Utility.FNV1aHash32(EvaluateNullableBool(fileDeleted), ref hashCode);
+			Utility.FNV1aHash32(originalFilenameNoExt, ref hashCode);
+
+			// The OP of a thread can have numerous properties change.
+			// As such, these properties are only considered mutable for OPs (because that's the only place they can exist) and immutable for replies.
+			Utility.FNV1aHash32(EvaluateNullableBool(archived), ref hashCode);
+			Utility.FNV1aHash32(EvaluateNullableBool(closed), ref hashCode);
+			Utility.FNV1aHash32(EvaluateNullableBool(bumpLimit), ref hashCode);
+			Utility.FNV1aHash32(EvaluateNullableBool(imageLimit), ref hashCode);
+			Utility.FNV1aHash32((int?)replyCount ?? -1, ref hashCode);
+			Utility.FNV1aHash32(imageCount ?? -1, ref hashCode);
+			Utility.FNV1aHash32(uniqueIpAddresses ?? -1, ref hashCode);
+
+			return hashCode;
+		}
+
+		/// <inheritdoc />
+		public uint CalculateHash(YotsubaPost post)
+			=> CalculatePostHash(post.Comment, post.SpoilerImage, post.FileDeleted, post.OriginalFilename,
+				post.Archived, post.Closed, post.BumpLimit, post.ImageLimit, post.TotalReplies, post.TotalImages, post.UniqueIps);
+
 		/// <summary>
 		/// Disposes the object.
 		/// </summary>
@@ -321,100 +358,5 @@ namespace Hayden.Consumers
 		{
 			ConnectionPool.Dispose();
 		}
-
-		#region Thread tracking
-
-		/// <inheritdoc />
-		public TrackedThread<YotsubaThread, YotsubaPost> StartTrackingThread(ExistingThreadInfo existingThreadInfo) => HaydenTrackedThread.StartTrackingThread(existingThreadInfo);
-
-		/// <inheritdoc />
-		public TrackedThread<YotsubaThread, YotsubaPost> StartTrackingThread() => HaydenTrackedThread.StartTrackingThread();
-
-		internal class HaydenTrackedThread : TrackedThread<YotsubaThread, YotsubaPost>
-		{
-			/// <summary>
-			/// Calculates a hash from mutable properties of a post. Used for tracking if a post has been modified
-			/// </summary>
-			public static uint CalculatePostHash(string postHtml, bool? spoilerImage, bool? fileDeleted, string originalFilenameNoExt,
-				bool? archived, bool? closed, bool? bumpLimit, bool? imageLimit, uint? replyCount, ushort? imageCount, int? uniqueIpAddresses)
-			{
-				// Null bool? values should evaluate to false everywhere
-				static int EvaluateNullableBool(bool? value)
-				{
-					return value.HasValue
-						? (value.Value ? 1 : 2)
-						: 2;
-				}
-
-				// The HTML content of a post can change due to public warnings and bans.
-				uint hashCode = Utility.FNV1aHash32(postHtml);
-
-				// Attached files can be removed, and have their spoiler status changed
-				Utility.FNV1aHash32(EvaluateNullableBool(spoilerImage), ref hashCode);
-				Utility.FNV1aHash32(EvaluateNullableBool(fileDeleted), ref hashCode);
-				Utility.FNV1aHash32(originalFilenameNoExt, ref hashCode);
-
-				// The OP of a thread can have numerous properties change.
-				// As such, these properties are only considered mutable for OPs (because that's the only place they can exist) and immutable for replies.
-				Utility.FNV1aHash32(EvaluateNullableBool(archived), ref hashCode);
-				Utility.FNV1aHash32(EvaluateNullableBool(closed), ref hashCode);
-				Utility.FNV1aHash32(EvaluateNullableBool(bumpLimit), ref hashCode);
-				Utility.FNV1aHash32(EvaluateNullableBool(imageLimit), ref hashCode);
-				Utility.FNV1aHash32((int?)replyCount ?? -1, ref hashCode);
-				Utility.FNV1aHash32(imageCount ?? -1, ref hashCode);
-				Utility.FNV1aHash32(uniqueIpAddresses ?? -1, ref hashCode);
-
-				return hashCode;
-			}
-
-			/// <summary>
-			/// Creates a new <see cref="TrackedThread{,}"/> instance, utilizing information derived from an <see cref="IThreadConsumer{,}"/> implementation.
-			/// </summary>
-			/// <param name="existingThreadInfo">The thread information to initialize with.</param>
-			/// <returns>An initialized <see cref="TrackedThread{,}"/> instance.</returns>
-			public static TrackedThread<YotsubaThread, YotsubaPost> StartTrackingThread(ExistingThreadInfo existingThreadInfo)
-			{
-				var trackedThread = new HaydenTrackedThread();
-
-				trackedThread.PostHashes = new();
-
-				if (existingThreadInfo.PostHashes != null)
-				{
-					foreach (var hash in existingThreadInfo.PostHashes)
-						trackedThread.PostHashes[hash.PostId] = hash.PostHash;
-
-					trackedThread.PostCount = existingThreadInfo.PostHashes.Count;
-				}
-				else
-				{
-					trackedThread.PostCount = 0;
-				}
-
-				return trackedThread;
-			}
-
-			/// <summary>
-			/// Creates a blank <see cref="TrackedThread{,}"/> instance. Intended for completely new threads, or threads that the backend hasn't encountered before.
-			/// </summary>
-			/// <returns>A blank <see cref="TrackedThread{,}"/> instance.</returns>
-			public static TrackedThread<YotsubaThread, YotsubaPost> StartTrackingThread()
-			{
-				var trackedThread = new HaydenTrackedThread();
-
-				trackedThread.PostHashes = new();
-				trackedThread.PostCount = 0;
-
-				return trackedThread;
-			}
-
-			public static uint CalculateYotsubaPostHash(YotsubaPost post)
-				=> CalculatePostHash(post.Comment, post.SpoilerImage, post.FileDeleted, post.OriginalFilename,
-					post.Archived, post.Closed, post.BumpLimit, post.ImageLimit, post.TotalReplies, post.TotalImages, post.UniqueIps);
-
-			public override uint CalculatePostHash(YotsubaPost post)
-				=> CalculateYotsubaPostHash(post);
-		}
-		
-		#endregion
 	}
 }

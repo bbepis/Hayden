@@ -1,15 +1,14 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.Linq;
-using Hayden.Consumers;
 using Hayden.Contract;
-using Hayden.Models;
 
 namespace Hayden
 {
 	/// <summary>
 	/// Contains thread information used to determine which posts have been changed when polling.
 	/// </summary>
-	public abstract class TrackedThread<TThread, TPost> where TPost : IPost where TThread : IThread<TPost>
+	public class TrackedThread<TThread, TPost> where TPost : IPost where TThread : IThread<TPost>
 	{
 		/// <summary>
 		/// The amount of posts in the thread the last time it was updated.
@@ -20,6 +19,11 @@ namespace Hayden
 		/// A dictionary containing FNV1a hashes for each post in the thread.
 		/// </summary>
 		protected SortedList<ulong, uint> PostHashes { get; set; }
+
+		/// <summary>
+		/// A function that performs the hashing of a post.
+		/// </summary>
+		protected Func<TPost, uint> HashFunction { get; set; }
 
 		protected TrackedThread() { }
 
@@ -39,13 +43,13 @@ namespace Hayden
 				{
 					// new post
 					updateInfo.NewPosts.Add(post);
-					PostHashes[post.PostNumber] = CalculatePostHash(post);
+					PostHashes[post.PostNumber] = HashFunction(post);
 				}
 				else
 				{
 					// post already exists; check if it has changed
 
-					var newHash = CalculatePostHash(post);
+					var newHash = HashFunction(post);
 
 					if (newHash != existingHash)
 					{
@@ -72,10 +76,45 @@ namespace Hayden
 		}
 
 		/// <summary>
-		/// Calculates an FNV1a (32-bit) hash for a post.
+		/// Creates a new <see cref="TrackedThread{,}"/> instance, utilizing information derived from an <see cref="IThreadConsumer{,}"/> implementation.
 		/// </summary>
-		/// <param name="post">The post to calculate a hash for.</param>
-		/// <returns>An FNV1a hash of the post.</returns>
-		public abstract uint CalculatePostHash(TPost post);
+		/// <param name="existingThreadInfo">The thread information to initialize with.</param>
+		/// <returns>An initialized <see cref="TrackedThread{,}"/> instance.</returns>
+		public static TrackedThread<TThread, TPost> StartTrackingThread(Func<TPost, uint> hashFunction, ExistingThreadInfo existingThreadInfo)
+		{
+			var trackedThread = new TrackedThread<TThread, TPost>();
+
+			trackedThread.HashFunction = hashFunction;
+			trackedThread.PostHashes = new();
+
+			if (existingThreadInfo.PostHashes != null)
+			{
+				foreach (var hash in existingThreadInfo.PostHashes)
+					trackedThread.PostHashes[hash.PostId] = hash.PostHash;
+
+				trackedThread.PostCount = existingThreadInfo.PostHashes.Count;
+			}
+			else
+			{
+				trackedThread.PostCount = 0;
+			}
+
+			return trackedThread;
+		}
+
+		/// <summary>
+		/// Creates a blank <see cref="TrackedThread{,}"/> instance. Intended for completely new threads, or threads that the backend hasn't encountered before.
+		/// </summary>
+		/// <returns>A blank <see cref="TrackedThread{,}"/> instance.</returns>
+		public static TrackedThread<TThread, TPost> StartTrackingThread(Func<TPost, uint> hashFunction)
+		{
+			var trackedThread = new TrackedThread<TThread, TPost>();
+
+			trackedThread.HashFunction = hashFunction;
+			trackedThread.PostHashes = new();
+			trackedThread.PostCount = 0;
+
+			return trackedThread;
+		}
 	}
 }

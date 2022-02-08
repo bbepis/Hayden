@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
-using Hayden.Models;
 
 namespace Hayden.Contract
 {
@@ -37,18 +36,11 @@ namespace Hayden.Contract
 		Task<ICollection<ExistingThreadInfo>> CheckExistingThreads(IEnumerable<ulong> threadIdsToCheck, string board, bool archivedOnly, bool getMetadata = true);
 
 		/// <summary>
-		/// Creates a new <see cref="TrackedThread{,}"/> instance, utilizing information derived from an <see cref="IThreadConsumer{,}"/> implementation.
+		/// Calculates a 32-bit hash for a post, using its mutable properties. Used for detecting post changes within a thread.
 		/// </summary>
-		/// <param name="existingThreadInfo">The thread information to initialize with.</param>
-		/// <returns>An initialized <see cref="TrackedThread{,}"/> instance.</returns>
-		TrackedThread<TThread, TPost> StartTrackingThread(ExistingThreadInfo existingThreadInfo);
-
-
-		/// <summary>
-		/// Creates a blank <see cref="TrackedThread{,}"/> instance. Intended for completely new threads, or threads that the backend hasn't encountered before.
-		/// </summary>
-		/// <returns>A blank <see cref="TrackedThread{,}"/> instance.</returns>
-		TrackedThread<TThread, TPost> StartTrackingThread();
+		/// <param name="post">The post to calculate a hash for</param>
+		/// <returns>The hash of the post</returns>
+		uint CalculateHash(TPost post);
 	}
 
 	public struct ExistingThreadInfo

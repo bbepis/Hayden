@@ -199,11 +199,7 @@ namespace Hayden.Consumers
 			return Task.FromResult<ICollection<ExistingThreadInfo>>(existingThreads);
 		}
 
-		public abstract TrackedThread<TThread, TPost> StartTrackingThread(ExistingThreadInfo existingThreadInfo);
-
-		public abstract TrackedThread<TThread, TPost> StartTrackingThread();
-
-		protected abstract uint CalculateHash(TPost post);
+		public abstract uint CalculateHash(TPost post);
 
 		public void Dispose() { }
 	}

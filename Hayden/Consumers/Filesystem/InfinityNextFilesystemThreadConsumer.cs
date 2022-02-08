@@ -91,79 +91,23 @@ namespace Hayden.Consumers
 				existingPost.Attachments = modifiedPost.Attachments;
 			}
 		}
-		
-		#region Thread tracking
 
-		/// <inheritdoc />
-		public override TrackedThread<InfinityNextThread, InfinityNextPost> StartTrackingThread(ExistingThreadInfo existingThreadInfo) => InfinityNextTrackedThread.StartTrackingThread(existingThreadInfo);
-
-		/// <inheritdoc />
-		public override TrackedThread<InfinityNextThread, InfinityNextPost> StartTrackingThread() => InfinityNextTrackedThread.StartTrackingThread();
-
-		protected override uint CalculateHash(InfinityNextPost post) => InfinityNextTrackedThread.CalculatePostHashObject(post);
-
-		internal class InfinityNextTrackedThread : TrackedThread<InfinityNextThread, InfinityNextPost>
+		/// <summary>
+		/// Calculates a hash from mutable properties of a post. Used for tracking if a post has been modified
+		/// </summary>
+		public static uint CalculatePostHash(string postContent, string postHtml, ulong updatedAt)
 		{
-			/// <summary>
-			/// Calculates a hash from mutable properties of a post. Used for tracking if a post has been modified
-			/// </summary>
-			public static uint CalculatePostHash(string postContent, string postHtml, ulong updatedAt)
-			{
-				uint hashCode = Utility.FNV1aHash32(postContent);
-				
-				Utility.FNV1aHash32(postHtml, ref hashCode);
-				Utility.FNV1aHash32(updatedAt, ref hashCode);
+			uint hashCode = Utility.FNV1aHash32(postContent);
 
-				return hashCode;
-			}
+			Utility.FNV1aHash32(postHtml, ref hashCode);
+			Utility.FNV1aHash32(updatedAt, ref hashCode);
 
-			/// <summary>
-			/// Creates a new <see cref="TrackedThread{,}"/> instance, utilizing information derived from an <see cref="IThreadConsumer{,}"/> implementation.
-			/// </summary>
-			/// <param name="existingThreadInfo">The thread information to initialize with.</param>
-			/// <returns>An initialized <see cref="TrackedThread{,}"/> instance.</returns>
-			public static TrackedThread<InfinityNextThread, InfinityNextPost> StartTrackingThread(ExistingThreadInfo existingThreadInfo)
-			{
-				var trackedThread = new InfinityNextTrackedThread();
-
-				trackedThread.PostHashes = new();
-
-				if (existingThreadInfo.PostHashes != null)
-				{
-					foreach (var hash in existingThreadInfo.PostHashes)
-						trackedThread.PostHashes[hash.PostId] = hash.PostHash;
-
-					trackedThread.PostCount = existingThreadInfo.PostHashes.Count;
-				}
-				else
-				{
-					trackedThread.PostCount = 0;
-				}
-
-				return trackedThread;
-			}
-
-			/// <summary>
-			/// Creates a blank <see cref="TrackedThread{,}"/> instance. Intended for completely new threads, or threads that the backend hasn't encountered before.
-			/// </summary>
-			/// <returns>A blank <see cref="TrackedThread{,}"/> instance.</returns>
-			public static TrackedThread<InfinityNextThread, InfinityNextPost> StartTrackingThread()
-			{
-				var trackedThread = new InfinityNextTrackedThread();
-
-				trackedThread.PostHashes = new();
-				trackedThread.PostCount = 0;
-
-				return trackedThread;
-			}
-
-			public static uint CalculatePostHashObject(InfinityNextPost post)
-				=> CalculatePostHash(post.ContentRaw, post.ContentHtml, post.UpdatedAt.GetValueOrDefault());
-
-			public override uint CalculatePostHash(InfinityNextPost post)
-				=> CalculatePostHashObject(post);
+			return hashCode;
 		}
 
-		#endregion
+		/// <inheritdoc />
+		public override uint CalculateHash(InfinityNextPost post)
+			=> CalculatePostHash(post.ContentRaw, post.ContentHtml, post.UpdatedAt.GetValueOrDefault());
+
 	}
 }

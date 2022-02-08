@@ -46,6 +46,7 @@ namespace Hayden.Consumers
 			[20] = ".mp4", // HEVC
 		};
 
+		/// <inheritdoc />
 		protected override IList<QueuedImageDownload> CalculateImageDownloads(ThreadUpdateInfo<MegucaThread, MegucaPost> threadUpdateInfo, string threadDirectory, ThreadPointer pointer, string threadThumbsDirectory)
 		{
 			List<QueuedImageDownload> imageDownloads = new List<QueuedImageDownload>();
@@ -78,6 +79,7 @@ namespace Hayden.Consumers
 			return imageDownloads;
 		}
 
+		/// <inheritdoc />
 		protected override void PerformThreadUpdate(ThreadUpdateInfo<MegucaThread, MegucaPost> threadUpdateInfo, MegucaThread writtenThread)
 		{
 			writtenThread.Abbreviated = threadUpdateInfo.Thread.Abbreviated;
@@ -97,83 +99,22 @@ namespace Hayden.Consumers
 				existingPost.ContentBody = modifiedPost.ContentBody;
 			}
 		}
-
-		public override TrackedThread<MegucaThread, MegucaPost> StartTrackingThread(ExistingThreadInfo existingThreadInfo)
-		{
-			return MegucaTrackedThread.StartTrackingThread(existingThreadInfo);
-		}
-
-		public override TrackedThread<MegucaThread, MegucaPost> StartTrackingThread()
-		{
-			return MegucaTrackedThread.StartTrackingThread();
-		}
-
-		protected override uint CalculateHash(MegucaPost post)
-		{
-			return MegucaTrackedThread.CalculatePostHashFromObject(post);
-		}
 		
-		internal class MegucaTrackedThread : TrackedThread<MegucaThread, MegucaPost>
+		public static uint CalculatePostHash(string postContent, string originalFilenameNoExt)
 		{
-			/// <summary>
-			/// Calculates a hash from mutable properties of a post. Used for tracking if a post has been modified
-			/// </summary>
-			public static uint CalculatePostHash(string postContent, string originalFilenameNoExt)
-			{
-				// The HTML content of a post can change due to public warnings and bans.
-				uint hashCode = Utility.FNV1aHash32(postContent);
+			// The HTML content of a post can change due to public warnings and bans.
+			uint hashCode = Utility.FNV1aHash32(postContent);
 
-				// Attached files can be removed, and have their spoiler status changed
-				Utility.FNV1aHash32(originalFilenameNoExt, ref hashCode);
+			// Attached files can be removed, and have their spoiler status changed
+			Utility.FNV1aHash32(originalFilenameNoExt, ref hashCode);
 
-				return hashCode;
-			}
+			return hashCode;
+		}
 
-			/// <summary>
-			/// Creates a new <see cref="TrackedThread{,}"/> instance, utilizing information derived from an <see cref="IThreadConsumer{,}"/> implementation.
-			/// </summary>
-			/// <param name="existingThreadInfo">The thread information to initialize with.</param>
-			/// <returns>An initialized <see cref="TrackedThread{,}"/> instance.</returns>
-			public static TrackedThread<MegucaThread, MegucaPost> StartTrackingThread(ExistingThreadInfo existingThreadInfo)
-			{
-				var trackedThread = new MegucaTrackedThread();
-
-				trackedThread.PostHashes = new();
-
-				if (existingThreadInfo.PostHashes != null)
-				{
-					foreach (var hash in existingThreadInfo.PostHashes)
-						trackedThread.PostHashes[hash.PostId] = hash.PostHash;
-
-					trackedThread.PostCount = existingThreadInfo.PostHashes.Count;
-				}
-				else
-				{
-					trackedThread.PostCount = 0;
-				}
-
-				return trackedThread;
-			}
-
-			/// <summary>
-			/// Creates a blank <see cref="TrackedThread{,}"/> instance. Intended for completely new threads, or threads that the backend hasn't encountered before.
-			/// </summary>
-			/// <returns>A blank <see cref="TrackedThread{,}"/> instance.</returns>
-			public static TrackedThread<MegucaThread, MegucaPost> StartTrackingThread()
-			{
-				var trackedThread = new MegucaTrackedThread();
-
-				trackedThread.PostHashes = new();
-				trackedThread.PostCount = 0;
-
-				return trackedThread;
-			}
-
-			public static uint CalculatePostHashFromObject(MegucaPost post)
-				=> CalculatePostHash(post.ContentBody, post.Image?.Filename);
-
-			public override uint CalculatePostHash(MegucaPost post)
-				=> CalculatePostHashFromObject(post);
+		/// <inheritdoc />
+		public override uint CalculateHash(MegucaPost post)
+		{
+			return CalculatePostHash(post.ContentBody, post.Image?.Filename);
 		}
 	}
 }

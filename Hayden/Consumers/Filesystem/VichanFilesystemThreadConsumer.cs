@@ -95,92 +95,34 @@ namespace Hayden.Consumers
 				}
 			}
 		}
-		/// <inheritdoc />
-		public override TrackedThread<VichanThread, VichanPost> StartTrackingThread(ExistingThreadInfo existingThreadInfo) => VichanTrackedThread.StartTrackingThread(existingThreadInfo);
 
-		/// <inheritdoc />
-		public override TrackedThread<VichanThread, VichanPost> StartTrackingThread() => VichanTrackedThread.StartTrackingThread();
-
-		protected override uint CalculateHash(VichanPost post)
+		public static uint CalculatePostHash(string postHtml, string originalFilenameNoExt, bool? closed, uint? replyCount, ushort? imageCount)
 		{
-			return VichanTrackedThread.CalculatePostHashFromObject(post);
+			// Null bool? values should evaluate to false everywhere
+			static int EvaluateNullableBool(bool? value)
+			{
+				return value.HasValue
+					? (value.Value ? 1 : 2)
+					: 2;
+			}
+
+			// The HTML content of a post can change due to public warnings and bans.
+			uint hashCode = Utility.FNV1aHash32(postHtml);
+
+			// Attached files can be removed, and have their spoiler status changed
+			Utility.FNV1aHash32(originalFilenameNoExt, ref hashCode);
+
+			// The OP of a thread can have numerous properties change.
+			// As such, these properties are only considered mutable for OPs (because that's the only place they can exist) and immutable for replies.
+			Utility.FNV1aHash32(EvaluateNullableBool(closed), ref hashCode);
+			Utility.FNV1aHash32((int?)replyCount ?? -1, ref hashCode);
+			Utility.FNV1aHash32(imageCount ?? -1, ref hashCode);
+
+			return hashCode;
 		}
 
-		internal class VichanTrackedThread : TrackedThread<VichanThread, VichanPost>
-		{
-			/// <summary>
-			/// Calculates a hash from mutable properties of a post. Used for tracking if a post has been modified
-			/// </summary>
-			public static uint CalculatePostHash(string postHtml, string originalFilenameNoExt, bool? closed, uint? replyCount, ushort? imageCount)
-			{
-				// Null bool? values should evaluate to false everywhere
-				static int EvaluateNullableBool(bool? value)
-				{
-					return value.HasValue
-						? (value.Value ? 1 : 2)
-						: 2;
-				}
-
-				// The HTML content of a post can change due to public warnings and bans.
-				uint hashCode = Utility.FNV1aHash32(postHtml);
-
-				// Attached files can be removed, and have their spoiler status changed
-				Utility.FNV1aHash32(originalFilenameNoExt, ref hashCode);
-
-				// The OP of a thread can have numerous properties change.
-				// As such, these properties are only considered mutable for OPs (because that's the only place they can exist) and immutable for replies.
-				Utility.FNV1aHash32(EvaluateNullableBool(closed), ref hashCode);
-				Utility.FNV1aHash32((int?)replyCount ?? -1, ref hashCode);
-				Utility.FNV1aHash32(imageCount ?? -1, ref hashCode);
-
-				return hashCode;
-			}
-
-			/// <summary>
-			/// Creates a new <see cref="TrackedThread{,}"/> instance, utilizing information derived from an <see cref="IThreadConsumer{,}"/> implementation.
-			/// </summary>
-			/// <param name="existingThreadInfo">The thread information to initialize with.</param>
-			/// <returns>An initialized <see cref="TrackedThread{,}"/> instance.</returns>
-			public static TrackedThread<VichanThread, VichanPost> StartTrackingThread(ExistingThreadInfo existingThreadInfo)
-			{
-				var trackedThread = new VichanTrackedThread();
-
-				trackedThread.PostHashes = new();
-
-				if (existingThreadInfo.PostHashes != null)
-				{
-					foreach (var hash in existingThreadInfo.PostHashes)
-						trackedThread.PostHashes[hash.PostId] = hash.PostHash;
-
-					trackedThread.PostCount = existingThreadInfo.PostHashes.Count;
-				}
-				else
-				{
-					trackedThread.PostCount = 0;
-				}
-
-				return trackedThread;
-			}
-
-			/// <summary>
-			/// Creates a blank <see cref="TrackedThread{,}"/> instance. Intended for completely new threads, or threads that the backend hasn't encountered before.
-			/// </summary>
-			/// <returns>A blank <see cref="TrackedThread{,}"/> instance.</returns>
-			public static TrackedThread<VichanThread, VichanPost> StartTrackingThread()
-			{
-				var trackedThread = new VichanTrackedThread();
-
-				trackedThread.PostHashes = new();
-				trackedThread.PostCount = 0;
-
-				return trackedThread;
-			}
-
-			public static uint CalculatePostHashFromObject(VichanPost post)
-				=> CalculatePostHash(post.Comment, post.OriginalFilename, post.Closed, post.TotalReplies, post.TotalImages);
-
-			public override uint CalculatePostHash(VichanPost post)
-				=> CalculatePostHashFromObject(post);
-		}
+		/// <inheritdoc />
+		public override uint CalculateHash(VichanPost post)
+			=> CalculatePostHash(post.Comment, post.OriginalFilename, post.Closed, post.TotalReplies, post.TotalImages);
 	}
 }

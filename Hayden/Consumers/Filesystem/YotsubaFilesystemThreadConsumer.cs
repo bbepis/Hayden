@@ -79,20 +79,12 @@ namespace Hayden.Consumers
 				}
 			}
 		}
-
-		public override TrackedThread<YotsubaThread, YotsubaPost> StartTrackingThread(ExistingThreadInfo existingThreadInfo)
+		
+		/// <inheritdoc />
+		public override uint CalculateHash(YotsubaPost post)
 		{
-			return HaydenMysqlThreadConsumer.HaydenTrackedThread.StartTrackingThread(existingThreadInfo);
-		}
-
-		public override TrackedThread<YotsubaThread, YotsubaPost> StartTrackingThread()
-		{
-			return HaydenMysqlThreadConsumer.HaydenTrackedThread.StartTrackingThread();
-		}
-
-		protected override uint CalculateHash(YotsubaPost post)
-		{
-			return HaydenMysqlThreadConsumer.HaydenTrackedThread.CalculateYotsubaPostHash(post);
+			return HaydenMysqlThreadConsumer.CalculatePostHash(post.Comment, post.SpoilerImage, post.FileDeleted, post.OriginalFilename,
+				post.Archived, post.Closed, post.BumpLimit, post.ImageLimit, post.TotalReplies, post.TotalImages, post.UniqueIps);
 		}
 	}
 }
