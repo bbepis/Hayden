@@ -9,21 +9,21 @@
 			@(Model.Post.DateTime.ToString("f"))
 		</span>
 		<span>
-            <a href="/@(Model.Post.Board)/thread/@(Model.Post.ThreadId)#p@(Model.Post.PostId)">No. @(Model.Post.PostId)</a>
+           @* <a href="/@(Model.Post.Board)/thread/@(Model.Post.ThreadId)#p@(Model.Post.PostId)">No. @(Model.Post.PostId)</a>*@
 		</span>
 	</div>
-	@if (Model.HasFile)
+	@if (Model.ImageUrls.Length != 0)
 	{
-		<div class="file">
+		@*<div class="file">
 			<div class="fileText">
-				<a href="@Model.ImageUrl">@Model.Post.MediaFilename</a> (69 KB, 123 x 456)
+				<a href="@Model.ImageUrls[0]">@Model.Post.MediaFilename</a> (69 KB, 123 x 456)
 			</div>
 			<a class="fileThumb" href="@Model.ImageUrl">
 				<img src="@Model.ThumbnailUrl"/>
 			</a>
-		</div>
+		</div>*@
 	} 
 	<blockquote>
-		@Html.Raw(Model.Post.Html)
+		@Html.Raw(Model.Post.ContentHtml)
 	</blockquote>
 </div>

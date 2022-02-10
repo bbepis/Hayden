@@ -7,6 +7,6 @@
 <div class="thread">
 	@foreach (var post in Model.Posts)
 	{
-		@await Html.PartialAsync("/View/PostPartialView.cshtml", new PostPartialViewModel(post, Config.Value))
+		@*@await Html.PartialAsync("/View/PostPartialView.cshtml", new PostPartialViewModel(post, Config.Value))*@
 	}
 </div>

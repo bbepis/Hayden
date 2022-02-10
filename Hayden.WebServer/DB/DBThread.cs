@@ -6,8 +6,7 @@ namespace Hayden.WebServer.DB
 	[Table("threads")]
 	public class DBThread
 	{
-		[Column(TypeName = "varchar(4)")]
-		public string Board { get; set; }
+		public ushort BoardId { get; set; }
 
 		public ulong ThreadId { get; set; }
 

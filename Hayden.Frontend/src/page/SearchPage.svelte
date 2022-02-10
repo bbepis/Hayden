@@ -28,7 +28,7 @@
     {#await dataPromise}
         <p>Loading...</p>
     {:then data} 
-        {#each data as thread ({a: thread.thread.board, b: thread.thread.threadId}) }
+        {#each data as thread ({a: thread.board.id, b: thread.threadId}) }
         
             <br/>
             <hr/>

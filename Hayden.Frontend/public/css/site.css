@@ -168,3 +168,42 @@ s, s a:not(:hover) {
     background: #000 !important;
     text-decoration: none;
 }
+
+figure.uploadCell {
+  float: none;
+}
+
+.multipleUploads .uploadCell {
+  float: left;
+}
+
+.imgLink {
+  float: left;
+  margin: 0 1rem 1rem 0.5rem;
+}
+
+.multipleUploads.panelUploads::after {
+  content: "";
+  display: block;
+  clear: both;
+}
+
+.uploadDetails {
+  margin: 0.25rem;
+  margin-left: 0;
+  font-size: 80%;
+
+  max-width: 256px;
+  text-overflow: ellipsis;
+  overflow: hidden;
+}
+
+.uploadDetails:hover {
+  overflow: unset;
+}
+
+.uploadCell video,
+.uploadCell audio,
+.uploadCell img {
+  max-width: 100%;
+}

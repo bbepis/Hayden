@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -233,6 +234,75 @@ namespace Hayden
 			}
 
 			return builder.ToString();
+		}
+
+		public static async Task ForEachAsync<T>(this IEnumerable<T> items, Func<T, Task> action, int parallelism, int partitionSize = 1)
+		{
+			var e = items.Select<T, Func<Task>>(x => () => action(x));
+
+			if (partitionSize == 1)
+			{
+				await ForEachAsync(e, parallelism);
+				return;
+			}
+
+			await Partitioner.Create(e)
+				.GetPartitions(partitionSize)
+				.Select<IEnumerator<Func<Task>>, Func<Task>>(x => async () =>
+				{
+					while (x.MoveNext())
+						if (x.Current != null)
+							await x.Current();
+				})
+				.ForEachAsync(parallelism);
+		}
+
+		public static async Task ForEachAsync(this IEnumerable<Func<Task>> tasks, int parallelism)
+		{
+			var semaphore = new SemaphoreSlim(parallelism, parallelism);
+			var exceptions = new List<Exception>();
+			var list = new List<Task>();
+
+			foreach (var task in tasks)
+			{
+				await semaphore.WaitAsync();
+
+				var t = Task.Run(async () =>
+				{
+					try
+					{
+						await task();
+					}
+					catch (Exception ex)
+					{
+						lock (exceptions)
+							exceptions.Add(ex);
+					}
+
+					semaphore.Release();
+				});
+
+				_ = t.ContinueWith(_ =>
+				{
+					lock (list)
+						list.Remove(t);
+				});
+
+				lock (list)
+					list.Add(t);
+			}
+
+			List<Task> remainingTasks;
+
+			lock (list)
+				remainingTasks = list.ToList();
+
+			await Task.WhenAll(remainingTasks);
+
+			if (exceptions.Count > 0)
+			{
+				throw new AggregateException(exceptions);
+			}
 		}
 
 		/// <summary>

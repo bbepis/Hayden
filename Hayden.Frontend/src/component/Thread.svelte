@@ -8,13 +8,13 @@
 
 	function calculateBackquotes(post: PostModel): number[] {
 		return thread.posts.filter(x => {
-			if (!x.post.html) {
+			if (!x.contentHtml) {
 				return false;
 			}
 
-			return x.post.html.indexOf(`&gt;&gt;${post.post.postId}`) >= 0;
+			return x.contentHtml.indexOf(`&gt;&gt;${post.postId}`) >= 0;
 		})
-		.map(x => x.post.postId);
+		.map(x => x.postId);
 	}
 
 	onMount(() => {
@@ -25,7 +25,7 @@
 </script>
 
 <div class="thread">
-	{#each thread.posts as post, index (post.post.postId)}
-		<Post post={post} subject={index === 0 ? thread.thread.title : null} backquotes={calculateBackquotes(post)}></Post>
+	{#each thread.posts as post, index (post.postId)}
+		<Post post={post} threadId={thread.threadId} board={thread.board} subject={index === 0 ? thread.subject : null} backquotes={calculateBackquotes(post)}></Post>
 	{/each}
 </div>

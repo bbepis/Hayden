@@ -12,6 +12,9 @@
                         <a class="nav-link text-dark" href="/">Home</a>
                     </li>
                     <li class="nav-item">
+                        <a class="nav-link text-dark" href="/Admin">Admin</a>
+                    </li>
+                    <li class="nav-item">
                         <a class="nav-link text-dark" href="/Privacy">Privacy</a>
                     </li>
                     <li class="nav-item">

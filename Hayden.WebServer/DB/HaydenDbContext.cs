@@ -6,30 +6,67 @@ namespace Hayden.WebServer.DB
 {
 	public class HaydenDbContext : DbContext
 	{
+		public virtual DbSet<DBBoard> Boards { get; set; }
 		public virtual DbSet<DBThread> Threads { get; set; }
 		public virtual DbSet<DBPost> Posts { get; set; }
+		public virtual DbSet<DBFileMapping> FileMappings { get; set; }
+		public virtual DbSet<DBFile> Files { get; set; }
 
 		public HaydenDbContext(DbContextOptions options) : base(options) { }
 
 		protected override void OnModelCreating(ModelBuilder modelBuilder)
 		{
-			modelBuilder.Entity<DBThread>(x => x.HasKey(nameof(DBThread.Board), nameof(DBThread.ThreadId)));
-			modelBuilder.Entity<DBPost>(x => x.HasKey(nameof(DBPost.Board), nameof(DBPost.PostId)));
+			modelBuilder.Entity<DBThread>(x => x.HasKey(nameof(DBThread.BoardId), nameof(DBThread.ThreadId)));
+			modelBuilder.Entity<DBPost>(x => x.HasKey(nameof(DBPost.BoardId), nameof(DBPost.PostId)));
+			modelBuilder.Entity<DBFileMapping>(x => x.HasKey(nameof(DBFileMapping.BoardId), nameof(DBFileMapping.PostId), nameof(DBFileMapping.FileId)));
 		}
 
-		public async Task<(DBThread, DBPost[])> GetThreadInfo(ulong threadId, string board)
+		public async Task<(DBBoard, DBThread, DBPost[], (DBFileMapping, DBFile)[])> GetThreadInfo(ulong threadId, DBBoard boardObj)
 		{
-			var thread = await Threads.AsNoTracking().FirstOrDefaultAsync(x => x.Board == board && x.ThreadId == threadId);
+			var thread = await Threads.AsNoTracking().FirstOrDefaultAsync(x => x.BoardId == boardObj.Id && x.ThreadId == threadId);
 
 			if (thread == null)
-				return (null, null);
+				return (boardObj, null, null, null);
 
 			var posts = await Posts.AsNoTracking()
-				.Where(x => x.Board == board && x.ThreadId == threadId)
+				.Where(x => x.BoardId == boardObj.Id && x.ThreadId == threadId)
 				.OrderBy(x => x.DateTime)
 				.ToArrayAsync();
 
-			return (thread, posts);
+			var fileMappings = await FileMappings.AsNoTracking()
+				.Join(Posts.AsNoTracking(),
+					mapping => new { mapping.BoardId, mapping.PostId },
+					post => new { post.BoardId, post.PostId },
+					(mapping, post) => new { mapping, post.ThreadId })
+				.Join(Files.AsNoTracking(),
+					mapping => mapping.mapping.FileId,
+					file => file.Id,
+					(mapping, file) => new { mapping.mapping, mapping.ThreadId, file })
+				.Where(x => x.mapping.BoardId == boardObj.Id && x.ThreadId == threadId)
+				.Select(x => new { x.mapping, x.file })
+				.ToArrayAsync();
+
+			return (boardObj, thread, posts, fileMappings.Select(x => (x.mapping, x.file)).ToArray());
+		}
+
+		public async Task<(DBBoard, DBThread, DBPost[], (DBFileMapping, DBFile)[])> GetThreadInfo(ulong threadId, string board)
+		{
+			var boardObj = await Boards.FirstAsync(x => x.ShortName == board);
+
+			if (boardObj == null)
+				return default;
+
+			return await GetThreadInfo(threadId, boardObj);
+		}
+
+		public async Task<(DBBoard, DBThread, DBPost[], (DBFileMapping, DBFile)[])> GetThreadInfo(ulong threadId, ushort boardId)
+		{
+			var boardObj = await Boards.FirstAsync(x => x.Id == boardId);
+
+			if (boardObj == null)
+				return default;
+
+			return await GetThreadInfo(threadId, boardObj);
 		}
 
 		public void DetachAllEntities()

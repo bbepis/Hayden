@@ -20,6 +20,18 @@ export class Utility {
         return "0x" + hexOctets.join("");
     }
 
+    static ToHumanReadableSize(size: number): string {
+        if (size === 0 || size === null || typeof(size) === "undefined")
+            return "0 B";
+
+        let i: number = Math.floor( Math.log(size) / Math.log(1024) );
+
+        if (i === 0)
+            return `${size} B`
+
+        return `${(size / Math.pow(1024, i)).toFixed(2)} ${['B', 'KB', 'MB', 'GB', 'TB'][i]}`;
+    };
+
     static DivRem(bigInt: bigint, divisor: bigint): [bigint, bigint] {
         const remainder = bigInt % divisor;
         return [bigInt / divisor, remainder];
@@ -68,6 +80,17 @@ export class Utility {
 		}
 
 		return await result.json();
+	}
+
+    static async Post(endpoint: string): Promise<any> {
+
+        let url = this.infoObject.endpoint + endpoint;
+
+		const result = await fetch(url);
+		
+		if (!result.ok) {
+			throw result;
+		}
 	}
 
     static ToInstance<T>(obj: T, json: string) : T {
