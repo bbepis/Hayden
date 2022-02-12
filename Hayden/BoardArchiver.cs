@@ -592,7 +592,7 @@ namespace Hayden
 									&& ThreadFilter(x.Subject, x.Html, board)) // and exclude any that don't conform to our filter(s)
 						.ToList();
 
-					if (firstRun)
+					if (firstRun && threadList.Count > 0)
 					{
 						// Check for threads that have already been downloaded by the consumer, noting the last time they were downloaded.
 						var existingThreads = await ThreadConsumer.CheckExistingThreads(threadList.Select(x => x.ThreadNumber),
