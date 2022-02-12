@@ -23,19 +23,25 @@ namespace Hayden.Consumers
 
 		private MySqlConnectionPool ConnectionPool { get; }
 
+		private ICollection<string> Boards { get; }
+
 		/// <param name="config">The object to load configuration values from.</param>
 		/// <param name="boards">The boards that will be archived.</param>
 		public AsagiThreadConsumer(AsagiConfig config, ICollection<string> boards)
 		{
 			Config = config;
 			ConnectionPool = new MySqlConnectionPool(config.ConnectionString, config.SqlConnectionPoolSize);
+			Boards = boards;
+		}
 
-			foreach (var board in boards)
+		public async Task InitializeAsync()
+		{
+			foreach (var board in Boards)
 			{
-				CreateTables(board).Wait();
+				await CreateTables(board);
 			}
 		}
-		
+
 		/// <inheritdoc/>
 		public async Task<IList<QueuedImageDownload>> ConsumeThread(ThreadUpdateInfo<YotsubaThread, YotsubaPost> threadUpdateInfo)
 		{

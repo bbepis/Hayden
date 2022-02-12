@@ -10,6 +10,11 @@ namespace Hayden.Contract
 	public interface IThreadConsumer<TThread, TPost> : IDisposable where TPost : IPost where TThread : IThread<TPost>
 	{
 		/// <summary>
+		/// Initializes the thread consumer.
+		/// </summary>
+		Task InitializeAsync();
+
+		/// <summary>
 		/// Consumes a thread, and returns a list of images to be downloaded.
 		/// <para>For implementers: Assume that the thread always has changes whenever this method is called</para>
 		/// </summary>

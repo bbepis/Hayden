@@ -236,6 +236,14 @@ namespace Hayden
 			return builder.ToString();
 		}
 
+		public static string ConvertToHex(byte[] ba)
+		{
+			StringBuilder hex = new StringBuilder(ba.Length * 2);
+			foreach (byte b in ba)
+				hex.AppendFormat("{0:x2}", b);
+			return hex.ToString();
+		}
+
 		public static async Task ForEachAsync<T>(this IEnumerable<T> items, Func<T, Task> action, int parallelism, int partitionSize = 1)
 		{
 			var e = items.Select<T, Func<Task>>(x => () => action(x));
@@ -303,6 +311,50 @@ namespace Hayden
 			{
 				throw new AggregateException(exceptions);
 			}
+		}
+
+		public static IEnumerable<List<TSource>> Batch<TSource>(this IEnumerable<TSource> source, int size)
+		{
+			List<TSource> bucket = null;
+			var count = 0;
+
+			foreach (var item in source)
+			{
+				if (bucket == null)
+					bucket = new List<TSource>();
+
+				bucket.Add(item);
+				count++;
+
+				if (count != size)
+					continue;
+
+				yield return bucket;
+
+				bucket = null;
+				count = 0;
+			}
+
+			if (bucket != null && bucket.Count > 0)
+				yield return bucket.Take(count).ToList();
+		}
+
+		public static void Fill<TSource>(this IEnumerable<TSource> source, Span<TSource> array)
+		{
+			int i = 0;
+
+			foreach (var item in source)
+				array[i++] = item;
+		}
+
+		public static async Task<int> FillAsync<TSource>(this IAsyncEnumerable<TSource> source, TSource[] array)
+		{
+			int i = 0;
+
+			await foreach (var item in source)
+				array[i++] = item;
+
+			return i;
 		}
 
 		/// <summary>

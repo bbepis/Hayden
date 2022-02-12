@@ -105,6 +105,19 @@ namespace Hayden
 			}
 		}
 
+		public async Task<T> ExecuteScalarAsync<T>()
+		{
+			try
+			{
+				return (T)(await Command.ExecuteScalarAsync());
+			}
+			finally
+			{
+				if (!Reuse)
+					Command.Dispose();
+			}
+		}
+
 		public async Task<DataTable> ExecuteTableAsync()
 		{
 			try

@@ -45,6 +45,11 @@ namespace Hayden.Consumers
 			return JToken.Load(reader).ToObject<TThread>();
 		}
 
+		/// <summary>
+		/// Does nothing.
+		/// </summary>
+		public virtual Task InitializeAsync() => Task.CompletedTask;
+
 		public async Task<IList<QueuedImageDownload>> ConsumeThread(ThreadUpdateInfo<TThread, TPost> threadUpdateInfo)
 		{
 			var pointer = threadUpdateInfo.ThreadPointer;

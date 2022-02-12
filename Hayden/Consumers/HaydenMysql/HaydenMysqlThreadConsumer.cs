@@ -19,11 +19,28 @@ namespace Hayden.Consumers
 
 		private MySqlConnectionPool ConnectionPool { get; }
 
+		protected Dictionary<string, ushort> BoardIdMappings { get; } = new();
+
 		/// <param name="config">The object to load configuration values from.</param>
 		public HaydenMysqlThreadConsumer(HaydenMysqlConfig config)
 		{
 			Config = config;
 			ConnectionPool = new MySqlConnectionPool(config.ConnectionString, config.SqlConnectionPoolSize);
+		}
+
+		public async Task InitializeAsync()
+		{
+			// TODO: logic to initialize unseen boards
+
+			const string boardQuery = "SELECT ID, ShortName FROM boards;";
+
+			await using var connection = await ConnectionPool.RentConnectionAsync();
+			using var query = connection.Object.CreateQuery(boardQuery);
+
+			await foreach (var boardRow in query.ExecuteRowsAsync())
+			{
+				BoardIdMappings[(string)boardRow[1]] = (ushort)boardRow[0];
+			}
 		}
 
 		/// <inheritdoc/>
@@ -32,6 +49,7 @@ namespace Hayden.Consumers
 			List<QueuedImageDownload> imageDownloads = new List<QueuedImageDownload>();
 
 			string board = threadUpdateInfo.ThreadPointer.Board;
+			ushort boardId = BoardIdMappings[board];
 
 			{ // delete this block when not testing
 				string threadDirectory = Path.Combine(Config.DownloadLocation, board, "thread");
@@ -78,7 +96,7 @@ namespace Hayden.Consumers
 
 			if (threadUpdateInfo.IsNewThread)
 			{
-				await InsertThread(threadUpdateInfo.Thread, board);
+				await InsertThread(threadUpdateInfo.Thread, boardId);
 			}
 
 			foreach (var post in threadUpdateInfo.NewPosts)
@@ -86,23 +104,23 @@ namespace Hayden.Consumers
 				ProcessImages(post);
 			}
 
-			await InsertPosts(threadUpdateInfo.NewPosts, board);
+			await InsertPosts(threadUpdateInfo.NewPosts, boardId);
 
 			foreach (var post in threadUpdateInfo.UpdatedPosts)
 			{
 				Program.Log($"[DB] Post /{board}/{post.PostNumber} has been modified", true);
 
-				await UpdatePost(post, board, false);
+				await UpdatePost(post, boardId, false);
 			}
 
 			foreach (var postNumber in threadUpdateInfo.DeletedPosts)
 			{
 				Program.Log($"[DB] Post /{board}/{postNumber} has been deleted", true);
 
-				await UpdatePost(postNumber, board, true);
+				await UpdatePost(postNumber, boardId, true);
 			}
 
-			await UpdateThread(threadUpdateInfo.ThreadPointer.ThreadId, board, false, threadUpdateInfo.Thread.OriginalPost.Archived == true);
+			await UpdateThread(threadUpdateInfo.ThreadPointer.ThreadId, boardId, false, threadUpdateInfo.Thread.OriginalPost.Archived == true);
 
 			return imageDownloads;
 		}
@@ -110,7 +128,9 @@ namespace Hayden.Consumers
 		/// <inheritdoc/>
 		public async Task ThreadUntracked(ulong threadId, string board, bool deleted)
 		{
-			await UpdateThread(threadId, board, deleted, !deleted);
+			ushort boardId = BoardIdMappings[board];
+
+			await UpdateThread(threadId, boardId, deleted, !deleted);
 		}
 		
 		#region Sql
@@ -119,31 +139,91 @@ namespace Hayden.Consumers
 		/// Inserts a collection of posts into their relevant table on the database.
 		/// </summary>
 		/// <param name="posts">The posts to insert.</param>
-		/// <param name="board">The board of the posts.</param>
-		public async Task InsertPosts(ICollection<YotsubaPost> posts, string board)
+		/// <param name="boardId">The board of the posts.</param>
+		public async Task InsertPosts(ICollection<YotsubaPost> posts, ushort boardId)
 		{
-			string insertQuerySql = "INSERT INTO posts"
-									+ "         (board, postid, threadid, html, author, mediahash, mediafilename, datetime, isspoiler, isdeleted, isimagedeleted)"
-									+ "  VALUES (@board, @postid, @threadid, @html, @author, @mediahash, @mediafilename, @datetime, @isspoiler, 0, @isimagedeleted);";
+			const string postInsertQuerySql = "INSERT INTO posts"
+											+ "  (boardid, postid, threadid, contenthtml, author, datetime, isdeleted)"
+											+ "  VALUES (@boardid, @postid, @threadid, @contenthtml, @author, @datetime, 0);";
 
+			const string fileInsertQuerySql = "INSERT INTO files"
+											+ " (BoardId, Md5Hash, Sha1Hash, Sha256Hash, Extension, ImageWidth, ImageHeight, Size)"
+											+ " VALUES (@boardid, @md5hash, @sha1hash, @sha256hash, @extension, @imagewidth, @imageheight, @filesize);"
+											+ " SELECT LAST_INSERT_ID();";
+
+			const string mappingInsertQuerySql = "INSERT INTO file_mappings"
+												+ " (BoardId, PostId, FileId, `Index`, Filename, IsSpoiler, IsDeleted)"
+												+ " VALUES (@boardid, @postid, @fileid, @index, @filename, @isspoiler, @isdeleted);";
+			
 			await using var rentedConnection = await ConnectionPool.RentConnectionAsync();
 
-			using var chainedQuery = rentedConnection.Object.CreateQuery(insertQuerySql, true);
+			Dictionary<string, uint> md5FileDictionary = null;
+
+			if (posts.Any(x => x.FileMd5 != null))
+			{
+				var md5List = posts.Where(x => x.FileMd5 != null).Select(x => $"0x{Utility.ConvertToHex(Convert.FromBase64String(x.FileMd5))}");
+
+				string query = $@"SELECT md5hash, CAST(id AS UNSIGNED)
+								FROM files
+								WHERE md5hash IN ({string.Join(',', md5List)});";
+
+				var threadTable = await rentedConnection.Object.CreateQuery(query).ExecuteTableAsync();
+
+				md5FileDictionary = new Dictionary<string, uint>();
+
+				foreach (DataRow row in threadTable.Rows)
+				{
+					string md5Base64 = Convert.ToBase64String((byte[])row[0]);
+					var fileId = (uint)(ulong)row[1];
+					md5FileDictionary[md5Base64] = fileId;
+				}
+			}
+			
+			using var postInsertQuery = rentedConnection.Object.CreateQuery(postInsertQuerySql, true);
+			using var fileInsertQuery = rentedConnection.Object.CreateQuery(fileInsertQuerySql, true);
+			using var mappingInsertQuery = rentedConnection.Object.CreateQuery(mappingInsertQuerySql, true);
 
 			foreach (var post in posts)
 			{
-				await chainedQuery
-					  .SetParam("@board", board)
+				await postInsertQuery
+					  .SetParam("@boardid", boardId)
 					  .SetParam("@postid", post.PostNumber)
 					  .SetParam("@threadid", post.ReplyPostNumber != 0 ? post.ReplyPostNumber : post.PostNumber)
-					  .SetParam("@html", post.Comment)
+					  .SetParam("@contenthtml", post.Comment)
 					  .SetParam("@author", post.Name == "Anonymous" ? null : post.Name + post.Trip)
-					  .SetParam("@mediahash", post.FileMd5 == null ? null : Convert.FromBase64String(post.FileMd5))
-					  .SetParam("@mediafilename", post.OriginalFilenameFull)
 					  .SetParam("@datetime", Utility.ConvertGMTTimestamp(post.UnixTimestamp).UtcDateTime)
-					  .SetParam("@isspoiler", post.SpoilerImage == true ? 1 : 0)
-					  .SetParam("@isimagedeleted", post.FileDeleted == true ? 1 : 0)
 					  .ExecuteNonQueryAsync();
+
+				if (post.FileMd5 != null)
+				{
+					if (!md5FileDictionary.TryGetValue(post.FileMd5, out var fileId))
+					{
+						var md5Hash = post.FileMd5 == null ? null : Convert.FromBase64String(post.FileMd5);
+
+						// TODO: these additional fields need to be calculated at some point
+
+						fileId = (uint)await fileInsertQuery
+							.SetParam("@boardid", boardId)
+							.SetParam("@md5hash", md5Hash)
+							.SetParam("@sha1hash", md5Hash)
+							.SetParam("@sha256hash", md5Hash)
+							.SetParam("@extension", post.FileExtension.Substring(1))
+							.SetParam("@imagewidth", null)
+							.SetParam("@imageheight", null)
+							.SetParam("@filesize", 0)
+							.ExecuteScalarAsync<ulong>();
+					}
+
+					await mappingInsertQuery
+						.SetParam("@boardid", boardId)
+						.SetParam("@postid", post.PostNumber)
+						.SetParam("@fileid", fileId)
+						.SetParam("@index", 0)
+						.SetParam("@filename", post.OriginalFilename)
+						.SetParam("@isspoiler", post.SpoilerImage == true ? 1 : 0)
+						.SetParam("@isdeleted", post.FileDeleted == true ? 1 : 0)
+						.ExecuteNonQueryAsync();
+				}
 			}
 		}
 
@@ -151,19 +231,19 @@ namespace Hayden.Consumers
 		/// Inserts a new thread into the 'threads' metadata table.
 		/// </summary>
 		/// <param name="thread">The thread to insert.</param>
-		/// <param name="board">The board of the thread.</param>
-		public async Task InsertThread(YotsubaThread thread, string board)
+		/// <param name="boardId">The board of the thread.</param>
+		public async Task InsertThread(YotsubaThread thread, ushort boardId)
 		{
 			string insertQuerySql = "INSERT INTO threads"
-									+ "         (board, threadid, title, lastmodified, isarchived, isdeleted)"
-									+ "  VALUES (@board, @threadid, @title, '1337-01-01', 0, 0);";
+									+ "         (boardid, threadid, title, lastmodified, isarchived, isdeleted)"
+									+ "  VALUES (@boardid, @threadid, @title, '1337-01-01', 0, 0);";
 
 			await using var rentedConnection = await ConnectionPool.RentConnectionAsync();
 
 			using var chainedQuery = rentedConnection.Object.CreateQuery(insertQuerySql, true);
 
 			await chainedQuery
-				.SetParam("@board", board)
+				.SetParam("@boardid", boardId)
 				.SetParam("@threadid", thread.OriginalPost.PostNumber)
 				.SetParam("@title", string.IsNullOrWhiteSpace(thread.OriginalPost.Subject) ? null : thread.OriginalPost.Subject)
 				.ExecuteNonQueryAsync();
@@ -173,25 +253,32 @@ namespace Hayden.Consumers
 		/// Updates an existing post in the database.
 		/// </summary>
 		/// <param name="post">The post to update.</param>
-		/// <param name="board">The board that the post belongs to.</param>
+		/// <param name="boardId">The board that the post belongs to.</param>
 		/// <param name="deleted">True if the post was explicitly deleted, false if it was not.</param>
-		public async Task UpdatePost(YotsubaPost post, string board, bool deleted)
+		public async Task UpdatePost(YotsubaPost post, ushort boardId, bool deleted)
 		{
 			await using var rentedConnection = await ConnectionPool.RentConnectionAsync();
 
 			string sql = $"UPDATE posts SET "
-						 + "Html = @html, "
-						 + "IsDeleted = @deleted, "
-						 + "IsImageDeleted = @imagedeleted "
+						 + "ContentHtml = @html, "
+						 + "IsDeleted = @deleted "
 						 + "WHERE PostId = @postid "
-						 + "AND board = @board";
+						 + "AND boardid = @boardid; "
+
+						 + "UPDATE file_mappings fm "
+						 + "INNER JOIN files f ON fm.FileId = f.Id "
+						 + "SET fm.IsDeleted = @imagedeleted "
+						 + "WHERE fm.BoardId = @boardid AND fm.PostId = @postid AND f.Md5Hash = @md5hash;";
+
+			var md5Hash = post.FileMd5 == null ? null : Convert.FromBase64String(post.FileMd5);
 
 			await rentedConnection.Object.CreateQuery(sql)
 								  .SetParam("@html", post.Comment)
 								  .SetParam("@deleted", deleted ? 1 : 0)
 								  .SetParam("@imagedeleted", post.FileDeleted == true ? 1 : 0)
 								  .SetParam("@postid", post.PostNumber)
-								  .SetParam("@board", board)
+								  .SetParam("@boardid", boardId)
+								  .SetParam("@md5hash", md5Hash)
 								  .ExecuteNonQueryAsync();
 		}
 
@@ -199,20 +286,20 @@ namespace Hayden.Consumers
 		/// Updates an existing post in the database, but only using the post ID (i.e. for use when a post gets deleted).
 		/// </summary>
 		/// <param name="postId">The ID of the post to update.</param>
-		/// <param name="board">The board that the post belongs to.</param>
+		/// <param name="boardId">The board that the post belongs to.</param>
 		/// <param name="deleted">True if the post was explicitly deleted, false if it was not.</param>
-		public async Task UpdatePost(ulong postId, string board, bool deleted)
+		public async Task UpdatePost(ulong postId, ushort boardId, bool deleted)
 		{
 			await using var rentedConnection = await ConnectionPool.RentConnectionAsync();
 
 			string sql = $"UPDATE posts SET "
 						 + "IsDeleted = @deleted "
 						 + "WHERE PostId = @postid "
-						 + "AND board = @board";
+						 + "AND boardid = @boardid";
 
 			await rentedConnection.Object.CreateQuery(sql)
 								  .SetParam("@deleted", deleted ? 1 : 0)
-								  .SetParam("@board", board)
+								  .SetParam("@boardid", boardId)
 								  .SetParam("@postid", postId)
 								  .ExecuteNonQueryAsync();
 		}
@@ -221,18 +308,18 @@ namespace Hayden.Consumers
 		/// Sets a post tracking status in the database.
 		/// </summary>
 		/// <param name="threadId">The number of the post.</param>
-		/// <param name="board">The board that the post belongs to.</param>
+		/// <param name="boardId">The board that the post belongs to.</param>
 		/// <param name="deleted">True if the post was explicitly deleted, false if not.</param>
-		public async Task UpdateThread(ulong threadId, string board, bool deleted, bool archived, DateTimeOffset? lastModified = null)
+		public async Task UpdateThread(ulong threadId, ushort boardId, bool deleted, bool archived, DateTimeOffset? lastModified = null)
 		{
 			await using var rentedConnection = await ConnectionPool.RentConnectionAsync();
 
 			await rentedConnection.Object.CreateQuery("UPDATE threads SET " +
 			                                          "isdeleted = @deleted, " +
 			                                          "isarchived = @archived, " +
-													  "lastmodified = COALESCE(@lastmodified, (SELECT MAX(DateTime) FROM posts WHERE board = @board and threadid = @threadid GROUP BY threadid), '1000-01-01') " +
-			                                          "WHERE threadid = @threadid AND board = @board")
-								  .SetParam("@board", board)
+													  "lastmodified = COALESCE(@lastmodified, (SELECT MAX(DateTime) FROM posts WHERE boardid = @boardid and threadid = @threadid GROUP BY threadid), '1000-01-01') " +
+			                                          "WHERE threadid = @threadid AND boardid = @boardid")
+								  .SetParam("@boardid", boardId)
 								  .SetParam("@threadid", threadId)
 								  .SetParam("@deleted", deleted ? 1 : 0)
 								  .SetParam("@archived", archived ? 1 : 0)
@@ -245,19 +332,22 @@ namespace Hayden.Consumers
 		{
 			int archivedInt = archivedOnly ? 1 : 0;
 
+			ushort boardId = BoardIdMappings[board];
+
 			await using var rentedConnection = await ConnectionPool.RentConnectionAsync();
 
 			string query;
 
 			if (getMetadata)
 			{
-				query = $@"SELECT threads.ThreadId, threads.LastModified
+				query = $@"SELECT ThreadId, LastModified
 						   FROM threads
-						   WHERE
-							 	 (threads.IsArchived = {archivedInt} OR {archivedInt} = 0)
-							 AND threads.Board = '{board}'
-							 AND threads.ThreadId IN ({string.Join(',', threadIdsToCheck)})
-						   GROUP BY threads.ThreadId";
+						   WHERE (IsArchived = {archivedInt} OR {archivedInt} = 0)
+							 AND BoardId = {boardId}
+							 AND ThreadId IN ({string.Join(',', threadIdsToCheck)})
+						   GROUP BY ThreadId";
+
+				Program.Log(query, true);
 				
 				var threadTable = await rentedConnection.Object.CreateQuery(query).ExecuteTableAsync();
 				
@@ -268,19 +358,19 @@ namespace Hayden.Consumers
 					var hashes = new List<(ulong PostId, uint PostHash)>();
 
 					var rows = rentedConnection.Object
-						.CreateQuery("SELECT PostId, Html, IsSpoiler, IsImageDeleted, MediaFilename " +
-						             "FROM posts " +
-						             "WHERE threadid = @threadid AND board = @board AND IsDeleted = 0")
+						.CreateQuery("SELECT p.PostId, p.ContentHtml AS `ContentHtml`, IFNULL(fm.IsSpoiler, 0) AS `IsSpoiler`, IFNULL(fm.IsDeleted, 0) AS `IsImageDeleted`, fm.Filename AS `MediaFilename` " +
+						             "FROM posts p " +
+						             "LEFT JOIN file_mappings fm ON p.BoardId = fm.BoardId AND p.PostId = fm.PostId AND fm.Index = 0 " +
+						             "WHERE p.threadid = @threadid AND p.boardid = @boardid AND p.IsDeleted = 0")
 						.SetParam("@threadid", (ulong)threadRow[0])
-						.SetParam("@board", board)
+						.SetParam("@boardid", boardId)
 						.ExecuteRowsAsync();
 
 					await foreach (var postRow in rows)
 					{
 						string filenameNoExt = postRow.GetValue<string>("MediaFilename");
-						filenameNoExt = filenameNoExt?.Substring(0, filenameNoExt.IndexOf('.'));
 
-						var hash = CalculatePostHash(postRow.GetValue<string>("Html"), postRow.GetValue<bool>("IsSpoiler"),
+						var hash = CalculatePostHash(postRow.GetValue<string>("ContentHtml"), postRow.GetValue<bool>("IsSpoiler"),
 							postRow.GetValue<bool>("IsImageDeleted"), filenameNoExt, null, null, null, null, null, null, null);
 
 						hashes.Add(((ulong)postRow[0], hash));
@@ -296,7 +386,7 @@ namespace Hayden.Consumers
 				query = $@"SELECT ThreadId
 						   FROM threads
 						   WHERE (threads.IsArchived = {archivedInt} OR {archivedInt} = 0)
-							 AND Board = ""{board}""
+							 AND BoardId = {boardId}
 							 AND ThreadId IN ({string.Join(',', threadIdsToCheck)})";
 
 				var chainedQuery = rentedConnection.Object.CreateQuery(query);

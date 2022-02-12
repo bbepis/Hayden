@@ -56,6 +56,8 @@ namespace Hayden
 			async Task<Func<Task>> GenericInitialize<TThread, TPost>(IFrontendApi<TThread> frontend, IThreadConsumer<TThread, TPost> consumer)
 				where TPost : IPost where TThread : IThread<TPost>
 			{
+				await consumer.InitializeAsync();
+
 				HaydenConfig = rawConfigFile["hayden"]?.ToObject<HaydenConfigOptions>() ?? new HaydenConfigOptions();
 
 				ProxyProvider proxyProvider = null;
