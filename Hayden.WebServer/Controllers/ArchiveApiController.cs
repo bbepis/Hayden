@@ -2,11 +2,14 @@
 using System.Linq;
 using System.Threading.Tasks;
 using Hayden.WebServer.DB;
+using Hayden.WebServer.DB.Elasticsearch;
 using Hayden.WebServer.Routing;
 using Hayden.WebServer.View;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using Nest;
 
 namespace Hayden.WebServer.Controllers
 {
@@ -68,18 +71,57 @@ namespace Hayden.WebServer.Controllers
 		}
 
 		[HttpGet("search")]
-		public async Task<IActionResult> Search([FromServices] HaydenDbContext dbContext, [FromQuery] string query)
+		public async Task<IActionResult> Search([FromServices] HaydenDbContext dbContext, [FromServices] ElasticClient elasticClient, [FromQuery] string query)
 		{
 			Response.Headers.Add("Access-Control-Allow-Origin", "*");
 
-			var topThreads = await (dbContext.Threads.AsNoTracking()
-				.Join(dbContext.Posts.AsNoTracking(), t => new { PostId = t.ThreadId, t.BoardId }, p => new { p.PostId, p.BoardId }, (t, p) => new { t, p })
-				.Where(x => x.p.ContentHtml.Contains(query))
-				.Select(x => x.t))
-				.OrderByDescending(x => x.LastModified)
-				.Take(20)
-				//.Join(dbContext.Posts.AsNoTracking(), t => new { t.ThreadId, t.BoardId }, p => new { p.ThreadId, p.BoardId }, (t, p) => new { t, p })
-				.ToArrayAsync();
+			//var topThreads = await (dbContext.Threads.AsNoTracking()
+			//	.Join(dbContext.Posts.AsNoTracking(), t => new { PostId = t.ThreadId, t.BoardId }, p => new { p.PostId, p.BoardId }, (t, p) => new { t, p })
+			//	.Where(x => x.p.ContentHtml.Contains(query))
+			//	.Select(x => x.t))
+			//	.OrderByDescending(x => x.LastModified)
+			//	.Take(20)
+			//	//.Join(dbContext.Posts.AsNoTracking(), t => new { t.ThreadId, t.BoardId }, p => new { p.ThreadId, p.BoardId }, (t, p) => new { t, p })
+			//	.ToArrayAsync();
+
+			var searchTerm = "*" + query.ToLowerInvariant().Replace("\\", "\\\\").Replace("*", "\\*").Replace("?", "\\?") + "*";
+
+			Func<QueryContainerDescriptor<PostIndex>, QueryContainer> searchDescriptor;
+
+			if (!searchTerm.Contains(" "))
+			{
+				searchDescriptor = x => x.Bool(b => b.Must(bc => bc.Term(y => y.IsOp, true))) &&
+					x.Bool(b => b.Must(bc => bc.Bool(bcd => bcd.Should(
+					x.Wildcard(y => y.PostHtmlText, searchTerm),
+					x.Wildcard(y => y.PostRawText, searchTerm),
+					x.Wildcard(y => y.Subject, searchTerm)))));
+
+				
+			}
+			else
+			{
+				// .Query(x => x.Match(y => y.Field(z => z.FullName).Query(searchTerm))));
+				//searchDescriptor = x => x.MatchPhrase(y => y.Field(z => z).Query(searchTerm));
+				//searchDescriptor = x => x.QueryString(y => y.Fields(z => z.Field(a => a.FullName)).Query(searchTerm));
+
+				searchDescriptor = x => x.Term(y => y.IsOp, true) && (
+					x.MatchPhrase(y => y.Field(z => z.PostHtmlText).Query(searchTerm))
+					|| x.MatchPhrase(y => y.Field(z => z.PostRawText).Query(searchTerm))
+					|| x.MatchPhrase(y => y.Field(z => z.Subject).Query(searchTerm)));
+			}
+
+			var searchResult = await elasticClient.SearchAsync<PostIndex>(x => x
+				.Size(20)
+				.Source(source => source.IncludeAll())
+				.Sort(y => y.Descending(z => z.PostDateUtc))
+				.Query(searchDescriptor));
+
+			var threadIdArray = searchResult.IsValid
+				? searchResult.Hits.Select(x => (x.Source.BoardId, x.Source.ThreadId)).ToArray()
+				: null;
+
+			if (threadIdArray == null)
+				return StatusCode(StatusCodes.Status500InternalServerError);
 
 			// This is incredibly inefficient and slow, but it's prototype code so who cares
 
@@ -92,11 +134,11 @@ namespace Hayden.WebServer.Controllers
 
 			// this is arguably worse
 
-			JsonThreadModel[] threadModels = new JsonThreadModel[topThreads.Length];
+			JsonThreadModel[] threadModels = new JsonThreadModel[threadIdArray.Length];
 
-			for (var i = 0; i < topThreads.Length; i++)
+			for (var i = 0; i < threadIdArray.Length; i++)
 			{
-				var thread = topThreads[i];
+				var thread = threadIdArray[i];
 
 				var (boardObj, threadObj, posts, mappings) = await dbContext.GetThreadInfo(thread.ThreadId, thread.BoardId);
 

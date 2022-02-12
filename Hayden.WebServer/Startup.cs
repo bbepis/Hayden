@@ -5,8 +5,10 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using System;
 using Hayden.WebServer.DB;
+using Hayden.WebServer.DB.Elasticsearch;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
+using Nest;
 using Pomelo.EntityFrameworkCore.MySql.Infrastructure;
 using Pomelo.EntityFrameworkCore.MySql.Storage;
 
@@ -42,6 +44,19 @@ namespace Hayden.WebServer
 						y.CharSet(CharSet.Utf8Mb4);
 						y.ServerVersion(new ServerVersion(new Version(8, 0, 26), ServerType.MySql));
 					}));
+			
+			services.AddSingleton<ElasticClient>(x =>
+			{
+				var settings = new ConnectionSettings(new Uri(Configuration["Elasticsearch:Url"]))
+					.DefaultMappingFor<PostIndex>(map => map.IndexName(PostIndex.IndexName));
+
+				if (bool.Parse(Configuration["Elasticsearch:Debug"]))
+				{
+					settings.EnableDebugMode();
+				}
+
+				return new ElasticClient(settings);
+			});
 
 			services.AddMvc(x => { x.EnableEndpointRouting = false; });
 		}

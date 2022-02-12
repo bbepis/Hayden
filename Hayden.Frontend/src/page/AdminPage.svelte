@@ -25,6 +25,10 @@
         await fetch("https://localhost:5001/admin/import");
     }
 
+    async function startReindex() {
+        await fetch("https://localhost:5001/admin/reindex");
+    }
+
     onMount(() => updateProgress());
 
     onDestroy(() => window.clearTimeout(timeout));
@@ -42,3 +46,4 @@
 
 <button type="button" class="btn btn-primary" on:click={startRehash}>Start rehash</button>
 <button type="button" class="btn btn-primary" on:click={startImport}>Start import</button>
+<button type="button" class="btn btn-primary" on:click={startReindex}>Start reindex</button>

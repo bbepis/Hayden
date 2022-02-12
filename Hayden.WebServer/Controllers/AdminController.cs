@@ -8,11 +8,13 @@ using System.Threading;
 using System.Threading.Tasks;
 using Hayden.Models;
 using Hayden.WebServer.DB;
+using Hayden.WebServer.DB.Elasticsearch;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using Nest;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
@@ -459,6 +461,94 @@ namespace Hayden.WebServer.Controllers
 					}
 				}
 
+				CurrentStatus = "Done";
+			}, serviceProvider);
+		}
+
+
+
+		[Route("reindex")]
+		[HttpGet]
+		public IActionResult Reindex([FromServices] IServiceProvider serviceProvider)
+		{
+			return StartTask(async provider =>
+			{
+				Progress = 0;
+				CurrentStatus = "Initializing";
+
+				var elasticClient = provider.GetRequiredService<ElasticClient>();
+				var dbContext = provider.GetRequiredService<HaydenDbContext>();
+
+				CurrentStatus = "Deleting index";
+				var deleteResponse = await elasticClient.Indices.DeleteAsync(Indices.Index<PostIndex>());
+
+				if (!deleteResponse.IsValid && deleteResponse.ApiCall?.HttpStatusCode != 404)
+				{
+					CurrentStatus = $"Failed: {deleteResponse.OriginalException}";
+					return;
+				}
+
+				//Startup.StartupLogger.Log(LogLevel.Information, deleteResponse.DebugInformation);
+
+				CurrentStatus = "Creating index";
+				var createIndexResponse = await elasticClient.Indices.CreateAsync(PostIndex.IndexName, c => c
+					.Map<PostIndex>(m => m.AutoMap())
+				);
+
+				// Startup.StartupLogger.Log(LogLevel.Information, createIndexResponse.DebugInformation);
+
+				int reindexCount = 0;
+
+				const int batchSize = 20000;
+				const int subBatchSize = 100;
+
+				var threadSubjects = await dbContext.Threads.Where(x => x.Title != null).ToDictionaryAsync(x => (x.BoardId, x.ThreadId), x => x.Title);
+
+				IQueryable<DBPost> postQuery = dbContext.Posts.AsNoTracking()
+					.Where(x => x.ContentHtml != null || x.ContentRaw != null);
+
+				DBPost[] buffer = new DBPost[batchSize];
+
+				int total = await postQuery.CountAsync();
+
+				int currentIndex = 0;
+
+				while (true)
+				{
+					var batchLength = await postQuery.OrderBy(x => x.PostId).Skip(currentIndex * batchSize).Take(batchSize).AsAsyncEnumerable().FillAsync(buffer);
+
+					if (batchLength == 0)
+						break;
+
+					foreach (var subBatch in buffer.Take(batchLength).Batch(subBatchSize))
+					{
+						CurrentStatus = $"Reindexing PostIndex ({reindexCount++ * subBatchSize} / {total})";
+						Progress = (reindexCount * subBatchSize) / (float)total;
+
+						var response = await elasticClient.IndexManyAsync(subBatch
+							.Select(x => new PostIndex()
+							{
+								PostId = x.PostId,
+								ThreadId = x.ThreadId,
+								BoardId = x.BoardId,
+								PostHtmlText = x.ContentHtml,
+								PostRawText = x.ContentRaw,
+								PostDateUtc = x.DateTime,
+								Subject = threadSubjects.TryGetValue((x.BoardId, x.ThreadId), out var subject) ? subject : null,
+								IsOp = x.ThreadId == x.PostId
+							}));
+
+						//if (reindexCount == 1)
+						//	// Startup.StartupLogger.Log(LogLevel.Information, response.DebugInformation);
+
+						//if (response.ItemsWithErrors.Any())
+						//	".".Trim();
+					}
+
+					currentIndex++;
+				}
+
+				Progress = 1;
 				CurrentStatus = "Done";
 			}, serviceProvider);
 		}
