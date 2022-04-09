@@ -27,7 +27,7 @@
   "dependencies": {
     "@types/jquery": "^3.5.10",
     "jquery": "^3.6.0",
-    "moment": "^2.29.1",
+    "moment": "^2.29.2",
     "sirv-cli": "^1.0.0",
     "tinro": "^0.6.8"
   }
