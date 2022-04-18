@@ -67,7 +67,7 @@ export class Utility {
             }
         }
 
-        let url = this.infoObject.endpoint + endpoint;
+        let url = this.infoObject.apiEndpoint + endpoint;
 
         if (Array.from(searchParams.entries()).length > 0) {
             url += "?" + searchParams.toString();
@@ -84,7 +84,7 @@ export class Utility {
 
     static async Post(endpoint: string): Promise<any> {
 
-        let url = this.infoObject.endpoint + endpoint;
+        let url = this.infoObject.apiEndpoint + endpoint;
 
 		const result = await fetch(url);
 		

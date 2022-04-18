@@ -1,5 +1,6 @@
 export class InfoObject {
-    endpoint: string;
+    apiEndpoint: string;
+    rawEndpoint: string;
 }
 
 export class BoardModel {

@@ -6,7 +6,7 @@
 
     async function updateProgress() {
         try {
-            let response = await fetch("https://localhost:5001/admin/GetProgress");
+            let response = await fetch("/admin/GetProgress");
             let responseJson = await response.json();
 
             $statusStore = responseJson.currentStatus;
@@ -18,15 +18,15 @@
     }
 
     async function startRehash() {
-        await fetch("https://localhost:5001/admin/StartRehash");
+        await fetch("/admin/StartRehash");
     }
 
     async function startImport() {
-        await fetch("https://localhost:5001/admin/import");
+        await fetch("/admin/import");
     }
 
     async function startReindex() {
-        await fetch("https://localhost:5001/admin/reindex");
+        await fetch("/admin/reindex");
     }
 
     onMount(() => updateProgress());

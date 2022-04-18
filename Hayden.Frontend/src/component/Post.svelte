@@ -28,7 +28,7 @@
             <span class="name">{post.author ?? "Anonymous"}</span>
         </span>
         <span title={time.fromNow()}>
-            {time.local().format("dd/MM/yy h:mm:ss A")}
+            {time.local().format("ddd DD/MM/yy h:mm:ss A")}
         </span>
         <span>
             <a href="/{board.shortName}/thread/{threadId}#p{post.postId}"
