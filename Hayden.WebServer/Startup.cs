@@ -43,6 +43,8 @@ namespace Hayden.WebServer
 					{
 						y.CharSet(CharSet.Utf8Mb4);
 						y.ServerVersion(new ServerVersion(new Version(8, 0, 26), ServerType.MySql));
+						y.CommandTimeout(86400);
+						y.EnableIndexOptimizedBooleanColumns();
 					}));
 			
 			services.AddSingleton<ElasticClient>(x =>
@@ -88,6 +90,20 @@ namespace Hayden.WebServer
 			app.UseAuthorization();
 
 			app.UseMvc();
+			//app.UseMvc(routes =>
+			//{
+			//	if (Config.ApiMode)
+			//	{
+			//		routes.MapRoute("api", "/api/{action=Index}", new { controller = "ArchiveApi" });
+			//		routes.MapRoute("frontend-index", "/", new { controller = "ArchiveApi", action = "SvelteFrontend" });
+			//		routes.MapRoute("frontend-thread", "{board}/thread/{threadId}", new { controller = "ArchiveApi", action = "SvelteFrontend" });
+			//		routes.MapRoute("frontend-privacy", "privacy", new { controller = "ArchiveApi", action = "SvelteFrontend" });
+			//	}
+			//	else
+			//	{
+			//		routes.MapRoute("default", "{controller=Archive}/{action=Index}");
+			//	}
+			//});
 		}
 	}
 }
