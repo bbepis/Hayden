@@ -91,6 +91,23 @@ namespace Hayden
 			return reader.ReadToEnd();
 		}
 
+		public static bool ByteArrayEquals(this byte[] a, byte[] b)
+			=> ByteArrayEquals(a.AsSpan(), b.AsSpan());
+
+
+		public static bool ByteArrayEquals(this Span<byte> a, Span<byte> b)
+		{
+			if (a.Length != b.Length)
+				return false;
+
+			int length = a.Length;
+			for (int i = 0; i < length; i++)
+				if (a[i] != b[i])
+					return false;
+
+			return true;
+		}
+
 		private static readonly DateTimeZone EasternTimeZone = DateTimeZoneProviders.Tzdb["America/New_York"];
 
 		/// <summary>

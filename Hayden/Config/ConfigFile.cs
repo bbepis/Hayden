@@ -18,5 +18,7 @@ namespace Hayden
 		public bool DebugLogging { get; set; } = false;
 
 		public bool ResolveDnsLocally { get; set; } = false;
+
+		public string ScraperType { get; set; } = "Board";
 	}
 }

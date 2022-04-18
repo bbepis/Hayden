@@ -58,8 +58,6 @@ namespace Hayden
 			{
 				await consumer.InitializeAsync();
 
-				HaydenConfig = rawConfigFile["hayden"]?.ToObject<HaydenConfigOptions>() ?? new HaydenConfigOptions();
-
 				ProxyProvider proxyProvider = null;
 
 				if (rawConfigFile["proxies"] != null)
@@ -94,6 +92,51 @@ namespace Hayden
 
 			string sourceType = rawConfigFile["source"]["type"].Value<string>();
 			string backendType = rawConfigFile["backend"]["type"].Value<string>();
+			HaydenConfig = rawConfigFile["hayden"]?.ToObject<HaydenConfigOptions>() ?? new HaydenConfigOptions();
+
+			if (HaydenConfig.ScraperType == "Search")
+			{
+				var altchanConfig = rawConfigFile["source"].ToObject<AltchanConfig>();
+				config = altchanConfig;
+
+				var frontend = new FoolFuukaApi(altchanConfig.ImageboardWebsite);
+
+				var filesystemConfig = rawConfigFile["backend"].ToObject<FilesystemConfig>();
+
+				downloadLocation = filesystemConfig.DownloadLocation;
+				var consumer = new FoolFuukaFilesystemThreadConsumer(altchanConfig.ImageboardWebsite, filesystemConfig);
+
+				await consumer.InitializeAsync();
+
+
+				ProxyProvider proxyProvider = null;
+
+				if (rawConfigFile["proxies"] != null)
+				{
+					proxyProvider = new ConfigProxyProvider((JArray)rawConfigFile["proxies"], HaydenConfig.ResolveDnsLocally);
+					await proxyProvider.InitializeAsync();
+				}
+
+				Log("Initialized.");
+				Log("Press Q to stop archival.");
+
+				var haydenDirectory = Path.Combine(downloadLocation, "hayden");
+				Directory.CreateDirectory(haydenDirectory);
+
+				var stateStore = new LiteDbStateStore(Path.Combine(haydenDirectory, "imagequeue.db"));
+
+				var boardArchiver = new SearchArchiver<FoolFuukaThread, FoolFuukaPost>(config, new SearchQuery(), frontend, consumer, stateStore, proxyProvider);
+
+				return () => boardArchiver.Execute(tokenSource.Token)
+					.ContinueWith(task =>
+					{
+						if (task.IsFaulted)
+						{
+							Log("!! FATAL EXCEPTION !!");
+							Log(task.Exception.ToString());
+						}
+					});
+			}
 
 			if (sourceType == "4chan")
 			{
