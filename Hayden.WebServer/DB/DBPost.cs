@@ -17,6 +17,12 @@ namespace Hayden.WebServer.DB
 		[Column(TypeName = "varchar(255)")]
 		public string Author { get; set; }
 
+		[Column(TypeName = "varchar(255)")]
+		public string Tripcode { get; set; }
+
+		[Column(TypeName = "varchar(255)")]
+		public string Email { get; set; }
+
 		public DateTime DateTime { get; set; }
 		
 		public bool IsDeleted { get; set; }

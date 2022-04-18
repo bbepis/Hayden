@@ -143,8 +143,8 @@ namespace Hayden.Consumers
 		public async Task InsertPosts(ICollection<YotsubaPost> posts, ushort boardId)
 		{
 			const string postInsertQuerySql = "INSERT INTO posts"
-											+ "  (boardid, postid, threadid, contenthtml, author, datetime, isdeleted)"
-											+ "  VALUES (@boardid, @postid, @threadid, @contenthtml, @author, @datetime, 0);";
+											+ "  (boardid, postid, threadid, contenthtml, author, tripcode, email, datetime, isdeleted)"
+											+ "  VALUES (@boardid, @postid, @threadid, @contenthtml, @author, @tripcode, NULL, @datetime, 0);";
 
 			const string fileInsertQuerySql = "INSERT INTO files"
 											+ " (BoardId, Md5Hash, Sha1Hash, Sha256Hash, Extension, ImageWidth, ImageHeight, Size)"
@@ -190,7 +190,8 @@ namespace Hayden.Consumers
 					  .SetParam("@postid", post.PostNumber)
 					  .SetParam("@threadid", post.ReplyPostNumber != 0 ? post.ReplyPostNumber : post.PostNumber)
 					  .SetParam("@contenthtml", post.Comment)
-					  .SetParam("@author", post.Name == "Anonymous" ? null : post.Name + post.Trip)
+					  .SetParam("@author", post.Name == "Anonymous" ? null : post.Name)
+					  .SetParam("@tripcode", post.Trip)
 					  .SetParam("@datetime", Utility.ConvertGMTTimestamp(post.UnixTimestamp).UtcDateTime)
 					  .ExecuteNonQueryAsync();
 

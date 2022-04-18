@@ -19,6 +19,12 @@ namespace Hayden.WebServer.DB
 			modelBuilder.Entity<DBThread>(x => x.HasKey(nameof(DBThread.BoardId), nameof(DBThread.ThreadId)));
 			modelBuilder.Entity<DBPost>(x => x.HasKey(nameof(DBPost.BoardId), nameof(DBPost.PostId)));
 			modelBuilder.Entity<DBFileMapping>(x => x.HasKey(nameof(DBFileMapping.BoardId), nameof(DBFileMapping.PostId), nameof(DBFileMapping.FileId)));
+
+			modelBuilder.Entity<DBFile>(x =>
+			{
+				x.Property(e => e.Md5ConflictHistory)
+					.HasColumnType("json");
+			});
 		}
 
 		public async Task<(DBBoard, DBThread, DBPost[], (DBFileMapping, DBFile)[])> GetThreadInfo(ulong threadId, DBBoard boardObj)
@@ -72,7 +78,7 @@ namespace Hayden.WebServer.DB
 		public void DetachAllEntities()
 		{
 			var changedEntriesCopy = ChangeTracker.Entries()
-				.Where(e => e.State == EntityState.Unchanged)
+				//.Where(e => e.State == EntityState.Unchanged)
 				.ToList();
 
 			foreach (var entry in changedEntriesCopy)
