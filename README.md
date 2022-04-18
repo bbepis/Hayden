@@ -10,10 +10,12 @@ Developer documentation is in `ARCHITECTURE.md`.
 
 | Software                                                                                                              | Supports archives  | Example sites                 |
 |-----------------------------------------------------------------------------------------------------------------------|--------------------|-------------------------------|
-| Yotsuba                                                                                                               | ✅                 | 4chan.org                     |
+| [Yotsuba](https://www.4channel.org/faq#software)                                                                      | ✅                 | 4chan.org                     |
 | [LynxChan](https://gitgud.io/LynxChan/LynxChan)                                                                       | ❌                 | 8chan.moe <br> endchan.org    |
 | [Vichan](https://github.com/vichan-devel/vichan)/[Infinity](https://github.com/ctrlcctrlv/infinity) (not OpenIB/8kun) | ❌                 | sportschan.org <br> smuglo.li |
 | [InfinityNext](https://github.com/infinity-next/infinity-next/)                                                       | ❌                 | 9chan.tw                      |
+| [Meguca / shamichan](https://github.com/bakape/meguca)                                                                | ❌                 | 2chen.moe <br> shamik.ooo     |
+| [FoolFuuka](https://github.com/FoolCode/FoolFuuka)                                                                    | ✅                 | desuarchive.org               |
 
 ### Features
 
@@ -53,11 +55,11 @@ There are currently 3 supported data stores:
 
 A table of which API frontends support which backends:
 
-|            | Yotsuba | LynxChan | Vichan/Infinity | InfinityNext |
-|------------|---------|----------|-----------------|--------------|
-| Asagi      | ✅      | ❌      | ❌              | ❌          |
-| Filesystem | ✅      | ✅      | ✅              | ✅          |
-| Hayden     | ✅      | ❌      | ❌              | ❌          |
+|            | Yotsuba | LynxChan | Vichan/Infinity | InfinityNext | Meguca | FoolFuuka
+|------------|---------|----------|-----------------|--------------|--------|----------
+| Asagi      | ✅      | ❌      | ❌              | ❌          | ❌     | ❌
+| Filesystem | ✅      | ✅      | ✅              | ✅          | ✅     | ✅
+| Hayden     | ✅      | ❌      | ❌              | ❌          | ❌     | ❌
 
 &nbsp;
 
