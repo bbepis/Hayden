@@ -4,8 +4,10 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using System;
+using System.Threading.Tasks;
 using Hayden.WebServer.DB;
 using Hayden.WebServer.DB.Elasticsearch;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 using Nest;
@@ -84,6 +86,16 @@ namespace Hayden.WebServer
 
 			app.UseHttpsRedirection();
 			app.UseStaticFiles();
+
+			if (env.IsDevelopment())
+			{
+				app.Use(async (context, next) =>
+				{
+					context.Response.Headers.Add("Access-Control-Allow-Origin", "*");
+
+					await next();
+				});
+			}
 
 			app.UseRouting();
 

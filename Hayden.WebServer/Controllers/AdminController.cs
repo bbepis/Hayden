@@ -37,8 +37,6 @@ namespace Hayden.WebServer.Controllers
 		[HttpGet("GetProgress")]
 		public IActionResult GetProgress()
 		{
-			Response.Headers.Add("Access-Control-Allow-Origin", "*");
-
 			return Json(new { CurrentStatus = CurrentStatus.ToString(), Progress });
 		}
 
@@ -69,8 +67,6 @@ namespace Hayden.WebServer.Controllers
 		[HttpGet("StartRehash")]
 		public IActionResult StartRehash([FromServices] IServiceProvider serviceProvider)
 		{
-			Response.Headers.Add("Access-Control-Allow-Origin", "*");
-
 			return StartTask(async provider =>
 			{
 				CurrentStatus = "Reading files from database";

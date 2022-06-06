@@ -27,8 +27,6 @@ namespace Hayden.WebServer.Controllers
 		[HttpGet("index")]
 		public async Task<IActionResult> Index([FromServices] HaydenDbContext dbContext)
 		{
-			Response.Headers.Add("Access-Control-Allow-Origin", "*");
-
 			var topThreads = await dbContext.Threads.AsNoTracking()
 				.OrderByDescending(x => x.LastModified)
 				.Take(10)
@@ -73,8 +71,6 @@ namespace Hayden.WebServer.Controllers
 		[HttpGet("search")]
 		public async Task<IActionResult> Search([FromServices] HaydenDbContext dbContext, [FromServices] ElasticClient elasticClient, [FromQuery] string query)
 		{
-			Response.Headers.Add("Access-Control-Allow-Origin", "*");
-
 			//var topThreads = await (dbContext.Threads.AsNoTracking()
 			//	.Join(dbContext.Posts.AsNoTracking(), t => new { PostId = t.ThreadId, t.BoardId }, p => new { p.PostId, p.BoardId }, (t, p) => new { t, p })
 			//	.Where(x => x.p.ContentHtml.Contains(query))
@@ -162,8 +158,6 @@ namespace Hayden.WebServer.Controllers
 		[HttpGet("{board}/thread/{threadid}")]
 		public async Task<IActionResult> ThreadIndex(string board, ulong threadid, [FromServices] HaydenDbContext dbContext)
 		{
-			Response.Headers.Add("Access-Control-Allow-Origin", "*");
-
 			var (boardObj, thread, posts, mappings) = await dbContext.GetThreadInfo(threadid, board);
 
 			if (thread == null)
