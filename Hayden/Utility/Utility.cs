@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
@@ -6,6 +7,7 @@ using System.Linq;
 using System.Numerics;
 using System.Reflection;
 using System.Runtime.CompilerServices;
+using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -374,6 +376,54 @@ namespace Hayden
 			return i;
 		}
 
+		public static IEnumerable<IGrouping<TResultKey, TResult>> GroupByCustomKey<T, TKey, TResultKey, TResult>(this IEnumerable<T> source,
+			Func<T, TKey> keySelector,
+			Func<T, TResultKey> resultKeySelector,
+			Func<T, TResult> resultSelector)
+		{
+			var items = source.ToArray();
+
+			var determinedKeys = items.Select(x => new { realKey = keySelector(x), displayKey = resultKeySelector(x) })
+				.DistinctBy(x => x.realKey)
+				.ToArray();
+
+			foreach (var determinedKey in determinedKeys)
+			{
+				var group = new GroupImplementation<TResultKey, TResult>();
+
+				group.key = determinedKey.displayKey;
+
+				foreach (var item in items)
+					if (keySelector(item).Equals(determinedKey.realKey))
+					{
+						var result = resultSelector(item);
+
+						if (!Equals(result, default(TResult)))
+							group.list.Add(result);
+					}
+
+				yield return group;
+			}
+		}
+
+		private class GroupImplementation<TKey, TElement> : IGrouping<TKey, TElement>
+		{
+			public IEnumerator<TElement> GetEnumerator()
+			{
+				return list.GetEnumerator();
+			}
+
+			IEnumerator IEnumerable.GetEnumerator()
+			{
+				return GetEnumerator();
+			}
+
+			public TKey Key => key;
+
+			internal TKey key;
+			internal List<TElement> list = new();
+		}
+
 		/// <summary>
 		/// Generates an 32-bit FV1a hash from a string.
 		/// </summary>
@@ -486,6 +536,32 @@ namespace Hayden
 				return null;
 
 			return input.Trim();
+		}
+
+		public static async Task WriteAllBytesAsync(string filename, ReadOnlyMemory<byte> memory)
+		{
+			using var fileStream = new FileStream(filename, FileMode.Create);
+
+			await fileStream.WriteAsync(memory);
+		}
+
+		public static (byte[] md5Hash, byte[] sha1Hash, byte[] sha256Hash) CalculateHashes(Stream stream)
+		{
+			byte[] md5Hash, sha1Hash, sha256Hash;
+
+			stream.Position = 0;
+			using (var md5 = MD5.Create())
+				md5Hash = md5.ComputeHash(stream);
+
+			stream.Position = 0;
+			using (var sha1 = SHA1.Create())
+				sha1Hash = sha1.ComputeHash(stream);
+
+			stream.Position = 0;
+			using (var sha256 = SHA256.Create())
+				sha256Hash = sha256.ComputeHash(stream);
+
+			return (md5Hash, sha1Hash, sha256Hash);
 		}
 	}
 }

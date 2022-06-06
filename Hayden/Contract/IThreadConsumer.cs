@@ -23,6 +23,14 @@ namespace Hayden.Contract
 		Task<IList<QueuedImageDownload>> ConsumeThread(ThreadUpdateInfo<TThread, TPost> threadUpdateInfo);
 
 		/// <summary>
+		/// Executed when the Engine module has downloaded an image & thumbnail, to store the image somewhere and mark it in a possible database.
+		/// </summary>
+		/// <param name="queuedImageDownload">The queued image download that was performed.</param>
+		/// <param name="imageData">A byte array of the downloaded data.</param>
+		/// <param name="thumbnailData">A byte array of the downloaded data.</param>
+		Task ProcessFileDownload(QueuedImageDownload queuedImageDownload, Memory<byte>? imageData, Memory<byte>? thumbnailData);
+
+		/// <summary>
 		/// Executed when a thread has been pruned or deleted, to mark it as complete.
 		/// </summary>
 		/// <param name="threadId">The ID of the thread that has been completed.</param>

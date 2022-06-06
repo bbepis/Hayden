@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
 using Hayden.Config;
 using Hayden.Contract;
 using Hayden.Models;
@@ -11,33 +12,29 @@ namespace Hayden.Consumers
 	public class YotsubaFilesystemThreadConsumer : BaseFilesystemThreadConsumer<YotsubaThread, YotsubaPost>
 	{
 		public YotsubaFilesystemThreadConsumer(FilesystemConfig config) : base(config) { }
-
-		protected override IList<QueuedImageDownload> CalculateImageDownloads(ThreadUpdateInfo<YotsubaThread, YotsubaPost> threadUpdateInfo, string threadDirectory, ThreadPointer pointer, string threadThumbsDirectory)
+		
+		protected override IEnumerable<(QueuedImageDownload download, string imageFilename, string thumbFilename)> GetImageDownloadPaths(YotsubaPost post, string threadImageDirectory, ThreadPointer pointer,
+			string threadThumbsDirectory)
 		{
-			List<QueuedImageDownload> imageDownloads = new List<QueuedImageDownload>();
+			if (!post.TimestampedFilename.HasValue)
+				yield break;
 
-			foreach (var post in threadUpdateInfo.NewPosts.Where(x => x.TimestampedFilename.HasValue))
+			string fullImageFilename = null, thumbFilename = null;
+			Uri imageUrl = null, thumbUrl = null;
+
+			if (Config.FullImagesEnabled)
 			{
-				if (Config.FullImagesEnabled)
-				{
-					string fullImageFilename = Path.Combine(threadDirectory, post.TimestampedFilenameFull);
-					string fullImageUrl = $"https://i.4cdn.org/{pointer.Board}/{post.TimestampedFilenameFull}";
-
-					if (!File.Exists(fullImageFilename))
-						imageDownloads.Add(new QueuedImageDownload(new Uri(fullImageUrl), fullImageFilename));
-				}
-
-				if (Config.ThumbnailsEnabled)
-				{
-					string thumbFilename = Path.Combine(threadThumbsDirectory, $"{post.TimestampedFilename}s.jpg");
-					string thumbUrl = $"https://i.4cdn.org/{pointer.Board}/{post.TimestampedFilename}s.jpg";
-
-					if (!File.Exists(thumbFilename))
-						imageDownloads.Add(new QueuedImageDownload(new Uri(thumbUrl), thumbFilename));
-				}
+				fullImageFilename = Path.Combine(threadImageDirectory, post.TimestampedFilenameFull);
+				imageUrl = new Uri($"https://i.4cdn.org/{pointer.Board}/{post.TimestampedFilenameFull}");
 			}
 
-			return imageDownloads;
+			if (Config.ThumbnailsEnabled)
+			{
+				thumbFilename = Path.Combine(threadThumbsDirectory, $"{post.TimestampedFilename}s.jpg");
+				thumbUrl = new Uri($"https://i.4cdn.org/{pointer.Board}/{post.TimestampedFilename}s.jpg");
+			}
+
+			yield return (new QueuedImageDownload(imageUrl, thumbUrl), fullImageFilename, thumbFilename);
 		}
 
 		public new static void PerformJsonThreadUpdate(ThreadUpdateInfo<YotsubaThread, YotsubaPost> threadUpdateInfo, string threadFileName)

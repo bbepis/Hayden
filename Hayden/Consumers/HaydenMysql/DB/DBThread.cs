@@ -1,7 +1,7 @@
 ﻿using System;
 using System.ComponentModel.DataAnnotations.Schema;
 
-namespace Hayden.WebServer.DB
+namespace Hayden.Consumers.HaydenMysql.DB
 {
 	[Table("threads")]
 	public class DBThread

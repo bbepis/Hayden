@@ -20,32 +20,31 @@ namespace Hayden.Consumers
 				ImageboardWebsite += "/";
 		}
 
-		protected override IList<QueuedImageDownload> CalculateImageDownloads(ThreadUpdateInfo<InfinityNextThread, InfinityNextPost> threadUpdateInfo, string threadDirectory, ThreadPointer pointer, string threadThumbsDirectory)
+		protected override IEnumerable<(QueuedImageDownload download, string imageFilename, string thumbFilename)> GetImageDownloadPaths(InfinityNextPost post,
+			string threadImageDirectory, ThreadPointer pointer, string threadThumbsDirectory)
 		{
-			List<QueuedImageDownload> imageDownloads = new List<QueuedImageDownload>();
+			if (post.Attachments == null)
+				yield break;
 
-			foreach (var attachment in threadUpdateInfo.NewPosts.SelectMany(x => x.Attachments))
+			foreach (var attachment in post.Attachments)
 			{
+				string fullImageFilename = null, thumbFilename = null;
+				Uri imageUrl = null, thumbUrl = null;
+
 				if (Config.FullImagesEnabled)
 				{
-					string fullImageFilename = Path.Combine(threadDirectory, Path.GetFileName(attachment.FileUrl));
-					string fullImageUrl = $"{ImageboardWebsite}{attachment.FileUrl.Substring(1)}";
-
-					if (!File.Exists(fullImageFilename))
-						imageDownloads.Add(new QueuedImageDownload(new Uri(fullImageUrl), fullImageFilename));
+					fullImageFilename = Path.Combine(threadImageDirectory, Path.GetFileName(attachment.FileUrl));
+					imageUrl = new Uri($"{ImageboardWebsite}{attachment.FileUrl.Substring(1)}");
 				}
 
 				if (Config.ThumbnailsEnabled)
 				{
-					string thumbFilename = Path.Combine(threadThumbsDirectory, Path.GetFileName(attachment.ThumbnailUrl));
-					string thumbUrl = $"{ImageboardWebsite}{attachment.ThumbnailUrl.Substring(1)}";
-
-					if (!File.Exists(thumbFilename))
-						imageDownloads.Add(new QueuedImageDownload(new Uri(thumbUrl), thumbFilename));
+					thumbFilename = Path.Combine(threadThumbsDirectory, Path.GetFileName(attachment.ThumbnailUrl));
+					thumbUrl = new Uri($"{ImageboardWebsite}{attachment.ThumbnailUrl.Substring(1)}");
 				}
-			}
 
-			return imageDownloads;
+				yield return (new QueuedImageDownload(imageUrl, thumbUrl), fullImageFilename, thumbFilename);
+			}
 		}
 
 		protected override void PerformThreadUpdate(ThreadUpdateInfo<InfinityNextThread, InfinityNextPost> threadUpdateInfo, InfinityNextThread writtenThread)

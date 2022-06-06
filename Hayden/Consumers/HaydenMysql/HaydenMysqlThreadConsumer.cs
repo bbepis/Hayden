@@ -5,8 +5,10 @@ using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using Hayden.Config;
+using Hayden.Consumers.HaydenMysql.DB;
 using Hayden.Contract;
 using Hayden.Models;
+using Microsoft.EntityFrameworkCore;
 
 namespace Hayden.Consumers
 {
@@ -17,36 +19,50 @@ namespace Hayden.Consumers
 	{
 		private HaydenMysqlConfig Config { get; }
 
-		private MySqlConnectionPool ConnectionPool { get; }
-
 		protected Dictionary<string, ushort> BoardIdMappings { get; } = new();
 
 		/// <param name="config">The object to load configuration values from.</param>
 		public HaydenMysqlThreadConsumer(HaydenMysqlConfig config)
 		{
 			Config = config;
-			ConnectionPool = new MySqlConnectionPool(config.ConnectionString, config.SqlConnectionPoolSize);
 		}
 
 		public async Task InitializeAsync()
 		{
 			// TODO: logic to initialize unseen boards
 
-			const string boardQuery = "SELECT ID, ShortName FROM boards;";
-
-			await using var connection = await ConnectionPool.RentConnectionAsync();
-			using var query = connection.Object.CreateQuery(boardQuery);
-
-			await foreach (var boardRow in query.ExecuteRowsAsync())
+			if (!Config.FullImagesEnabled && Config.ThumbnailsEnabled)
 			{
-				BoardIdMappings[(string)boardRow[1]] = (ushort)boardRow[0];
+				throw new InvalidOperationException(
+					"Consumer cannot be used if thumbnails enabled and full images are not. Full images are required for proper hash calculation");
 			}
+
+			await using var context = GetDBContext();
+
+			await foreach (var board in context.Boards)
+			{
+				BoardIdMappings[board.ShortName] = board.Id;
+			}
+		}
+
+		private HaydenDbContext GetDBContext()
+		{
+			var contextBuilder = new DbContextOptionsBuilder();
+
+			contextBuilder.UseMySql(Config.ConnectionString, ServerVersion.AutoDetect(Config.ConnectionString), x =>
+			{
+				x.EnableIndexOptimizedBooleanColumns();
+			});
+
+			return new HaydenDbContext(contextBuilder.Options);
 		}
 
 		/// <inheritdoc/>
 		public async Task<IList<QueuedImageDownload>> ConsumeThread(ThreadUpdateInfo<YotsubaThread, YotsubaPost> threadUpdateInfo)
 		{
 			List<QueuedImageDownload> imageDownloads = new List<QueuedImageDownload>();
+
+			await using var dbContext = GetDBContext();
 
 			string board = threadUpdateInfo.ThreadPointer.Board;
 			ushort boardId = BoardIdMappings[board];
@@ -60,25 +76,48 @@ namespace Hayden.Consumers
 				YotsubaFilesystemThreadConsumer.PerformJsonThreadUpdate(threadUpdateInfo, threadFileName);
 			}
 
-			void ProcessImages(YotsubaPost post)
+			async Task ProcessImages(YotsubaPost post)
 			{
 				if (!Config.FullImagesEnabled && !Config.ThumbnailsEnabled)
 					return; // skip the DB check since we're not even bothering with images
 
 				if (post.FileMd5 != null)
 				{
-					var md5Hash = Convert.FromBase64String(post.FileMd5);
-					var base36Name = Utility.ConvertToBase(md5Hash);
+					if (!Config.DoNotUseMd5HashForComparison)
+					{
+						var existingFile = await dbContext.Files.FirstOrDefaultAsync(x =>
+							x.Md5Hash == Convert.FromBase64String(post.FileMd5) && x.Size == post.FileSize.Value);
+
+						if (existingFile != null)
+						{
+							// We know we have the file. Just attach it
+
+							var fileMapping = new DBFileMapping
+							{
+								BoardId = boardId,
+								PostId = post.PostNumber,
+								FileId = existingFile.Id,
+								Filename = Path.GetFileNameWithoutExtension(post.OriginalFilename),
+								Index = 0,
+								IsDeleted = post.FileDeleted.GetValueOrDefault(),
+								IsSpoiler = post.SpoilerImage.GetValueOrDefault()
+							};
+
+							dbContext.Add(fileMapping);
+
+							return;
+						}
+					}
+
+					Uri imageUrl = null;
+					Uri thumbUrl = null;
 
 					if (Config.FullImagesEnabled)
 					{
 						string imageDirectory = Path.Combine(Config.DownloadLocation, board, "image");
 						Directory.CreateDirectory(imageDirectory);
 
-						string fullImageFilename = Path.Combine(imageDirectory, base36Name + post.FileExtension);
-						string fullImageUrl = $"https://i.4cdn.org/{board}/{post.TimestampedFilenameFull}";
-
-						imageDownloads.Add(new QueuedImageDownload(new Uri(fullImageUrl), fullImageFilename));
+						imageUrl = new Uri($"https://i.4cdn.org/{board}/{post.TimestampedFilenameFull}");
 					}
 
 					if (Config.ThumbnailsEnabled)
@@ -86,324 +125,243 @@ namespace Hayden.Consumers
 						string thumbnailDirectory = Path.Combine(Config.DownloadLocation, board, "thumb");
 						Directory.CreateDirectory(thumbnailDirectory);
 
-						string thumbFilename = Path.Combine(thumbnailDirectory, base36Name + ".jpg");
-						string thumbUrl = $"https://i.4cdn.org/{board}/{post.TimestampedFilename}s.jpg";
-
-						imageDownloads.Add(new QueuedImageDownload(new Uri(thumbUrl), thumbFilename));
+						thumbUrl = new Uri($"https://i.4cdn.org/{board}/{post.TimestampedFilename}s.jpg");
 					}
+					
+					imageDownloads.Add(new QueuedImageDownload(imageUrl, thumbUrl, new()
+					{
+						["board"] = board,
+						["boardId"] = boardId,
+						["post"] = post
+					}));
 				}
 			}
 
 			if (threadUpdateInfo.IsNewThread)
 			{
-				await InsertThread(threadUpdateInfo.Thread, boardId);
+				var dbThread = new DBThread
+				{
+					BoardId = boardId,
+					ThreadId = threadUpdateInfo.ThreadPointer.ThreadId,
+					IsDeleted = false,
+					IsArchived = false,
+					LastModified = DateTime.MinValue,
+					Title = threadUpdateInfo.Thread.OriginalPost.Subject.TrimAndNullify()
+				};
+
+				dbContext.Add(dbThread);
+				await dbContext.SaveChangesAsync();
 			}
 
 			foreach (var post in threadUpdateInfo.NewPosts)
 			{
-				ProcessImages(post);
+				dbContext.Add(new DBPost
+				{
+					BoardId = boardId,
+					PostId = post.PostNumber,
+					ThreadId = post.ReplyPostNumber != 0 ? post.ReplyPostNumber : post.PostNumber,
+					ContentHtml = post.Comment,
+					Author = post.Name == "Anonymous" ? null : post.Name,
+					Tripcode = post.Trip,
+					DateTime = Utility.ConvertGMTTimestamp(post.UnixTimestamp).UtcDateTime
+				});
 			}
 
-			await InsertPosts(threadUpdateInfo.NewPosts, boardId);
+			await dbContext.SaveChangesAsync();
+			
+			foreach (var post in threadUpdateInfo.NewPosts)
+			{
+				await ProcessImages(post);
+			}
+
+			await dbContext.SaveChangesAsync();
 
 			foreach (var post in threadUpdateInfo.UpdatedPosts)
 			{
 				Program.Log($"[DB] Post /{board}/{post.PostNumber} has been modified", true);
 
-				await UpdatePost(post, boardId, false);
+				var dbPost = await dbContext.Posts.FirstAsync(x => x.BoardId == boardId && x.PostId == post.PostNumber);
+				var dbPostMappings = await dbContext.FileMappings.Where(x => x.BoardId == boardId && x.PostId == post.PostNumber).ToArrayAsync();
+
+				dbPost.ContentHtml = post.Comment;
+				dbPost.IsDeleted = false;
+
+				foreach (var dbPostMapping in dbPostMappings)
+				{
+					dbPostMapping.IsDeleted = post.FileDeleted ?? false;
+				}
 			}
 
 			foreach (var postNumber in threadUpdateInfo.DeletedPosts)
 			{
 				Program.Log($"[DB] Post /{board}/{postNumber} has been deleted", true);
 
-				await UpdatePost(postNumber, boardId, true);
+				var dbPost = await dbContext.Posts.FirstAsync(x => x.BoardId == boardId && x.PostId == postNumber);
+
+				dbPost.IsDeleted = true;
 			}
 
-			await UpdateThread(threadUpdateInfo.ThreadPointer.ThreadId, boardId, false, threadUpdateInfo.Thread.OriginalPost.Archived == true);
+			await dbContext.SaveChangesAsync();
 
+			await UpdateThread(board, threadUpdateInfo.ThreadPointer.ThreadId, false, threadUpdateInfo.Thread.OriginalPost.Archived == true);
+			
 			return imageDownloads;
+		}
+
+		/// <inheritdoc/>
+		public async Task ProcessFileDownload(QueuedImageDownload queuedImageDownload, Memory<byte>? imageData, Memory<byte>? thumbnailData)
+		{
+			if (!queuedImageDownload.TryGetProperty("board", out string board)
+				|| !queuedImageDownload.TryGetProperty("boardId", out ushort boardId)
+				|| !queuedImageDownload.TryGetProperty("post", out YotsubaPost post))
+			{
+				throw new InvalidOperationException("Queued image download did not have the required properties");
+			}
+
+			if (imageData == null)
+				throw new InvalidOperationException("Full image required for hash calculation");
+
+			using var stream = new MemorySpanStream(imageData.Value, true);
+
+			var (md5Hash, sha1Hash, sha256Hash) = Utility.CalculateHashes(stream);
+			
+			var imageFilename = Common.CalculateFilename(Config.DownloadLocation, board, Common.MediaType.Image, sha256Hash, post.FileExtension);
+
+			await Utility.WriteAllBytesAsync(imageFilename, imageData.Value);
+
+			if (thumbnailData.HasValue)
+			{
+				var thumbFilename = Common.CalculateFilename(Config.DownloadLocation, board, Common.MediaType.Thumbnail, sha256Hash, "jpg");
+
+				await Utility.WriteAllBytesAsync(thumbFilename, thumbnailData.Value);
+			}
+
+			await using var dbContext = GetDBContext();
+
+			uint fileId;
+
+			var existingFile = await dbContext.Files
+				.Where(x => x.Sha256Hash == sha256Hash)
+				.Select(x => new { x.Id })
+				.FirstOrDefaultAsync();
+
+			if (existingFile == null)
+			{
+				var dbFile = new DBFile
+				{
+					BoardId = (ushort)boardId,
+					Extension = post.FileExtension.TrimStart('.'),
+					Md5Hash = md5Hash,
+					Sha1Hash = sha1Hash,
+					Sha256Hash = sha256Hash,
+					Size = (uint)imageData.Value.Length
+				};
+
+				await Common.DetermineMediaInfoAsync(imageFilename, dbFile);
+
+				dbContext.Add(dbFile);
+				await dbContext.SaveChangesAsync();
+
+				fileId = dbFile.Id;
+			}
+			else
+			{
+				fileId = existingFile.Id;
+			}
+			
+			var fileMapping = new DBFileMapping
+			{
+				BoardId = (ushort)boardId,
+				PostId = post.PostNumber,
+				FileId = fileId,
+				Filename = Path.GetFileNameWithoutExtension(post.OriginalFilename),
+				Index = 0,
+				IsDeleted = post.FileDeleted.GetValueOrDefault(),
+				IsSpoiler = post.SpoilerImage.GetValueOrDefault()
+			};
+
+			dbContext.Add(fileMapping);
+			await dbContext.SaveChangesAsync();
 		}
 
 		/// <inheritdoc/>
 		public async Task ThreadUntracked(ulong threadId, string board, bool deleted)
 		{
+			await UpdateThread(board, threadId, deleted, !deleted);
+		}
+		
+		protected async Task UpdateThread(string board, ulong threadId, bool deleted, bool archived)
+		{
 			ushort boardId = BoardIdMappings[board];
 
-			await UpdateThread(threadId, boardId, deleted, !deleted);
-		}
-		
-		#region Sql
+			await using var dbContext = GetDBContext();
 
-		/// <summary>
-		/// Inserts a collection of posts into their relevant table on the database.
-		/// </summary>
-		/// <param name="posts">The posts to insert.</param>
-		/// <param name="boardId">The board of the posts.</param>
-		public async Task InsertPosts(ICollection<YotsubaPost> posts, ushort boardId)
-		{
-			const string postInsertQuerySql = "INSERT INTO posts"
-											+ "  (boardid, postid, threadid, contenthtml, author, tripcode, email, datetime, isdeleted)"
-											+ "  VALUES (@boardid, @postid, @threadid, @contenthtml, @author, @tripcode, NULL, @datetime, 0);";
+			var thread = await dbContext.Threads.FirstAsync(x => x.ThreadId == threadId && x.BoardId == boardId);
 
-			const string fileInsertQuerySql = "INSERT INTO files"
-											+ " (BoardId, Md5Hash, Sha1Hash, Sha256Hash, Extension, ImageWidth, ImageHeight, Size)"
-											+ " VALUES (@boardid, @md5hash, @sha1hash, @sha256hash, @extension, @imagewidth, @imageheight, @filesize);"
-											+ " SELECT LAST_INSERT_ID();";
+			thread.IsDeleted = deleted;
+			thread.IsArchived = archived;
 
-			const string mappingInsertQuerySql = "INSERT INTO file_mappings"
-												+ " (BoardId, PostId, FileId, `Index`, Filename, IsSpoiler, IsDeleted)"
-												+ " VALUES (@boardid, @postid, @fileid, @index, @filename, @isspoiler, @isdeleted);";
-			
-			await using var rentedConnection = await ConnectionPool.RentConnectionAsync();
+			thread.LastModified = await dbContext.Posts.Where(x => x.BoardId == boardId && x.ThreadId == threadId)
+				.Select(x => x.DateTime)
+				.DefaultIfEmpty()
+				.MaxAsync();
 
-			Dictionary<string, uint> md5FileDictionary = null;
-
-			if (posts.Any(x => x.FileMd5 != null))
-			{
-				var md5List = posts.Where(x => x.FileMd5 != null).Select(x => $"0x{Utility.ConvertToHex(Convert.FromBase64String(x.FileMd5))}");
-
-				string query = $@"SELECT md5hash, CAST(id AS UNSIGNED)
-								FROM files
-								WHERE md5hash IN ({string.Join(',', md5List)});";
-
-				var threadTable = await rentedConnection.Object.CreateQuery(query).ExecuteTableAsync();
-
-				md5FileDictionary = new Dictionary<string, uint>();
-
-				foreach (DataRow row in threadTable.Rows)
-				{
-					string md5Base64 = Convert.ToBase64String((byte[])row[0]);
-					var fileId = (uint)(ulong)row[1];
-					md5FileDictionary[md5Base64] = fileId;
-				}
-			}
-			
-			using var postInsertQuery = rentedConnection.Object.CreateQuery(postInsertQuerySql, true);
-			using var fileInsertQuery = rentedConnection.Object.CreateQuery(fileInsertQuerySql, true);
-			using var mappingInsertQuery = rentedConnection.Object.CreateQuery(mappingInsertQuerySql, true);
-
-			foreach (var post in posts)
-			{
-				await postInsertQuery
-					  .SetParam("@boardid", boardId)
-					  .SetParam("@postid", post.PostNumber)
-					  .SetParam("@threadid", post.ReplyPostNumber != 0 ? post.ReplyPostNumber : post.PostNumber)
-					  .SetParam("@contenthtml", post.Comment)
-					  .SetParam("@author", post.Name == "Anonymous" ? null : post.Name)
-					  .SetParam("@tripcode", post.Trip)
-					  .SetParam("@datetime", Utility.ConvertGMTTimestamp(post.UnixTimestamp).UtcDateTime)
-					  .ExecuteNonQueryAsync();
-
-				if (post.FileMd5 != null)
-				{
-					if (!md5FileDictionary.TryGetValue(post.FileMd5, out var fileId))
-					{
-						var md5Hash = post.FileMd5 == null ? null : Convert.FromBase64String(post.FileMd5);
-
-						// TODO: these additional fields need to be calculated at some point
-
-						fileId = (uint)await fileInsertQuery
-							.SetParam("@boardid", boardId)
-							.SetParam("@md5hash", md5Hash)
-							.SetParam("@sha1hash", md5Hash)
-							.SetParam("@sha256hash", md5Hash)
-							.SetParam("@extension", post.FileExtension.Substring(1))
-							.SetParam("@imagewidth", null)
-							.SetParam("@imageheight", null)
-							.SetParam("@filesize", 0)
-							.ExecuteScalarAsync<ulong>();
-					}
-
-					await mappingInsertQuery
-						.SetParam("@boardid", boardId)
-						.SetParam("@postid", post.PostNumber)
-						.SetParam("@fileid", fileId)
-						.SetParam("@index", 0)
-						.SetParam("@filename", post.OriginalFilename)
-						.SetParam("@isspoiler", post.SpoilerImage == true ? 1 : 0)
-						.SetParam("@isdeleted", post.FileDeleted == true ? 1 : 0)
-						.ExecuteNonQueryAsync();
-				}
-			}
-		}
-
-		/// <summary>
-		/// Inserts a new thread into the 'threads' metadata table.
-		/// </summary>
-		/// <param name="thread">The thread to insert.</param>
-		/// <param name="boardId">The board of the thread.</param>
-		public async Task InsertThread(YotsubaThread thread, ushort boardId)
-		{
-			string insertQuerySql = "INSERT INTO threads"
-									+ "         (boardid, threadid, title, lastmodified, isarchived, isdeleted)"
-									+ "  VALUES (@boardid, @threadid, @title, '1337-01-01', 0, 0);";
-
-			await using var rentedConnection = await ConnectionPool.RentConnectionAsync();
-
-			using var chainedQuery = rentedConnection.Object.CreateQuery(insertQuerySql, true);
-
-			await chainedQuery
-				.SetParam("@boardid", boardId)
-				.SetParam("@threadid", thread.OriginalPost.PostNumber)
-				.SetParam("@title", string.IsNullOrWhiteSpace(thread.OriginalPost.Subject) ? null : thread.OriginalPost.Subject)
-				.ExecuteNonQueryAsync();
-		}
-		
-		/// <summary>
-		/// Updates an existing post in the database.
-		/// </summary>
-		/// <param name="post">The post to update.</param>
-		/// <param name="boardId">The board that the post belongs to.</param>
-		/// <param name="deleted">True if the post was explicitly deleted, false if it was not.</param>
-		public async Task UpdatePost(YotsubaPost post, ushort boardId, bool deleted)
-		{
-			await using var rentedConnection = await ConnectionPool.RentConnectionAsync();
-
-			string sql = $"UPDATE posts SET "
-						 + "ContentHtml = @html, "
-						 + "IsDeleted = @deleted "
-						 + "WHERE PostId = @postid "
-						 + "AND boardid = @boardid; "
-
-						 + "UPDATE file_mappings fm "
-						 + "INNER JOIN files f ON fm.FileId = f.Id "
-						 + "SET fm.IsDeleted = @imagedeleted "
-						 + "WHERE fm.BoardId = @boardid AND fm.PostId = @postid AND f.Md5Hash = @md5hash;";
-
-			var md5Hash = post.FileMd5 == null ? null : Convert.FromBase64String(post.FileMd5);
-
-			await rentedConnection.Object.CreateQuery(sql)
-								  .SetParam("@html", post.Comment)
-								  .SetParam("@deleted", deleted ? 1 : 0)
-								  .SetParam("@imagedeleted", post.FileDeleted == true ? 1 : 0)
-								  .SetParam("@postid", post.PostNumber)
-								  .SetParam("@boardid", boardId)
-								  .SetParam("@md5hash", md5Hash)
-								  .ExecuteNonQueryAsync();
-		}
-
-		/// <summary>
-		/// Updates an existing post in the database, but only using the post ID (i.e. for use when a post gets deleted).
-		/// </summary>
-		/// <param name="postId">The ID of the post to update.</param>
-		/// <param name="boardId">The board that the post belongs to.</param>
-		/// <param name="deleted">True if the post was explicitly deleted, false if it was not.</param>
-		public async Task UpdatePost(ulong postId, ushort boardId, bool deleted)
-		{
-			await using var rentedConnection = await ConnectionPool.RentConnectionAsync();
-
-			string sql = $"UPDATE posts SET "
-						 + "IsDeleted = @deleted "
-						 + "WHERE PostId = @postid "
-						 + "AND boardid = @boardid";
-
-			await rentedConnection.Object.CreateQuery(sql)
-								  .SetParam("@deleted", deleted ? 1 : 0)
-								  .SetParam("@boardid", boardId)
-								  .SetParam("@postid", postId)
-								  .ExecuteNonQueryAsync();
-		}
-
-		/// <summary>
-		/// Sets a post tracking status in the database.
-		/// </summary>
-		/// <param name="threadId">The number of the post.</param>
-		/// <param name="boardId">The board that the post belongs to.</param>
-		/// <param name="deleted">True if the post was explicitly deleted, false if not.</param>
-		public async Task UpdateThread(ulong threadId, ushort boardId, bool deleted, bool archived, DateTimeOffset? lastModified = null)
-		{
-			await using var rentedConnection = await ConnectionPool.RentConnectionAsync();
-
-			await rentedConnection.Object.CreateQuery("UPDATE threads SET " +
-			                                          "isdeleted = @deleted, " +
-			                                          "isarchived = @archived, " +
-													  "lastmodified = COALESCE(@lastmodified, (SELECT MAX(DateTime) FROM posts WHERE boardid = @boardid and threadid = @threadid GROUP BY threadid), '1000-01-01') " +
-			                                          "WHERE threadid = @threadid AND boardid = @boardid")
-								  .SetParam("@boardid", boardId)
-								  .SetParam("@threadid", threadId)
-								  .SetParam("@deleted", deleted ? 1 : 0)
-								  .SetParam("@archived", archived ? 1 : 0)
-								  .SetParam("@lastmodified", lastModified?.UtcDateTime)
-								  .ExecuteNonQueryAsync();
+			await dbContext.SaveChangesAsync();
 		}
 
 		/// <inheritdoc/>
 		public async Task<ICollection<ExistingThreadInfo>> CheckExistingThreads(IEnumerable<ulong> threadIdsToCheck, string board, bool archivedOnly, bool getMetadata = true)
 		{
-			int archivedInt = archivedOnly ? 1 : 0;
-
 			ushort boardId = BoardIdMappings[board];
 
-			await using var rentedConnection = await ConnectionPool.RentConnectionAsync();
+			await using var dbContext = GetDBContext();
 
-			string query;
+			var query = dbContext.Threads.Where(x => x.BoardId == boardId && threadIdsToCheck.Contains(x.ThreadId));
+
+			if (archivedOnly)
+				query = query.Where(x => x.IsArchived);
+
+			var items = new List<ExistingThreadInfo>();
 
 			if (getMetadata)
 			{
-				query = $@"SELECT ThreadId, LastModified
-						   FROM threads
-						   WHERE (IsArchived = {archivedInt} OR {archivedInt} = 0)
-							 AND BoardId = {boardId}
-							 AND ThreadId IN ({string.Join(',', threadIdsToCheck)})
-						   GROUP BY ThreadId";
-
-				Program.Log(query, true);
-				
-				var threadTable = await rentedConnection.Object.CreateQuery(query).ExecuteTableAsync();
-				
-				var items = new List<ExistingThreadInfo>();
-
-				foreach (DataRow threadRow in threadTable.Rows)
+				foreach (var threadInfo in await query.Select(x => new { x.ThreadId, x.LastModified }).ToArrayAsync())
 				{
 					var hashes = new List<(ulong PostId, uint PostHash)>();
 
-					var rows = rentedConnection.Object
-						.CreateQuery("SELECT p.PostId, p.ContentHtml AS `ContentHtml`, IFNULL(fm.IsSpoiler, 0) AS `IsSpoiler`, IFNULL(fm.IsDeleted, 0) AS `IsImageDeleted`, fm.Filename AS `MediaFilename` " +
-						             "FROM posts p " +
-						             "LEFT JOIN file_mappings fm ON p.BoardId = fm.BoardId AND p.PostId = fm.PostId AND fm.Index = 0 " +
-						             "WHERE p.threadid = @threadid AND p.boardid = @boardid AND p.IsDeleted = 0")
-						.SetParam("@threadid", (ulong)threadRow[0])
-						.SetParam("@boardid", boardId)
-						.ExecuteRowsAsync();
+					var postQuery =
+						dbContext.Posts.Where(x => x.BoardId == boardId && x.ThreadId == threadInfo.ThreadId)
+							//.Join(dbContext.FileMappings, dbPost => new { dbPost.BoardId, dbPost.PostId }, dbFileMapping => new { dbFileMapping.BoardId, dbFileMapping.PostId }, (post, mapping) => new { post, mapping });
+							.SelectMany(x => dbContext.FileMappings.Where(y => y.BoardId == boardId && y.PostId == x.PostId).DefaultIfEmpty(), (post, mapping) => new { post, mapping });
 
-					await foreach (var postRow in rows)
+					var postGroupings =
+						(await postQuery.ToArrayAsync()).GroupByCustomKey(x => x.post.PostId,
+							x => x.post,
+							x => x.mapping);
+
+					foreach (var postGroup in postGroupings)
 					{
-						string filenameNoExt = postRow.GetValue<string>("MediaFilename");
+						var fileMapping = postGroup.FirstOrDefault();
 
-						var hash = CalculatePostHash(postRow.GetValue<string>("ContentHtml"), postRow.GetValue<bool>("IsSpoiler"),
-							postRow.GetValue<bool>("IsImageDeleted"), filenameNoExt, null, null, null, null, null, null, null);
+						var hash = CalculatePostHash(postGroup.Key.ContentHtml, fileMapping?.IsSpoiler,
+							fileMapping?.IsDeleted, fileMapping?.Filename, null, null, null, null, null, null, null);
 
-						hashes.Add(((ulong)postRow[0], hash));
+						hashes.Add((postGroup.Key.PostId, hash));
 					}
 
-					items.Add(new ExistingThreadInfo((ulong)threadRow[0], (DateTime)threadRow[1], hashes));
+					items.Add(new ExistingThreadInfo(threadInfo.ThreadId, new DateTimeOffset(threadInfo.LastModified, TimeSpan.Zero), hashes));
 				}
-
-				return items;
 			}
 			else
 			{
-				query = $@"SELECT ThreadId
-						   FROM threads
-						   WHERE (threads.IsArchived = {archivedInt} OR {archivedInt} = 0)
-							 AND BoardId = {boardId}
-							 AND ThreadId IN ({string.Join(',', threadIdsToCheck)})";
-
-				var chainedQuery = rentedConnection.Object.CreateQuery(query);
-
-				var items = new List<ExistingThreadInfo>();
-
-				await foreach (var row in chainedQuery.ExecuteRowsAsync())
+				await foreach (var threadId in query.Select(x => x.ThreadId).AsAsyncEnumerable())
 				{
-					items.Add(new ExistingThreadInfo((ulong)row[0]));
+					items.Add(new ExistingThreadInfo(threadId));
 				}
-
-				return items;
 			}
-		}
 
-		#endregion
+			return items;
+		}
 
 		public static uint CalculatePostHash(string postHtml, bool? spoilerImage, bool? fileDeleted, string originalFilenameNoExt,
 			bool? archived, bool? closed, bool? bumpLimit, bool? imageLimit, uint? replyCount, ushort? imageCount, int? uniqueIpAddresses)
@@ -411,8 +369,8 @@ namespace Hayden.Consumers
 			// Null bool? values should evaluate to false everywhere
 			static int EvaluateNullableBool(bool? value)
 			{
-				return value.HasValue
-					? (value.Value ? 1 : 2)
+				return value.HasValue && value.Value
+					? 1
 					: 2;
 			}
 
@@ -445,9 +403,6 @@ namespace Hayden.Consumers
 		/// <summary>
 		/// Disposes the object.
 		/// </summary>
-		public void Dispose()
-		{
-			ConnectionPool.Dispose();
-		}
+		public void Dispose() { }
 	}
 }

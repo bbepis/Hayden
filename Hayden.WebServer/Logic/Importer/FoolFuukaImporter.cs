@@ -1,8 +1,8 @@
 ﻿using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using Hayden.Consumers.HaydenMysql.DB;
 using Hayden.Models;
-using Hayden.WebServer.DB;
 
 namespace Hayden.WebServer.Logic.Importer
 {

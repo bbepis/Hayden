@@ -1,4 +1,5 @@
-﻿using System.IO;
+﻿using System;
+using System.IO;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 
@@ -21,7 +22,7 @@ namespace Hayden.WebServer.Controllers
 		[Route("{**path}")]
 		public IActionResult ImagePath(string path)
 		{
-			string fullPath = Path.Combine(Config.Value.FileLocation, path);
+			string fullPath = Path.Combine(Config.Value.FileLocation, path.Replace('/', Path.DirectorySeparatorChar));
 
 			if (!System.IO.File.Exists(fullPath))
 				return NotFound();

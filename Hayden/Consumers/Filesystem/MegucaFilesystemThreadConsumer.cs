@@ -46,37 +46,30 @@ namespace Hayden.Consumers
 			[20] = ".mp4", // HEVC
 		};
 
-		/// <inheritdoc />
-		protected override IList<QueuedImageDownload> CalculateImageDownloads(ThreadUpdateInfo<MegucaThread, MegucaPost> threadUpdateInfo, string threadDirectory, ThreadPointer pointer, string threadThumbsDirectory)
+		protected override IEnumerable<(QueuedImageDownload download, string imageFilename, string thumbFilename)> GetImageDownloadPaths(MegucaPost post, string threadImageDirectory, ThreadPointer pointer,
+			string threadThumbsDirectory)
 		{
-			List<QueuedImageDownload> imageDownloads = new List<QueuedImageDownload>();
+			if (post.Image?.Filename == null)
+				yield break;
 
-			foreach (var post in threadUpdateInfo.NewPosts.Where(x => x.Image?.Filename != null))
+			string fullImageFilename = null, thumbFilename = null;
+			Uri imageUrl = null, thumbUrl = null;
+
+			if (Config.FullImagesEnabled)
 			{
-				if (Config.FullImagesEnabled)
-				{
-					string imageName = $"{post.Image.Sha1Hash}{ExtensionMappings[post.Image.FileType]}";
-
-					string fullImageFilename = Path.Combine(threadDirectory, imageName);
-					string fullImageUrl = $"{ImageboardWebsite}assets/images/src/{imageName}";
-
-					if (!File.Exists(fullImageFilename))
-						imageDownloads.Add(new QueuedImageDownload(new Uri(fullImageUrl), fullImageFilename));
-				}
-
-				if (Config.ThumbnailsEnabled)
-				{
-					string thumbName = $"{post.Image.Sha1Hash}{ExtensionMappings[post.Image.ThumbType]}";
-
-					string fullThumbFilename = Path.Combine(threadThumbsDirectory, thumbName);
-					string fullThumbUrl = $"{ImageboardWebsite}assets/images/thumb/{thumbName}";
-
-					if (!File.Exists(fullThumbFilename))
-						imageDownloads.Add(new QueuedImageDownload(new Uri(fullThumbUrl), fullThumbFilename));
-				}
+				string imageName = $"{post.Image.Sha1Hash}{ExtensionMappings[post.Image.FileType]}";
+				fullImageFilename = Path.Combine(threadImageDirectory, imageName);
+				imageUrl = new Uri($"{ImageboardWebsite}assets/images/src/{imageName}");
 			}
 
-			return imageDownloads;
+			if (Config.ThumbnailsEnabled)
+			{
+				string thumbName = $"{post.Image.Sha1Hash}{ExtensionMappings[post.Image.ThumbType]}";
+				thumbFilename = Path.Combine(threadThumbsDirectory, thumbName);
+				thumbUrl = new Uri($"{ImageboardWebsite}assets/images/thumb/{thumbName}");
+			}
+
+			yield return (new QueuedImageDownload(imageUrl, thumbUrl), fullImageFilename, thumbFilename);
 		}
 
 		/// <inheritdoc />

@@ -1,7 +1,7 @@
 ﻿using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
-namespace Hayden.WebServer.DB
+namespace Hayden.Consumers.HaydenMysql.DB
 {
 	[Table("boards")]
 	public class DBBoard
@@ -18,9 +18,12 @@ namespace Hayden.WebServer.DB
 
 		[Column(TypeName = "varchar(16)")]
 		public string Category { get; set; }
-		
+
 		[Column(TypeName = "tinyint")]
 		public bool IsNSFW { get; set; }
+
+		[Column(TypeName = "tinyint")]
+		public bool IsMultiImage { get; set; }
 
 		[Column(TypeName = "tinyint")]
 		public bool IsReadOnly { get; set; }

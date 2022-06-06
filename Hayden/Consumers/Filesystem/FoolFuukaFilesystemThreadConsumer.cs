@@ -20,30 +20,28 @@ namespace Hayden.Consumers
 				ImageboardWebsite += "/";
 		}
 
-		protected override IList<QueuedImageDownload> CalculateImageDownloads(ThreadUpdateInfo<FoolFuukaThread, FoolFuukaPost> threadUpdateInfo, string threadDirectory, ThreadPointer pointer, string threadThumbsDirectory)
+		protected override IEnumerable<(QueuedImageDownload download, string imageFilename, string thumbFilename)> GetImageDownloadPaths(FoolFuukaPost post,
+			string threadImageDirectory, ThreadPointer pointer, string threadThumbsDirectory)
 		{
-			List<QueuedImageDownload> imageDownloads = new List<QueuedImageDownload>();
+			if (post.Media == null)
+				yield break;
 
-			foreach (var post in threadUpdateInfo.NewPosts.Where(x => x.Media != null))
+			string fullImageFilename = null, thumbFilename = null;
+			Uri imageUrl = null, thumbUrl = null;
+
+			if (Config.FullImagesEnabled)
 			{
-				if (Config.FullImagesEnabled)
-				{
-					string fullImageFilename = Path.Combine(threadDirectory, post.Media.TimestampedFilename);
-
-					if (!File.Exists(fullImageFilename))
-						imageDownloads.Add(new QueuedImageDownload(new Uri(post.Media.FileUrl), fullImageFilename));
-				}
-
-				if (Config.ThumbnailsEnabled && post.Media.TimestampedThumbFilename != null)
-				{
-					string thumbFilename = Path.Combine(threadThumbsDirectory, post.Media.TimestampedThumbFilename);;
-
-					if (!File.Exists(thumbFilename))
-						imageDownloads.Add(new QueuedImageDownload(new Uri(post.Media.ThumbnailUrl), thumbFilename));
-				}
+				fullImageFilename = Path.Combine(threadImageDirectory, post.Media.TimestampedFilename);
+				imageUrl = new Uri(post.Media.FileUrl);
 			}
 
-			return imageDownloads;
+			if (Config.ThumbnailsEnabled && post.Media.TimestampedThumbFilename != null)
+			{
+				thumbFilename = Path.Combine(threadThumbsDirectory, post.Media.TimestampedThumbFilename); ;
+				thumbUrl = new Uri(post.Media.ThumbnailUrl);
+			}
+
+			yield return (new QueuedImageDownload(imageUrl, thumbUrl), fullImageFilename, thumbFilename);
 		}
 
 		protected override void PerformThreadUpdate(ThreadUpdateInfo<FoolFuukaThread, FoolFuukaPost> threadUpdateInfo, FoolFuukaThread writtenThread)

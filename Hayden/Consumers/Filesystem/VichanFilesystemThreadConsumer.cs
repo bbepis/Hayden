@@ -20,57 +20,50 @@ namespace Hayden.Consumers
 				ImageboardWebsite += "/";
 		}
 
-		protected override IList<QueuedImageDownload> CalculateImageDownloads(ThreadUpdateInfo<VichanThread, VichanPost> threadUpdateInfo, string threadDirectory, ThreadPointer pointer, string threadThumbsDirectory)
+		protected override IEnumerable<(QueuedImageDownload download, string imageFilename, string thumbFilename)> GetImageDownloadPaths(VichanPost post, string threadImageDirectory, ThreadPointer pointer,
+			string threadThumbsDirectory)
 		{
-			List<QueuedImageDownload> imageDownloads = new List<QueuedImageDownload>();
-
 			var vichanFiles = new List<VichanExtraFile>();
-			
-			foreach (var post in threadUpdateInfo.NewPosts.Where(x => x.OriginalFilename != null))
-			{
-				if (post.OriginalFilename != null)
-				{
-					vichanFiles.Add(new VichanExtraFile
-					{
-						FileExtension = post.FileExtension,
-						FileSize = post.FileSize,
-						ImageHeight = post.ImageHeight,
-						ImageWidth = post.ImageWidth,
-						OriginalFilename = post.OriginalFilename,
-						ThumbnailHeight = post.ThumbnailHeight,
-						ThumbnailWidth = post.ThumbnailWidth,
-						TimestampedFilename = post.TimestampedFilename
-					});
-				}
 
-				if (post.ExtraFiles != null)
+			if (post.OriginalFilename != null)
+			{
+				vichanFiles.Add(new VichanExtraFile
 				{
-					vichanFiles.AddRange(post.ExtraFiles);
-				}
+					FileExtension = post.FileExtension,
+					FileSize = post.FileSize,
+					ImageHeight = post.ImageHeight,
+					ImageWidth = post.ImageWidth,
+					OriginalFilename = post.OriginalFilename,
+					ThumbnailHeight = post.ThumbnailHeight,
+					ThumbnailWidth = post.ThumbnailWidth,
+					TimestampedFilename = post.TimestampedFilename
+				});
+			}
+
+			if (post.ExtraFiles != null)
+			{
+				vichanFiles.AddRange(post.ExtraFiles);
 			}
 
 			foreach (var vichanFile in vichanFiles)
 			{
+				string fullImageFilename = null, thumbFilename = null;
+				Uri imageUrl = null, thumbUrl = null;
+
 				if (Config.FullImagesEnabled)
 				{
-					string fullImageFilename = Path.Combine(threadDirectory, $"{vichanFile.TimestampedFilename}{vichanFile.FileExtension}");
-					string fullImageUrl = $"{ImageboardWebsite}{pointer.Board}/thumb/{vichanFile.TimestampedFilename}{vichanFile.FileExtension}";
-
-					if (!File.Exists(fullImageFilename))
-						imageDownloads.Add(new QueuedImageDownload(new Uri(fullImageUrl), fullImageFilename));
+					fullImageFilename = Path.Combine(threadImageDirectory, $"{vichanFile.TimestampedFilename}{vichanFile.FileExtension}");
+					imageUrl = new Uri($"{ImageboardWebsite}{pointer.Board}/thumb/{vichanFile.TimestampedFilename}{vichanFile.FileExtension}");
 				}
 
 				if (Config.ThumbnailsEnabled)
 				{
-					string thumbFilename = Path.Combine(threadThumbsDirectory, $"{vichanFile.TimestampedFilename}{vichanFile.FileExtension}");
-					string thumbUrl = $"{ImageboardWebsite}{pointer.Board}/src/{vichanFile.TimestampedFilename}{vichanFile.FileExtension}";
-
-					if (!File.Exists(thumbFilename))
-						imageDownloads.Add(new QueuedImageDownload(new Uri(thumbUrl), thumbFilename));
+					thumbFilename = Path.Combine(threadThumbsDirectory, $"{vichanFile.TimestampedFilename}{vichanFile.FileExtension}");
+					thumbUrl = new Uri($"{ImageboardWebsite}{pointer.Board}/src/{vichanFile.TimestampedFilename}{vichanFile.FileExtension}");
 				}
-			}
 
-			return imageDownloads;
+				yield return (new QueuedImageDownload(imageUrl, thumbUrl), fullImageFilename, thumbFilename);
+			}
 		}
 
 		protected override void PerformThreadUpdate(ThreadUpdateInfo<VichanThread, VichanPost> threadUpdateInfo, VichanThread writtenThread)

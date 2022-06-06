@@ -7,41 +7,71 @@ namespace Hayden
 {
 	public class QueuedImageDownload
 	{
-		public Uri DownloadUri { get; set; }
+		public Uri FullImageUri { get; set; }
 
-		public string DownloadPath { get; set; }
+		public Uri ThumbnailImageUri { get; set; }
+
+		public Dictionary<string, object> Properties { get; set; }
+		
+		public Guid Guid { get; set; }
+
+		public QueuedImageDownload(Uri fullImageUri, Uri thumbnailImageUri, Dictionary<string, object> properties)
+		{
+			FullImageUri = fullImageUri;
+			ThumbnailImageUri = thumbnailImageUri;
+			Properties = properties;
+			Guid = Guid.NewGuid();
+		}
+
+		public QueuedImageDownload(Uri fullImageUri, Uri thumbnailImageUri) : this(fullImageUri, thumbnailImageUri, new Dictionary<string, object>()) { }
 
 		public QueuedImageDownload() { }
 
-		public QueuedImageDownload(Uri downloadUri, string downloadPath)
+		public bool TryGetProperty<T>(string key, out T value)
 		{
-			DownloadUri = downloadUri;
-			DownloadPath = downloadPath;
+			if (Properties == null)
+				throw new InvalidOperationException("Properties object is null");
+
+			if (Properties.TryGetValue(key, out var rawValue))
+			{
+				if (typeof(T) == rawValue.GetType())
+					value = (T)rawValue;
+				else
+					value = (T)Convert.ChangeType(rawValue, typeof(T));
+
+				return true;
+			}
+
+			value = default;
+			return false;
 		}
 
 		protected bool Equals(QueuedImageDownload other)
 		{
-			return DownloadUri.AbsolutePath == other.DownloadUri.AbsolutePath
-				   && DownloadPath == other.DownloadPath;
+			return Equals(FullImageUri, other.FullImageUri) && Equals(ThumbnailImageUri, other.ThumbnailImageUri) && Guid == other.Guid;
 		}
 
 		public override bool Equals(object obj)
 		{
-			if (ReferenceEquals(null, obj))
-				return false;
-			if (ReferenceEquals(this, obj))
-				return true;
-			if (obj.GetType() != GetType())
-				return false;
+			if (ReferenceEquals(null, obj)) return false;
+			if (ReferenceEquals(this, obj)) return true;
+			if (obj.GetType() != this.GetType()) return false;
 			return Equals((QueuedImageDownload)obj);
 		}
 
 		public override int GetHashCode()
 		{
-			unchecked
-			{
-				return ((DownloadUri != null ? DownloadUri.GetHashCode() : 0) * 397) ^ (DownloadPath != null ? DownloadPath.GetHashCode() : 0);
-			}
+			return HashCode.Combine(FullImageUri, ThumbnailImageUri, Guid);
+		}
+
+		public static bool operator ==(QueuedImageDownload left, QueuedImageDownload right)
+		{
+			return Equals(left, right);
+		}
+
+		public static bool operator !=(QueuedImageDownload left, QueuedImageDownload right)
+		{
+			return !Equals(left, right);
 		}
 	}
 

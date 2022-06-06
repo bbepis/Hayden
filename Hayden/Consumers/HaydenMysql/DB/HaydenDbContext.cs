@@ -1,8 +1,14 @@
 ﻿using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
+using Pomelo.EntityFrameworkCore.MySql.Infrastructure;
 
-namespace Hayden.WebServer.DB
+namespace Hayden.Consumers.HaydenMysql.DB
 {
 	public class HaydenDbContext : DbContext
 	{
@@ -20,11 +26,9 @@ namespace Hayden.WebServer.DB
 			modelBuilder.Entity<DBPost>(x => x.HasKey(nameof(DBPost.BoardId), nameof(DBPost.PostId)));
 			modelBuilder.Entity<DBFileMapping>(x => x.HasKey(nameof(DBFileMapping.BoardId), nameof(DBFileMapping.PostId), nameof(DBFileMapping.FileId)));
 
-			modelBuilder.Entity<DBFile>(x =>
-			{
-				x.Property(e => e.Md5ConflictHistory)
-					.HasColumnType("json");
-			});
+			modelBuilder.Entity<DBFile>(x => HasJsonConversion(x.Property<JObject>(nameof(DBFile.AdditionalMetadata))));
+
+			modelBuilder.HasCharSet(CharSet.Utf8Mb4.Name, DelegationModes.ApplyToColumns);
 		}
 
 		public async Task<(DBBoard, DBThread, DBPost[], (DBFileMapping, DBFile)[])> GetThreadInfo(ulong threadId, DBBoard boardObj, bool skipPostInfo = false)
@@ -60,7 +64,7 @@ namespace Hayden.WebServer.DB
 
 		public async Task<(DBBoard, DBThread, DBPost[], (DBFileMapping, DBFile)[])> GetThreadInfo(ulong threadId, string board, bool skipPostInfo = false)
 		{
-			var boardObj = await Boards.FirstAsync(x => x.ShortName == board);
+			var boardObj = await Boards.FirstOrDefaultAsync(x => x.ShortName == board);
 
 			if (boardObj == null)
 				return default;
@@ -70,7 +74,7 @@ namespace Hayden.WebServer.DB
 
 		public async Task<(DBBoard, DBThread, DBPost[], (DBFileMapping, DBFile)[])> GetThreadInfo(ulong threadId, ushort boardId, bool skipPostInfo = false)
 		{
-			var boardObj = await Boards.FirstAsync(x => x.Id == boardId);
+			var boardObj = await Boards.FirstOrDefaultAsync(x => x.Id == boardId);
 
 			if (boardObj == null)
 				return default;
@@ -86,6 +90,27 @@ namespace Hayden.WebServer.DB
 
 			foreach (var entry in changedEntriesCopy)
 				entry.State = EntityState.Detached;
+		}
+
+		private static readonly ValueConverter<JObject, string> JsonValueConverter = new(
+			v => v == null ? null : v.ToString(Formatting.None),
+			v => v == null ? null : JObject.Parse(v)
+		);
+
+		private static readonly ValueComparer<JObject> JsonValueComparer = new(
+			(l, r) => JToken.DeepEquals(l, r),
+			v => v == null ? 0 : v.GetHashCode(),
+			v => v == null ? null : (JObject)v.DeepClone()
+		);
+
+		protected static PropertyBuilder HasJsonConversion(PropertyBuilder<JObject> propertyBuilder)
+		{
+			propertyBuilder.HasConversion(JsonValueConverter);
+			propertyBuilder.Metadata.SetValueConverter(JsonValueConverter);
+			propertyBuilder.Metadata.SetValueComparer(JsonValueComparer);
+			propertyBuilder.HasColumnType("json");
+
+			return propertyBuilder;
 		}
 	}
 }

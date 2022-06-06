@@ -4,9 +4,8 @@ using System.Linq;
 using System.Security.Cryptography;
 using System.Threading;
 using System.Threading.Tasks;
-using Hayden.WebServer.DB;
+using Hayden.Consumers.HaydenMysql.DB;
 using Hayden.WebServer.DB.Elasticsearch;
-using Hayden.WebServer.Logic;
 using Hayden.WebServer.Routing;
 using Hayden.WebServer.View;
 using Microsoft.AspNetCore.Http;
@@ -348,20 +347,18 @@ namespace Hayden.WebServer.Controllers
 			using (var sha1 = SHA1.Create())
 				sha1Hash = sha1.ComputeHash(fileData);
 
-			var base64Name = Utility.ConvertToBase(md5Hash);
+			var destinationFilename = Common.CalculateFilename(Config.Value.FileLocation, boardInfo.ShortName,
+				Common.MediaType.Image, sha256Hash, extension);
 
-			var destinationFilename = Path.Combine(Config.Value.FileLocation, boardInfo.ShortName, "image",
-				$"{base64Name}.{extension}");
-
-			var thumbnailFilename = Path.Combine(Config.Value.FileLocation, boardInfo.ShortName, "thumb",
-				$"{base64Name}.jpg");
+			var thumbnailFilename = Common.CalculateFilename(Config.Value.FileLocation, boardInfo.ShortName,
+				Common.MediaType.Image, sha256Hash, "jpg");
 
 			if (!System.IO.File.Exists(destinationFilename))
 			{
 				using var dataStream = new MemoryStream(fileData);
 				using var thumbStream = new MemoryStream();
 
-				await FileImporterTools.RunStreamCommandAsync("magick", $"convert - -resize 125x125 -background grey -flatten jpg:-", dataStream, thumbStream);
+				await Common.RunStreamCommandAsync("magick", $"convert - -resize 125x125 -background grey -flatten jpg:-", dataStream, thumbStream);
 				
 				await System.IO.File.WriteAllBytesAsync(destinationFilename, fileData);
 				await System.IO.File.WriteAllBytesAsync(thumbnailFilename, thumbStream.ToArray());
@@ -379,7 +376,7 @@ namespace Hayden.WebServer.Controllers
 
 			try
 			{
-				var result = await FileImporterTools.RunJsonCommandAsync("ffprobe", $"-v quiet -hide_banner -show_streams -print_format json \"{destinationFilename}\"");
+				var result = await Common.RunJsonCommandAsync("ffprobe", $"-v quiet -hide_banner -show_streams -print_format json \"{destinationFilename}\"");
 
 				dbFile.ImageWidth = result["streams"][0].Value<ushort>("width");
 				dbFile.ImageHeight = result["streams"][0].Value<ushort>("height");

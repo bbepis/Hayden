@@ -4,11 +4,10 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
-using System.Text.Json;
 using System.Threading.Tasks;
+using Hayden.Consumers.HaydenMysql.DB;
 using Hayden.Contract;
 using Hayden.WebServer.Controllers;
-using Hayden.WebServer.DB;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Newtonsoft.Json;
@@ -189,26 +188,19 @@ namespace Hayden.WebServer.Logic
 								await dbContext.SaveChangesAsync();
 
 								existingDbFile = newDbFile;
-
-								var base64Name = Utility.ConvertToBase(existingDbFile.Md5Hash);
-
-								if (string.IsNullOrWhiteSpace(base64Name))
-									Debugger.Break();
-
-								var destinationFilename = Path.Combine(config.Value.FileLocation, board, "image",
-									$"{base64Name}.{existingDbFile.Extension}");
+								
+								var destinationFilename = Common.CalculateFilename(config.Value.FileLocation, board,
+									Common.MediaType.Image, existingDbFile.Sha256Hash, existingDbFile.Extension);
 
 								if (!File.Exists(destinationFilename))
 								{
 									File.Copy(sourceFilename, destinationFilename);
-
-									//sourceFilename = Path.Combine(subfolder, existingPost.ThreadId.ToString(), "thumbs",
-									//	file.DirectThumbPath);
+									
 									sourceFilename = Path.Combine(subfolder, GetFilesystemThumbnailFilePath(board, thread, post, file));
 
 									// this may not always result in .jpg....
-									destinationFilename = Path.Combine(config.Value.FileLocation, board, "thumb",
-										base64Name + ".jpg");
+									destinationFilename = Common.CalculateFilename(config.Value.FileLocation, board,
+										Common.MediaType.Thumbnail, existingDbFile.Sha256Hash, "jpg");
 
 									File.Copy(sourceFilename, destinationFilename);
 								}
@@ -271,24 +263,8 @@ namespace Hayden.WebServer.Logic
 
 			file ??= new DBFile();
 
-			//var json = await RunMagickCommandAsync("magick" $"convert \"{filename}\" json:");
-
-			//file.ImageWidth = json["image"]["geometry"].Value<ushort>("width");
-			//file.ImageHeight = json["image"]["geometry"].Value<ushort>("height");
-
-			try
-			{
-				var result = await RunJsonCommandAsync("ffprobe", $"-v quiet -hide_banner -show_streams -print_format json \"{filename}\"");
-
-				file.ImageWidth = result["streams"][0].Value<ushort>("width");
-				file.ImageHeight = result["streams"][0].Value<ushort>("height");
-			}
-			catch (Exception ex) when (ex.Message.Contains("magick"))
-			{
-				file.ImageWidth = null;
-				file.ImageHeight = null;
-			}
-
+			
+			
 			using var md5 = MD5.Create();
 			using var sha1 = SHA1.Create();
 			using var sha256 = SHA256.Create();
@@ -297,7 +273,7 @@ namespace Hayden.WebServer.Logic
 
 			long fileSize = fs.Length;
 
-			await using var readBuffer = new RentedMemoryStream((int)fileSize);
+			await using var readBuffer = new RentedMemoryStream((int)fileSize, false);
 
 			await fs.CopyToAsync(readBuffer);
 
@@ -318,61 +294,19 @@ namespace Hayden.WebServer.Logic
 
 			if (md5HashChanged && !newFile)
 			{
-				file.OriginalMd5Hash = oldMd5Hash;
+				var obj = file.AdditionalMetadata ?? new JObject();
 
-				JArray array;
+				const string key = "md5ConflictHistory";
 
-				if (file.Md5ConflictHistory == null)
-					array = new JArray();
-				else
-					array = JArray.Parse(file.Md5ConflictHistory);
-				
+				JArray array = !obj.TryGetValue(key, out var rawArray) ? new JArray() : (JArray)rawArray;
+
 				array.Add(new Md5Conflict(oldMd5Hash, file.Md5Hash));
 
-				file.Md5ConflictHistory = array.ToString(Formatting.None);
+				obj[key] = array;
+				file.AdditionalMetadata = obj;
 			}
 
 			return (file, md5HashChanged);
-		}
-
-		internal static async Task<JObject> RunJsonCommandAsync(string executable, string arguments)
-		{
-			using var process = new Process
-			{
-				StartInfo = new ProcessStartInfo(executable, arguments)
-				{
-					UseShellExecute = false,
-					RedirectStandardError = true,
-					RedirectStandardOutput = true
-				}
-			};
-
-			var tcs = new TaskCompletionSource<object>();
-
-			process.Exited += (sender, e) => tcs.SetResult(null);
-
-			process.EnableRaisingEvents = true;
-
-			process.Start();
-
-			var errorTask = process.StandardError.ReadToEndAsync();
-
-			using var jsonReader = new JsonTextReader(process.StandardOutput);
-
-
-			//_ = process.StandardError.BaseStream.CopyToAsync(Stream.Null);
-
-			var result = await JObject.LoadAsync(jsonReader);
-			var error = await errorTask;
-
-			await tcs.Task;
-
-			if (process.ExitCode > 0)
-			{
-				throw new Exception($"magick returned {process.ExitCode}: {error}");
-			}
-
-			return result;
 		}
 	}
 }

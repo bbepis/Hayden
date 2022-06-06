@@ -4,10 +4,8 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using System;
-using System.Threading.Tasks;
-using Hayden.WebServer.DB;
+using Hayden.Consumers.HaydenMysql.DB;
 using Hayden.WebServer.DB.Elasticsearch;
-using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 using Nest;
@@ -39,12 +37,12 @@ namespace Hayden.WebServer
 			Config = section.Get<Config>();
 			services.Configure<Config>(section);
 
+			string connectionString = section["DBConnectionString"];
+
 			services.AddDbContext<HaydenDbContext>(x =>
-				x.UseMySql(section["DBConnectionString"],
+				x.UseMySql(connectionString, ServerVersion.AutoDetect(connectionString),
 					y =>
 					{
-						y.CharSet(CharSet.Utf8Mb4);
-						y.ServerVersion(new ServerVersion(new Version(8, 0, 26), ServerType.MySql));
 						y.CommandTimeout(86400);
 						y.EnableIndexOptimizedBooleanColumns();
 					}));

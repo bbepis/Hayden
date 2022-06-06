@@ -1,9 +1,8 @@
-﻿using System;
-using System.IO;
+﻿using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
+using Hayden.Consumers.HaydenMysql.DB;
 using Hayden.Models;
-using Hayden.WebServer.DB;
 using Hayden.WebServer.Routing;
 using Hayden.WebServer.View;
 using Microsoft.AspNetCore.Mvc;

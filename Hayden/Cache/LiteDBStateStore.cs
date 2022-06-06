@@ -20,7 +20,7 @@ namespace Hayden.Cache
 		static LiteDbStateStore()
 		{
 			BsonMapper.Global.Entity<QueuedImageDownload>()
-					  .Id(x => x.DownloadPath);
+					  .Id(x => x.Guid);
 		}
 
 		public LiteDbStateStore(string filepath)
@@ -33,19 +33,19 @@ namespace Hayden.Cache
 		}
 
 		/// <inheritdoc/>
-		public async Task WriteDownloadQueue(IReadOnlyCollection<QueuedImageDownload> imageDownloads)
+		public Task WriteDownloadQueue(IReadOnlyCollection<QueuedImageDownload> imageDownloads)
 		{
 			foreach (var item in QueuedImageDownloads.FindAll())
 			{
 				if (!imageDownloads.Contains(item))
 				{
-					QueuedImageDownloads.Delete(item.DownloadPath);
+					QueuedImageDownloads.Delete(item.Guid);
 				}
 			}
 
 			foreach (var item in imageDownloads)
 			{
-				if (!QueuedImageDownloads.Exists(x => x.DownloadPath == item.DownloadPath))
+				if (!QueuedImageDownloads.Exists(x => x.Guid == item.Guid))
 				{
 					QueuedImageDownloads.Insert(item);
 				}
@@ -54,19 +54,23 @@ namespace Hayden.Cache
 			Program.Log("Shrinking state database...", true);
 
 			Database.Shrink();
+
+			return Task.CompletedTask;
 		}
 
 		/// <inheritdoc/>
-		public async Task InsertToDownloadQueue(IReadOnlyCollection<QueuedImageDownload> imageDownloads)
+		public Task InsertToDownloadQueue(IReadOnlyCollection<QueuedImageDownload> imageDownloads)
 		{
 			lock (QueuedImageDownloads)
 				QueuedImageDownloads.Upsert(imageDownloads);
+
+			return Task.CompletedTask;
 		}
 
 		/// <inheritdoc/>
-		public async Task<IList<QueuedImageDownload>> GetDownloadQueue()
+		public Task<IList<QueuedImageDownload>> GetDownloadQueue()
 		{
-			return QueuedImageDownloads.FindAll().ToArray();
+			return Task.FromResult((IList<QueuedImageDownload>)QueuedImageDownloads.FindAll().ToArray());
 		}
 	}
 }

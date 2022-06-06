@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Buffers;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
@@ -98,8 +99,7 @@ namespace Hayden
 
 			int threadCompletedCount = 0;
 			int imageCompletedCount = 0;
-
-			// Downloads a single image.
+			
 			async Task<int> DownloadEnqueuedImage(HttpClientProxy client, QueuedImageDownload queuedDownload)
 			{
 				if (queuedDownload == null)
@@ -113,20 +113,36 @@ namespace Hayden
 					}
 				}
 
-				if (File.Exists(queuedDownload.DownloadPath))
-				{
-					// The file already exists. Return here after incrementing the amount of downloaded images
-					return Interlocked.Increment(ref imageCompletedCount);
-				}
-
 				// Ensure that an image download takes at least as long as 100ms
 				// We don't want to download images too fast
 				var waitTask = Task.Delay(100, token);
 
+				IMemoryOwner<byte> imageBuffer = null, thumbBuffer = null;
+				int imageLength = 0, thumbLength = 0;
+
 				try
 				{
 					// Perform the actual download.
-					await DownloadFileTask(queuedDownload.DownloadUri, queuedDownload.DownloadPath, client.Client);
+
+					if (queuedDownload.FullImageUri != null)
+					{
+						var imageData = await DownloadFileTask(queuedDownload.FullImageUri, client.Client);
+
+						imageBuffer = imageData.buffer;
+						imageLength = imageData.length;
+					}
+
+					if (queuedDownload.ThumbnailImageUri != null)
+					{
+						var thumbData = await DownloadFileTask(queuedDownload.ThumbnailImageUri, client.Client);
+
+						thumbBuffer = thumbData.buffer;
+						thumbLength = thumbData.length;
+					}
+
+					await ThreadConsumer.ProcessFileDownload(queuedDownload,
+						imageBuffer?.Memory.Slice(0, imageLength),
+						thumbBuffer?.Memory.Slice(0, thumbLength));
 				}
 				catch (Exception ex)
 				{
@@ -135,6 +151,11 @@ namespace Hayden
 
 					lock (requeuedImages)
 						requeuedImages.Add(queuedDownload);
+				}
+				finally
+				{
+					imageBuffer?.Dispose();
+					thumbBuffer?.Dispose();
 				}
 
 				await waitTask;
@@ -175,7 +196,7 @@ namespace Hayden
 						// Exit if no images are available
 						return false;
 
-					workerStatuses[id] = $"Downloading image {nextImage.DownloadUri}";
+					workerStatuses[id] = $"Downloading image {nextImage.FullImageUri}";
 
 					int completedCount = await DownloadEnqueuedImage(imageDownloadClient, nextImage);
 
@@ -490,13 +511,10 @@ namespace Hayden
 		/// <param name="imageUrl">The <see cref="Uri"/> of the image.</param>
 		/// <param name="downloadPath">The filepath to download the image to.</param>
 		/// <param name="httpClient">The client to use for the request.</param>
-		private async Task DownloadFileTask(Uri imageUrl, string downloadPath, HttpClient httpClient)
+		private async Task<(IMemoryOwner<byte> buffer, int length)> DownloadFileTask(Uri imageUrl, HttpClient httpClient)
 		{
-			if (File.Exists(downloadPath))
-				return;
+			Program.Log($"Downloading image {imageUrl.Segments.Last()}", true);
 
-			Program.Log($"Downloading image {Path.GetFileName(downloadPath)}", true);
-			
 			using var response = await NetworkPolicies.HttpApiPolicy.ExecuteAsync(() =>
 				{
 					var request = new HttpRequestMessage(HttpMethod.Get, imageUrl);
@@ -504,13 +522,21 @@ namespace Hayden
 				})
 				.ConfigureAwait(false);
 
+			var memoryBufferSize = (int)response.Content.Headers.ContentLength.GetValueOrDefault(8 * 1024 * 1024);
+
+			var rentedMemory = MemoryPool<byte>.Shared.Rent(memoryBufferSize);
+
+			int length;
+
 			await using (var webStream = await response.Content.ReadAsStreamAsync())
-			await using (var fileStream = new FileStream(downloadPath + ".part", FileMode.Create))
+			await using (var memoryStream = new MemorySpanStream(rentedMemory.Memory, false))
 			{
-				await webStream.CopyToAsync(fileStream);
+				await webStream.CopyToAsync(memoryStream);
+
+				length = (int)memoryStream.Position;
 			}
 
-			File.Move(downloadPath + ".part", downloadPath);
+			return (rentedMemory, length);
 		}
 
 		#endregion

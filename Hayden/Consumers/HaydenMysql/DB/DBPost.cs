@@ -1,7 +1,7 @@
 ﻿using System;
 using System.ComponentModel.DataAnnotations.Schema;
 
-namespace Hayden.WebServer.DB
+namespace Hayden.Consumers.HaydenMysql.DB
 {
 	[Table("posts")]
 	public class DBPost
@@ -24,7 +24,10 @@ namespace Hayden.WebServer.DB
 		public string Email { get; set; }
 
 		public DateTime DateTime { get; set; }
-		
+
 		public bool IsDeleted { get; set; }
+
+		[Column(TypeName = "json")]
+		public string AdditionalMetadata { get; set; }
 	}
 }

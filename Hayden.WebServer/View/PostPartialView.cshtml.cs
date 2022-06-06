@@ -1,6 +1,6 @@
 ﻿using System;
 using System.Linq;
-using Hayden.WebServer.DB;
+using Hayden.Consumers.HaydenMysql.DB;
 
 namespace Hayden.WebServer.View
 {
@@ -23,7 +23,7 @@ namespace Hayden.WebServer.View
 				int i = 0;
 				foreach (var mapping in FileMappings)
 				{
-					string b36Name = Utility.ConvertToBase(mapping.file.Md5Hash);
+					string b36Name = Utility.ConvertToBase(mapping.file.Sha256Hash);
 
 					var prefix = config.ImagePrefix ?? "image";
 
@@ -42,7 +42,7 @@ namespace Hayden.WebServer.View
 
 		public static (string imageUrl, string thumbnailUrl) GenerateUrls(DBFile file, string board, Config config)
 		{
-			string b36Name = Utility.ConvertToBase(file.Md5Hash);
+			string b36Name = Utility.ConvertToBase(file.Sha256Hash);
 
 			var prefix = config.ImagePrefix ?? "image";
 

@@ -63,6 +63,9 @@ namespace Hayden.Consumers
 						return;
 					}
 
+					string fullImageFilename = null, thumbFilename = null;
+					Uri imageUrl = null, thumbUrl = null;
+
 					if (Config.FullImagesEnabled)
 					{
 						string fullImageName = mediaInfo?.MediaFilename ?? post.TimestampedFilenameFull;
@@ -71,10 +74,8 @@ namespace Hayden.Consumers
 						string radixDirectory = Path.Combine(Config.DownloadLocation, board, "image", radixString);
 						Directory.CreateDirectory(radixDirectory);
 
-						string fullImageFilename = Path.Combine(radixDirectory, fullImageName);
-						string fullImageUrl = $"https://i.4cdn.org/{board}/{post.TimestampedFilenameFull}";
-
-						imageDownloads.Add(new QueuedImageDownload(new Uri(fullImageUrl), fullImageFilename));
+						fullImageFilename = Path.Combine(radixDirectory, fullImageName);
+						imageUrl = new Uri($"https://i.4cdn.org/{board}/{post.TimestampedFilenameFull}");
 					}
 
 					if (Config.ThumbnailsEnabled)
@@ -90,11 +91,15 @@ namespace Hayden.Consumers
 						string radixDirectory = Path.Combine(Config.DownloadLocation, board, "thumb", radixString);
 						Directory.CreateDirectory(radixDirectory);
 
-						string thumbFilename = Path.Combine(radixDirectory, thumbImageName);
-						string thumbUrl = $"https://i.4cdn.org/{board}/{post.TimestampedFilename}s.jpg";
-
-						imageDownloads.Add(new QueuedImageDownload(new Uri(thumbUrl), thumbFilename));
+						thumbFilename = Path.Combine(radixDirectory, thumbImageName);
+						thumbUrl = new Uri($"https://i.4cdn.org/{board}/{post.TimestampedFilename}s.jpg");
 					}
+
+					imageDownloads.Add(new QueuedImageDownload(imageUrl, thumbUrl, new ()
+					{
+						["imageFilename"] = fullImageFilename,
+						["thumbFilename"] = thumbFilename
+					}));
 				}
 			}
 			
@@ -122,6 +127,21 @@ namespace Hayden.Consumers
 			}
 
 			return imageDownloads;
+		}
+
+		public async Task ProcessFileDownload(QueuedImageDownload queuedImageDownload, Memory<byte>? imageData, Memory<byte>? thumbnailData)
+		{
+			if (!queuedImageDownload.TryGetProperty("imageFilename", out string imageFilename)
+			    || !queuedImageDownload.TryGetProperty("thumbFilename", out string thumbFilename))
+			{
+				throw new InvalidOperationException("Queued image download did not have the required properties");
+			}
+
+			if (imageData.HasValue)
+				await Utility.WriteAllBytesAsync(imageFilename, imageData.Value);
+
+			if (thumbnailData.HasValue)
+				await Utility.WriteAllBytesAsync(thumbFilename, thumbnailData.Value);
 		}
 
 		/// <inheritdoc/>

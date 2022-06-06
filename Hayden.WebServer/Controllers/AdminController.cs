@@ -3,20 +3,18 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Runtime;
-using System.Security.Cryptography;
 using System.Threading;
 using System.Threading.Tasks;
-using Hayden.Models;
-using Hayden.WebServer.DB;
+using Hayden.Consumers.HaydenMysql.DB;
 using Hayden.WebServer.DB.Elasticsearch;
+using Hayden.WebServer.Logic;
+using Hayden.WebServer.Logic.Importer;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Nest;
-using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
 
 namespace Hayden.WebServer.Controllers
 {
@@ -118,10 +116,10 @@ namespace Hayden.WebServer.Controllers
 						Progress = current / total;
 						CurrentStatus.SetBox(0, Interlocked.Increment(ref current));
 
-						var filename = Path.Combine(config.Value.FileLocation, boards[file.BoardId].ShortName, "image",
-							Path.ChangeExtension(Utility.ConvertToBase(file.Md5Hash), file.Extension));
+						var filename = Common.CalculateFilename(config.Value.FileLocation,
+							boards[file.BoardId].ShortName, Common.MediaType.Image, file.Sha256Hash, file.Extension);
 
-						await UpdateDbFile(filename, file);
+						(DBFile _, bool md5Changed) = await FileImporterTools.UpdateDbFile(filename, file);
 
 						try
 						{
@@ -145,94 +143,6 @@ namespace Hayden.WebServer.Controllers
 				Progress = 1;
 				CurrentStatus = "Done";
 			}, serviceProvider);
-		}
-
-		private static async Task<DBFile> UpdateDbFile(string filename, DBFile file = null)
-		{
-			file ??= new DBFile();
-
-			//var json = await RunMagickCommandAsync("magick" $"convert \"{filename}\" json:");
-
-			//file.ImageWidth = json["image"]["geometry"].Value<ushort>("width");
-			//file.ImageHeight = json["image"]["geometry"].Value<ushort>("height");
-
-			try
-			{
-				var result = await RunJsonCommandAsync("ffprobe", $"-v quiet -hide_banner -show_streams -print_format json \"{filename}\"");
-
-				file.ImageWidth = result["streams"][0].Value<ushort>("width");
-				file.ImageHeight = result["streams"][0].Value<ushort>("height");
-			}
-			catch (Exception ex) when (ex.Message.Contains("magick"))
-			{
-				file.ImageWidth = null;
-				file.ImageHeight = null;
-			}
-
-			using var md5 = MD5.Create();
-			using var sha1 = SHA1.Create();
-			using var sha256 = SHA256.Create();
-
-			await using var fs = new FileStream(filename, FileMode.Open, FileAccess.Read, FileShare.Read);
-
-			long fileSize = fs.Length;
-
-			await using var readBuffer = new RentedMemoryStream((int)fileSize);
-
-			await fs.CopyToAsync(readBuffer);
-
-			readBuffer.Position = 0;
-			file.Md5Hash = md5.ComputeHash(readBuffer);
-
-			readBuffer.Position = 0;
-			file.Sha1Hash = sha1.ComputeHash(readBuffer);
-
-			readBuffer.Position = 0;
-			file.Sha256Hash = sha256.ComputeHash(readBuffer);
-
-			file.Size = (uint)fileSize;
-
-			return file;
-		}
-
-		private static async Task<JObject> RunJsonCommandAsync(string executable, string arguments)
-		{
-			using var process = new Process
-			{
-				StartInfo = new ProcessStartInfo(executable, arguments)
-				{
-					UseShellExecute = false,
-					RedirectStandardError = true,
-					RedirectStandardOutput = true
-				}
-			};
-
-			var tcs = new TaskCompletionSource<object>();
-
-			process.Exited += (sender, e) => tcs.SetResult(null);
-
-			process.EnableRaisingEvents = true;
-
-			process.Start();
-			
-			var errorTask = process.StandardError.ReadToEndAsync();
-
-			using var jsonReader = new JsonTextReader(process.StandardOutput);
-
-
-			//_ = process.StandardError.BaseStream.CopyToAsync(Stream.Null);
-			
-			var result = await JObject.LoadAsync(jsonReader);
-			var error = await errorTask;
-
-			await tcs.Task;
-
-			if (process.ExitCode > 0)
-			{
-				throw new Exception($"magick returned {process.ExitCode}: {error}");
-			}
-
-			return result;
 		}
 		
 		[Route("import")]

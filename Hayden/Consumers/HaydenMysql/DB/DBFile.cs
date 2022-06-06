@@ -1,10 +1,8 @@
-﻿using System.Collections.Generic;
-using System.ComponentModel.DataAnnotations;
+﻿using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
-using System.Text.Json;
 using Newtonsoft.Json.Linq;
 
-namespace Hayden.WebServer.DB
+namespace Hayden.Consumers.HaydenMysql.DB
 {
 	[Table("files")]
 	public class DBFile
@@ -24,20 +22,17 @@ namespace Hayden.WebServer.DB
 		[Column(TypeName = "binary(32)")]
 		public byte[] Sha256Hash { get; set; }
 
-		[Column(TypeName = "binary(16)")]
-		public byte[] OriginalMd5Hash { get; set; }
-
 		[Column(TypeName = "varchar(4)")]
 		public string Extension { get; set; }
-		
+
 		public ushort? ImageWidth { get; set; }
-		
+
 		public ushort? ImageHeight { get; set; }
-		
+
 		public uint Size { get; set; }
 
 		[Column(TypeName = "json")]
-		public string Md5ConflictHistory { get; set; }
+		public JObject AdditionalMetadata { get; set; }
 	}
 
 	public class Md5Conflict

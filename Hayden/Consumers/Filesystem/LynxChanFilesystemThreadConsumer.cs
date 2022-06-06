@@ -20,32 +20,31 @@ namespace Hayden.Consumers
 				ImageboardWebsite += "/";
 		}
 
-		protected override IList<QueuedImageDownload> CalculateImageDownloads(ThreadUpdateInfo<LynxChanThread, LynxChanPost> threadUpdateInfo, string threadDirectory, ThreadPointer pointer, string threadThumbsDirectory)
+		protected override IEnumerable<(QueuedImageDownload download, string imageFilename, string thumbFilename)> GetImageDownloadPaths(LynxChanPost post, string threadImageDirectory, ThreadPointer pointer,
+			string threadThumbsDirectory)
 		{
-			List<QueuedImageDownload> imageDownloads = new List<QueuedImageDownload>();
+			if (post.Files == null)
+				yield break;
 
-			foreach (var file in threadUpdateInfo.NewPosts.SelectMany(x => x.Files))
+			foreach (var file in post.Files)
 			{
+				string fullImageFilename = null, thumbFilename = null;
+				Uri imageUrl = null, thumbUrl = null;
+
 				if (Config.FullImagesEnabled)
 				{
-					string fullImageFilename = Path.Combine(threadDirectory, file.DirectPath);
-					string fullImageUrl = $"{ImageboardWebsite}{file.Path.Substring(1)}";
-
-					if (!File.Exists(fullImageFilename))
-						imageDownloads.Add(new QueuedImageDownload(new Uri(fullImageUrl), fullImageFilename));
+					fullImageFilename = Path.Combine(threadImageDirectory, file.DirectPath);
+					imageUrl = new Uri($"{ImageboardWebsite}{file.Path.Substring(1)}");
 				}
 
-				if (Config.ThumbnailsEnabled && file.ThumbnailUrl != null)
+				if (Config.ThumbnailsEnabled)
 				{
-					string thumbFilename = Path.Combine(threadThumbsDirectory, file.DirectThumbPath);
-					string thumbUrl = $"{ImageboardWebsite}{file.ThumbnailUrl.Substring(1)}";
-
-					if (!File.Exists(thumbFilename))
-						imageDownloads.Add(new QueuedImageDownload(new Uri(thumbUrl), thumbFilename));
+					thumbFilename = Path.Combine(threadThumbsDirectory, file.DirectThumbPath);
+					thumbUrl = new Uri($"{ImageboardWebsite}{file.ThumbnailUrl.Substring(1)}");
 				}
-			}
 
-			return imageDownloads;
+				yield return (new QueuedImageDownload(imageUrl, thumbUrl), fullImageFilename, thumbFilename);
+			}
 		}
 
 		protected override void PerformThreadUpdate(ThreadUpdateInfo<LynxChanThread, LynxChanPost> threadUpdateInfo, LynxChanThread writtenThread)

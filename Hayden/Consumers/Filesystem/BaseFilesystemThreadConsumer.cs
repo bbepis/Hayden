@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Buffers;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -50,7 +51,7 @@ namespace Hayden.Consumers
 		/// </summary>
 		public virtual Task InitializeAsync() => Task.CompletedTask;
 
-		public async Task<IList<QueuedImageDownload>> ConsumeThread(ThreadUpdateInfo<TThread, TPost> threadUpdateInfo)
+		public Task<IList<QueuedImageDownload>> ConsumeThread(ThreadUpdateInfo<TThread, TPost> threadUpdateInfo)
 		{
 			var pointer = threadUpdateInfo.ThreadPointer;
 
@@ -74,13 +75,67 @@ namespace Hayden.Consumers
 
 			// download files from new posts only
 			
-			return CalculateImageDownloads(threadUpdateInfo, threadDirectory, pointer, threadThumbsDirectory);
+			return Task.FromResult(CalculateImageDownloads(threadUpdateInfo, threadDirectory, pointer, threadThumbsDirectory));
 		}
 
-		protected abstract IList<QueuedImageDownload> CalculateImageDownloads(ThreadUpdateInfo<TThread, TPost> threadUpdateInfo,
-			string threadDirectory,
+		protected virtual IList<QueuedImageDownload> CalculateImageDownloads(
+			ThreadUpdateInfo<TThread, TPost> threadUpdateInfo,
+			string threadImageDirectory,
 			ThreadPointer pointer,
-			string threadThumbsDirectory);
+			string threadThumbsDirectory)
+		{
+			if (!Config.FullImagesEnabled && !Config.ThumbnailsEnabled)
+				return Array.Empty<QueuedImageDownload>();
+
+			List<QueuedImageDownload> imageDownloads = new List<QueuedImageDownload>();
+
+			foreach (var post in threadUpdateInfo.NewPosts)
+			{
+				foreach (var imageData in GetImageDownloadPaths(post, threadImageDirectory, pointer, threadThumbsDirectory))
+				{
+					var (queuedDownload, imageFilename, thumbFilename) = imageData;
+
+					if (queuedDownload == null)
+						continue;
+
+					if (imageFilename != null && File.Exists(imageFilename))
+						queuedDownload.FullImageUri = null;
+
+					if (thumbFilename != null && File.Exists(thumbFilename))
+						queuedDownload.ThumbnailImageUri = null;
+
+					queuedDownload.Properties["imageFilename"] = imageFilename;
+					queuedDownload.Properties["thumbFilename"] = thumbFilename;
+
+					imageDownloads.Add(queuedDownload);
+				}
+			}
+
+			return imageDownloads;
+		}
+
+		protected virtual IEnumerable<(QueuedImageDownload download, string imageFilename, string thumbFilename)> GetImageDownloadPaths(TPost post,
+			string threadImageDirectory,
+			ThreadPointer pointer,
+			string threadThumbsDirectory)
+		{
+			throw new InvalidOperationException($"Either {nameof(GetImageDownloadPaths)} or {nameof(CalculateImageDownloads)} must be overridden");
+		}
+
+		public virtual async Task ProcessFileDownload(QueuedImageDownload queuedImageDownload, Memory<byte>? imageData, Memory<byte>? thumbnailData)
+		{
+			if (!queuedImageDownload.TryGetProperty("imageFilename", out string imageFilename)
+			    || !queuedImageDownload.TryGetProperty("thumbFilename", out string thumbFilename))
+			{
+				throw new InvalidOperationException("Queued image download did not have the required properties");
+			}
+
+			if (imageData.HasValue)
+				await Utility.WriteAllBytesAsync(imageFilename, imageData.Value);
+
+			if (thumbnailData.HasValue)
+				await Utility.WriteAllBytesAsync(thumbFilename, thumbnailData.Value);
+		}
 
 		public void PerformJsonThreadUpdate(ThreadUpdateInfo<TThread, TPost> threadUpdateInfo, string threadFileName)
 		{

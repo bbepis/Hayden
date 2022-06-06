@@ -4,11 +4,11 @@ using System.IO;
 
 namespace Hayden
 {
-	public class RentedMemoryStream : Stream
+	public class MemorySpanStream : Stream
 	{
-		public IMemoryOwner<byte> RentedMemory { get; }
+		public Memory<byte> Memory { get; }
 
-		public int Capacity => RentedMemory.Memory.Length;
+		public int Capacity => Memory.Length;
 
 		public override bool CanRead => true;
 		public override bool CanSeek => true;
@@ -18,11 +18,14 @@ namespace Hayden
 		public override long Length => _length;
 		public override long Position { get; set; } = 0;
 
-		public RentedMemoryStream(int capacity) : this(MemoryPool<byte>.Shared.Rent(capacity)) { }
+		public MemorySpanStream(int capacity, bool setLength) : this(new byte[capacity], setLength) { }
 
-		public RentedMemoryStream(IMemoryOwner<byte> rentedMemory)
+		public MemorySpanStream(Memory<byte> memory, bool setLength)
 		{
-			RentedMemory = rentedMemory;
+			Memory = memory;
+
+			if (setLength)
+				_length = memory.Length;
 		}
 
 		public override int Read(byte[] buffer, int offset, int count)
@@ -37,7 +40,7 @@ namespace Hayden
 			if (maxRead <= 0)
 				return 0;
 
-			RentedMemory.Memory.Span.Slice((int)Position, maxRead).CopyTo(buffer);
+			Memory.Span.Slice((int)Position, maxRead).CopyTo(buffer);
 
 			Position += maxRead;
 
@@ -75,7 +78,7 @@ namespace Hayden
 				throw new InvalidOperationException("Write would exceed stream capacity");
 
 
-			buffer.CopyTo(RentedMemory.Memory.Span.Slice((int)Position));
+			buffer.CopyTo(Memory.Span.Slice((int)Position));
 
 			Position += maxWrite;
 
@@ -87,12 +90,26 @@ namespace Hayden
 		{
 			var buffer = new byte[Length];
 
-			RentedMemory.Memory.Slice(0, (int)Length).CopyTo(buffer);
+			Memory.Slice(0, (int)Length).CopyTo(buffer);
 
 			return buffer;
 		}
 
 		public override void Flush() { }
+
+		protected override void Dispose(bool disposing)	{ }
+	}
+
+	public class RentedMemoryStream : MemorySpanStream
+	{
+		public IMemoryOwner<byte> RentedMemory { get; }
+
+		public RentedMemoryStream(int capacity, bool setLength) : this(MemoryPool<byte>.Shared.Rent(capacity), setLength) { }
+
+		public RentedMemoryStream(IMemoryOwner<byte> rentedMemory, bool setLength) : base(rentedMemory.Memory, setLength)
+		{
+			RentedMemory = rentedMemory;
+		}
 
 		protected override void Dispose(bool disposing)
 		{
