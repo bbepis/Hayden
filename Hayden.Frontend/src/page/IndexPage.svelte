@@ -3,7 +3,9 @@
     import type { ThreadModel } from "../data/data";
     import { Utility } from "../data/utility";
 
-    let dataPromise: Promise<ThreadModel[]> = Utility.FetchData("/index");
+    export let dataPromise: Promise<ThreadModel[]>;
+
+    //let dataPromise: Promise<ThreadModel[]> = Utility.FetchData("/index");
 </script>
 
 {#await dataPromise}

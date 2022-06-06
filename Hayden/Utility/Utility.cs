@@ -479,5 +479,13 @@ namespace Hayden
 
 			FNV1aHash32(0x00, ref state);
 		}
+
+		public static string TrimAndNullify(this string input)
+		{
+			if (string.IsNullOrWhiteSpace(input))
+				return null;
+
+			return input.Trim();
+		}
 	}
 }

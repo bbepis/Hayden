@@ -27,12 +27,15 @@ namespace Hayden.WebServer.DB
 			});
 		}
 
-		public async Task<(DBBoard, DBThread, DBPost[], (DBFileMapping, DBFile)[])> GetThreadInfo(ulong threadId, DBBoard boardObj)
+		public async Task<(DBBoard, DBThread, DBPost[], (DBFileMapping, DBFile)[])> GetThreadInfo(ulong threadId, DBBoard boardObj, bool skipPostInfo = false)
 		{
 			var thread = await Threads.AsNoTracking().FirstOrDefaultAsync(x => x.BoardId == boardObj.Id && x.ThreadId == threadId);
 
 			if (thread == null)
 				return (boardObj, null, null, null);
+
+			if (skipPostInfo)
+				return (boardObj, thread, null, null);
 
 			var posts = await Posts.AsNoTracking()
 				.Where(x => x.BoardId == boardObj.Id && x.ThreadId == threadId)
@@ -55,24 +58,24 @@ namespace Hayden.WebServer.DB
 			return (boardObj, thread, posts, fileMappings.Select(x => (x.mapping, x.file)).ToArray());
 		}
 
-		public async Task<(DBBoard, DBThread, DBPost[], (DBFileMapping, DBFile)[])> GetThreadInfo(ulong threadId, string board)
+		public async Task<(DBBoard, DBThread, DBPost[], (DBFileMapping, DBFile)[])> GetThreadInfo(ulong threadId, string board, bool skipPostInfo = false)
 		{
 			var boardObj = await Boards.FirstAsync(x => x.ShortName == board);
 
 			if (boardObj == null)
 				return default;
 
-			return await GetThreadInfo(threadId, boardObj);
+			return await GetThreadInfo(threadId, boardObj, skipPostInfo);
 		}
 
-		public async Task<(DBBoard, DBThread, DBPost[], (DBFileMapping, DBFile)[])> GetThreadInfo(ulong threadId, ushort boardId)
+		public async Task<(DBBoard, DBThread, DBPost[], (DBFileMapping, DBFile)[])> GetThreadInfo(ulong threadId, ushort boardId, bool skipPostInfo = false)
 		{
 			var boardObj = await Boards.FirstAsync(x => x.Id == boardId);
 
 			if (boardObj == null)
 				return default;
 
-			return await GetThreadInfo(threadId, boardObj);
+			return await GetThreadInfo(threadId, boardObj, skipPostInfo);
 		}
 
 		public void DetachAllEntities()

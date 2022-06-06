@@ -21,5 +21,8 @@ namespace Hayden.WebServer.DB
 		
 		[Column(TypeName = "tinyint")]
 		public bool IsNSFW { get; set; }
+
+		[Column(TypeName = "tinyint")]
+		public bool IsReadOnly { get; set; }
 	}
 }

@@ -82,15 +82,31 @@ export class Utility {
 		return await result.json();
 	}
 
-    static async Post(endpoint: string): Promise<any> {
+    static async PostForm(endpoint: string, data: any): Promise<Response> {
 
         let url = this.infoObject.apiEndpoint + endpoint;
 
-		const result = await fetch(url);
+        let formData = new FormData();
+
+        for (var key of Object.keys(data)) {
+            const value = data[key];
+
+            if (value === null || value === undefined)
+                continue;
+
+            formData.set(key, data[key]);
+        }
+
+		const result = await fetch(url, {
+            method: "post",
+            body: formData
+        });
 		
-		if (!result.ok) {
-			throw result;
-		}
+		// if (!result.ok) {
+		// 	throw result;
+		// }
+
+        return result;
 	}
 
     static ToInstance<T>(obj: T, json: string) : T {

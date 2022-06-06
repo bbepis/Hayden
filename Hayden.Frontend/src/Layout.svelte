@@ -1,3 +1,10 @@
+<script lang="ts">
+    import type { BoardModel } from "./data/data";
+    import { Utility } from "./data/utility";
+
+    let boardInfoPromise = <Promise<BoardModel[]>>Utility.FetchData("/board/all/info");
+</script>
+
 <header>
     <nav class="navbar navbar-expand-sm navbar-toggleable-sm navbar-light bg-white border-bottom box-shadow mb-3">
         <div class="container">
@@ -10,6 +17,21 @@
                 <ul class="navbar-nav flex-grow-1">
                     <li class="nav-item">
                         <a class="nav-link text-dark" href="/">Home</a>
+                    </li>
+                    <li class="nav-item dropdown">
+                        <!-- svelte-ignore a11y-invalid-attribute -->
+                        <a class="nav-link dropdown-toggle" href="#" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+                            Boards
+                        </a>
+                        <div class="dropdown-menu" aria-labelledby="navbarDropdown">
+                            {#await boardInfoPromise}
+                                <div class="dropdown-item">Loading...</div>
+                            {:then boardInfo}
+                                {#each boardInfo as board}
+                                    <a class="dropdown-item" href="/board/{board.shortName}">{board.longName}</a>
+                                {/each}
+                            {/await}
+                        </div>
                     </li>
                     <li class="nav-item">
                         <a class="nav-link text-dark" href="/Admin">Admin</a>
@@ -25,7 +47,7 @@
         </div>
     </nav>
 </header>
-<div class="container">
+<div class="mx-4">
     <main role="main" class="pb-3">
         <slot></slot>
     </main>

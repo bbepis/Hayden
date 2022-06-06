@@ -10,6 +10,7 @@ export class BoardModel {
     longName: string;
     category: string;
     isNSFW: boolean;
+    isReadOnly: boolean;
 }
 
 export class ThreadModel {

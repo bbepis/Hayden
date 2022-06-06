@@ -59,6 +59,13 @@ namespace Hayden.WebServer.Controllers
 		}
 
 		[HttpGet]
+		[Route("board/{board}")]
+		public async Task<IActionResult> BoardIndex(string board)
+		{
+			return NotFound();
+		}
+
+		[HttpGet]
 		[Route("search")]
 		public IActionResult Search()
 		{

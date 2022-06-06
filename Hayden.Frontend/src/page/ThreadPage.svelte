@@ -7,13 +7,116 @@
     export let board: string;
     export let threadId: number;
 
-    let dataPromise: Promise<ThreadModel> = Utility.FetchData(`/${board}/thread/${threadId}`);
+    let thread: ThreadModel = null;
+    let errorOccurred: Boolean = false;
+
+    let formName: string = null;
+    let formText: string = null;
+    let formFiles: FileList = null;
+
+    let isRefreshing: Boolean = false;
+
+    async function FetchThread() {
+        try {
+            thread = <ThreadModel>(await Utility.FetchData(`/${board}/thread/${threadId}`));
+            errorOccurred = false;
+        }
+        catch {
+            errorOccurred = true;
+        }
+    }
+
+    async function Refresh() {
+        isRefreshing = true;
+        await FetchThread();
+        isRefreshing = false;
+    }
+
+    let isPosting = false;
+
+    async function Post() {
+
+        if ((formText === "" || formText === null) && (formFiles === null || formFiles.length === 0))
+            return;
+
+        if (isPosting)
+            return;
+
+        isPosting = true;
+
+        const postObject = {
+            name: formName,
+            text: formText,
+            file: formFiles !== null ? formFiles[0] : null,
+            board: board,
+            threadId: threadId
+        };
+
+        console.log(postObject);
+
+        try {
+            const response = await Utility.PostForm("/makepost", postObject);
+
+            console.log(response);
+
+            if (response.ok)
+            {
+                Refresh();
+                formName = null;
+                formText = null;
+                formFiles = null;
+            }
+        }
+        catch (e) {
+            console.log(e);
+        }
+
+        isPosting = false;
+    }
+
+    FetchThread();
 </script>
 
-{#await dataPromise}
-    <p>Loading...</p>
-{:then thread} 
-    <Thread {thread} jumpToHash={true} />
-{:catch}
+<style>
+    #reply-box {
+        width: 600px;
+    }
+
+    .input-row {
+        padding: 5px 0px;
+    }
+</style>
+
+{#if errorOccurred}
     <p>Error</p>
-{/await}
+{:else if thread === null}
+    <p>Loading...</p>
+{:else}
+    <Thread {thread} jumpToHash={true} />
+
+    {#if thread.board.isReadOnly === false && thread.archived === false}
+        <div id="reply-box" class="rounded border mb-5 container">
+            <div class="row input-row">
+                <div class="col-3">Name</div>
+                <div class="col-9"><input class="w-100" type="text" bind:value={formName} /></div>
+            </div>
+            <div class="row input-row">
+                <div class="col-3">Comment</div>
+                <div class="col-9"><textarea class="w-100" bind:value={formText}></textarea></div>
+            </div>
+            <div class="row input-row">
+                <div class="col-3">File</div>
+                <div class="col-9"><input type="file" bind:files={formFiles} /></div>
+            </div>
+            <div class="row input-row">
+                <button on:click={Post} class="mx-3 form-control btn btn-outline-secondary">Reply</button>
+            </div>
+        </div>
+    {/if}
+
+    {#if isRefreshing}
+        <p>Refreshing...</p>
+    {/if}
+
+    <button class="btn btn-outline-secondary" on:click={Refresh}>Refresh</button>
+{/if}
