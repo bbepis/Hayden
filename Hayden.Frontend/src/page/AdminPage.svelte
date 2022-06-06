@@ -3,6 +3,7 @@
     import { progressStore, statusStore } from "../stores.js";
 
     let timeout : number;
+    let persistObject = { active: true };
 
     async function updateProgress() {
         try {
@@ -13,6 +14,9 @@
             $progressStore = responseJson.progress * 100;
         }
         catch {  }
+
+        if (!persistObject.active)
+            return;
 
         timeout = window.setTimeout(() => updateProgress(), 1000);
     }
@@ -31,7 +35,10 @@
 
     onMount(() => updateProgress());
 
-    onDestroy(() => window.clearTimeout(timeout));
+    onDestroy(() => {
+        window.clearTimeout(timeout);
+        persistObject.active = false;
+    });
 </script>
 
 <h2>Admin</h2>
