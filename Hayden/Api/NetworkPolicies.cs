@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Net;
 using System.Net.Http;
+using System.Threading.Tasks;
 using Polly;
 using Polly.Timeout;
 
@@ -28,9 +29,10 @@ namespace Hayden.Api
 									+ TimeSpan.FromMilliseconds(random.Next(0, 5000)) // plus some jitter: up to 5 seconds
 				)
 				.WrapAsync(
-					Policy.TimeoutAsync(10, TimeoutStrategy.Optimistic, async (context, span, failedTask) =>
+					Policy.TimeoutAsync(10, TimeoutStrategy.Optimistic, (context, span, failedTask) =>
 					{
 						Program.Log($"Timeout occurred: {context.OperationKey}", true);
+						return Task.CompletedTask;
 					})
 				);
 
@@ -48,9 +50,10 @@ namespace Hayden.Api
 				                                      + TimeSpan.FromMilliseconds(random.Next(0, 5000)) // plus some jitter: up to 5 seconds
 				   )
 				   .WrapAsync(
-					   Policy.TimeoutAsync(10, TimeoutStrategy.Optimistic, async (context, span, failedTask) =>
+					   Policy.TimeoutAsync(10, TimeoutStrategy.Optimistic, (context, span, failedTask) =>
 					   {
 						   Program.Log($"Timeout occurred: {context.OperationKey}", true);
+						   return Task.CompletedTask;
 					   })
 				   );
 		}

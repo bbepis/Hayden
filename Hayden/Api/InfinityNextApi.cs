@@ -8,6 +8,8 @@ using Hayden.Api;
 using Hayden.Models;
 using Newtonsoft.Json;
 
+#pragma warning disable CS0649 // Field is never assigned to, and will always have its default value null
+
 namespace Hayden
 {
 	/// <summary>
@@ -154,9 +156,6 @@ namespace Hayden
 
 			[JsonProperty("content_raw")]
 			public string ContentRaw { get; set; }
-
-			[JsonProperty("global_bumped_last")]
-			public DateTimeOffset GlobalBumpedLast { get; set; }
 
 			[JsonProperty("attachments")]
 			public List<InfinityNextAttachment> Attachments { get; set; }

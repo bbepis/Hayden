@@ -8,6 +8,8 @@ using Hayden.Api;
 using Hayden.Models;
 using Newtonsoft.Json;
 
+#pragma warning disable CS0649 // Field is never assigned to, and will always have its default value null
+
 namespace Hayden
 {
 	public class MegucaApi : BaseApi<MegucaThread>

@@ -1,9 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Collections.Specialized;
 using System.Linq;
 using System.Net.Http;
-using System.Security.Cryptography.X509Certificates;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Web;
@@ -11,6 +9,9 @@ using Hayden.Api;
 using Hayden.Contract;
 using Hayden.Models;
 using Newtonsoft.Json;
+
+#pragma warning disable CS0649 // Field is never assigned to, and will always have its default value null
+
 
 namespace Hayden
 {

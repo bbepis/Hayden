@@ -120,9 +120,6 @@ namespace Hayden.Models
 
 		#region Unused properties
 
-		// We don't actually use these properties but it's required for complete JSON serialization
-		// Make it a build flag if it saves enough memory to leave them out
-
 		[JsonProperty("archived_on")]
 		public uint? ArchivedOn { get; set; }
 

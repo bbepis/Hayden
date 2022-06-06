@@ -36,7 +36,7 @@ namespace Hayden.WebServer.Logic
 			{
 				string board = Path.GetFileName(subfolder);
 
-				if (board == "hayden" || board == "server" || board == "temp")
+				if (board is "hayden" or "server" or "temp")
 					continue;
 
 				static T ReadJson<T>(string filename)
