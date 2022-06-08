@@ -111,6 +111,7 @@ namespace Hayden
 		}
 
 		private static readonly DateTimeZone EasternTimeZone = DateTimeZoneProviders.Tzdb["America/New_York"];
+		private static readonly DateTimeZone JapanTimeZone = DateTimeZoneProviders.Tzdb["Asia/Tokyo"];
 
 		/// <summary>
 		/// Converts a <see cref="DateTimeOffset"/> value into it's respective Unix timestamp, taking into account the <value>America/New_York</value> timezone.

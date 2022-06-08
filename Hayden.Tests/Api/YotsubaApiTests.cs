@@ -14,30 +14,10 @@ namespace Hayden.Tests.Api
 	[TestFixture]
 	public class YotsubaApiTests
 	{
-		private Mock<HttpMessageHandler> CreateMockClientHandler(HttpStatusCode code, string response)
-		{
-			var handlerMock = new Mock<HttpMessageHandler>(MockBehavior.Strict);
-			handlerMock
-				.Protected()
-				.Setup<Task<HttpResponseMessage>>(
-					"SendAsync",
-					ItExpr.IsAny<HttpRequestMessage>(),
-					ItExpr.IsAny<CancellationToken>()
-				)
-				.ReturnsAsync(new HttpResponseMessage
-				{
-					StatusCode = code,
-					Content = response == null ? null : new StringContent(response, Encoding.UTF8, "application/json")
-				})
-				.Verifiable();
-
-			return handlerMock;
-		}
-
 		private YotsubaApi yotsubaApi = new YotsubaApi();
 
 		private HttpClient CreateMockClient(HttpStatusCode code, string response)
-			=> new HttpClient(CreateMockClientHandler(code, response).Object);
+			=> new HttpClient(TestCommon.CreateJsonMockClientHandler(code, response).Object);
 
 
 		#region GetThread Tests
@@ -121,7 +101,7 @@ namespace Hayden.Tests.Api
 			const string board = "a";
 			const int threadNumber = 1234;
 
-			var mockHandler = CreateMockClientHandler(HttpStatusCode.NotFound, null);
+			var mockHandler = TestCommon.CreateJsonMockClientHandler(HttpStatusCode.NotFound, null);
 
 			await yotsubaApi.GetThread(board, threadNumber, new HttpClient(mockHandler.Object));
 
@@ -139,7 +119,7 @@ namespace Hayden.Tests.Api
 		[Test]
 		public async Task GetThread_SetsNotModifiedSinceHeader()
 		{
-			var mockHandler = CreateMockClientHandler(HttpStatusCode.NotModified, null);
+			var mockHandler = TestCommon.CreateJsonMockClientHandler(HttpStatusCode.NotModified, null);
 			var client = new HttpClient(mockHandler.Object);
 
 			var baseDateTimeOffset = DateTimeOffset.Parse("12/3/2007 12:00:00 AM -08:00");
@@ -209,7 +189,7 @@ namespace Hayden.Tests.Api
 		{
 			const string board = "a";
 
-			var mockHandler = CreateMockClientHandler(HttpStatusCode.NotFound, null);
+			var mockHandler = TestCommon.CreateJsonMockClientHandler(HttpStatusCode.NotFound, null);
 
 			await yotsubaApi.GetBoard(board, new HttpClient(mockHandler.Object));
 
@@ -227,7 +207,7 @@ namespace Hayden.Tests.Api
 		[Test]
 		public async Task GetBoard_SetsNotModifiedSinceHeader()
 		{
-			var mockHandler = CreateMockClientHandler(HttpStatusCode.NotModified, null);
+			var mockHandler = TestCommon.CreateJsonMockClientHandler(HttpStatusCode.NotModified, null);
 			var client = new HttpClient(mockHandler.Object);
 
 			var baseDateTimeOffset = DateTimeOffset.Parse("12/3/2007 12:00:00 AM -08:00");
@@ -294,7 +274,7 @@ namespace Hayden.Tests.Api
 		{
 			const string board = "a";
 
-			var mockHandler = CreateMockClientHandler(HttpStatusCode.NotFound, null);
+			var mockHandler = TestCommon.CreateJsonMockClientHandler(HttpStatusCode.NotFound, null);
 
 			await yotsubaApi.GetArchive(board, new HttpClient(mockHandler.Object));
 
@@ -312,7 +292,7 @@ namespace Hayden.Tests.Api
 		[Test]
 		public async Task GetArchive_SetsNotModifiedSinceHeader()
 		{
-			var mockHandler = CreateMockClientHandler(HttpStatusCode.NotModified, null);
+			var mockHandler = TestCommon.CreateJsonMockClientHandler(HttpStatusCode.NotModified, null);
 			var client = new HttpClient(mockHandler.Object);
 
 			var baseDateTimeOffset = DateTimeOffset.Parse("12/3/2007 12:00:00 AM -08:00");

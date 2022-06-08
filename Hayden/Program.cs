@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
@@ -10,6 +11,7 @@ using Hayden.Consumers;
 using Hayden.Contract;
 using Hayden.Models;
 using Hayden.Proxy;
+using Microsoft.Extensions.DependencyInjection;
 using Mono.Unix;
 using Mono.Unix.Native;
 using Newtonsoft.Json.Linq;
@@ -48,8 +50,33 @@ namespace Hayden
 			await archivalTask.ConfigureAwait(false);
 		}
 
+		private static readonly Dictionary<string, (Type apiType, Type threadType, Type postType)> ApiTypeDictionary = new()
+		{
+			["Yotsuba"] = (typeof(YotsubaApi), typeof(YotsubaThread), typeof(YotsubaPost)),
+		};
+
+		private static readonly Dictionary<string, Dictionary<Type, (Type consumerType, Type configType)>> ConsumerTypeDictionary = new()
+		{
+			["Asagi"] = new()
+			{
+				[typeof(YotsubaThread)] = (typeof(AsagiThreadConsumer), typeof(AsagiConfig))
+			},
+			["Hayden"] = new()
+			{
+				[typeof(YotsubaThread)] = (typeof(HaydenMysqlThreadConsumer), typeof(HaydenMysqlConfig))
+			},
+			["Filesystem"] = new()
+			{
+				[typeof(YotsubaThread)] = (typeof(YotsubaFilesystemThreadConsumer), typeof(FilesystemConfig))
+			},
+		};
+
 		private static async Task<Func<Task>> CreateBoardArchiverExecutor(JObject rawConfigFile, CancellationTokenSource tokenSource)
 		{
+			IServiceCollection serviceCollection = new ServiceCollection();
+
+			serviceCollection.AddSingleton<>()
+
 			YotsubaConfig config;
 			string downloadLocation = null;
 

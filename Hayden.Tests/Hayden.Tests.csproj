@@ -7,6 +7,18 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <None Remove="Api\TestData\futaba-thread-2chan.html" />
+    <None Remove="Api\TestData\futaba-thread-futabaonly.html" />
+    <None Remove="Api\TestData\futaba-thread-otana.html" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Api\TestData\futaba-thread-2chan.html" />
+    <EmbeddedResource Include="Api\TestData\futaba-thread-futabaonly.html" />
+    <EmbeddedResource Include="Api\TestData\futaba-thread-otana.html" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="16.5.0" />
     <PackageReference Include="Moq" Version="4.13.1" />
     <PackageReference Include="NUnit" Version="3.12.0" />
