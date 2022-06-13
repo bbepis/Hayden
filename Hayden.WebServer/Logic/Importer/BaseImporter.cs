@@ -263,7 +263,8 @@ namespace Hayden.WebServer.Logic
 
 			file ??= new DBFile();
 
-			
+			if (!filename.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase))
+				await Common.DetermineMediaInfoAsync(filename, file);
 			
 			using var md5 = MD5.Create();
 			using var sha1 = SHA1.Create();
