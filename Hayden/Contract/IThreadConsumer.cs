@@ -59,19 +59,22 @@ namespace Hayden.Contract
 	public struct ExistingThreadInfo
 	{
 		public ulong ThreadId;
+		public bool Archived;
 		public DateTimeOffset LastPostTime;
 		public IReadOnlyCollection<(ulong PostId, uint PostHash)> PostHashes;
 
 		public ExistingThreadInfo(ulong threadId)
 		{
 			ThreadId = threadId;
+			Archived = false;
 			LastPostTime = DateTimeOffset.MinValue;
 			PostHashes = null;
 		}
 
-		public ExistingThreadInfo(ulong threadId, DateTimeOffset lastPostTime, IReadOnlyCollection<(ulong PostId, uint PostHash)> postHashes)
+		public ExistingThreadInfo(ulong threadId, bool archived, DateTimeOffset lastPostTime, IReadOnlyCollection<(ulong PostId, uint PostHash)> postHashes)
 		{
 			ThreadId = threadId;
+			Archived = archived;
 			LastPostTime = lastPostTime;
 			PostHashes = postHashes;
 		}

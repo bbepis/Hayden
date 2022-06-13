@@ -252,6 +252,7 @@ namespace Hayden.Consumers
 				}
 
 				existingThreads.Add(new ExistingThreadInfo(threadId,
+					writtenThread.Archived,
 					Utility.ConvertGMTTimestamp(writtenThread.Posts.Max(x => x.UnixTimestamp)),
 					threadHashList));
 			}

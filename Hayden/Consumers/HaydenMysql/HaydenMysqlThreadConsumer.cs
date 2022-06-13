@@ -325,7 +325,7 @@ namespace Hayden.Consumers
 
 			if (getMetadata)
 			{
-				foreach (var threadInfo in await query.Select(x => new { x.ThreadId, x.LastModified }).ToArrayAsync())
+				foreach (var threadInfo in await query.Select(x => new { x.ThreadId, x.LastModified, x.IsArchived }).ToArrayAsync())
 				{
 					var hashes = new List<(ulong PostId, uint PostHash)>();
 
@@ -349,7 +349,7 @@ namespace Hayden.Consumers
 						hashes.Add((postGroup.Key.PostId, hash));
 					}
 
-					items.Add(new ExistingThreadInfo(threadInfo.ThreadId, new DateTimeOffset(threadInfo.LastModified, TimeSpan.Zero), hashes));
+					items.Add(new ExistingThreadInfo(threadInfo.ThreadId, threadInfo.IsArchived, new DateTimeOffset(threadInfo.LastModified, TimeSpan.Zero), hashes));
 				}
 			}
 			else

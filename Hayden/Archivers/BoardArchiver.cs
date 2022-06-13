@@ -546,17 +546,31 @@ namespace Hayden
 			{
 				case ResponseType.Ok:
 
-					var existingArchivedThreads = await ThreadConsumer.CheckExistingThreads(archiveRequest.Data, board, true, false);
+					var existingArchivedThreads = await ThreadConsumer.CheckExistingThreads(archiveRequest.Data, board, false, true);
 
 					Program.Log($"Found {existingArchivedThreads.Count} existing archived threads for board /{board}/");
-
-					var filteredIds = archiveRequest.Data
+					
+					var filteredArchivedIds = archiveRequest.Data
 						.Except(existingArchivedThreads.Select(x => x.ThreadId))
-						.Where(x => ThreadIdFilter(new ThreadPointer(board, x)));
+						.Select(x => new ThreadPointer(board, x))
+						.Where(ThreadIdFilter)
+						.ToArray();
 
-					foreach (ulong nonExistingThreadId in filteredIds)
+					var filteredMaybeLiveThreads = existingArchivedThreads.Where(x => !x.Archived);
+
+					foreach (var nonExistingThread in filteredArchivedIds)
 					{
-						threadQueue.Add(new ThreadPointer(board, nonExistingThreadId));
+						threadQueue.Add(nonExistingThread);
+					}
+
+					foreach (var maybeLiveThreadInfo in filteredMaybeLiveThreads)
+					{
+						var pointer = new ThreadPointer(board, maybeLiveThreadInfo.ThreadId);
+
+						threadQueue.Add(pointer);
+
+						lock (TrackedThreads)
+							TrackedThreads[pointer] = TrackedThread<TThread, TPost>.StartTrackingThread(ThreadConsumer.CalculateHash, maybeLiveThreadInfo);
 					}
 
 					Program.Log($"Enqueued {threadQueue.Count} threads from board archive /{board}/");

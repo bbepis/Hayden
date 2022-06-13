@@ -503,7 +503,7 @@ namespace Hayden.Consumers
 			if (getMetadata)
 			{
 				query = $@"
-				SELECT TABLE1.num, MAX(TABLE2.timestamp)
+				SELECT TABLE1.num, MAX(TABLE2.timestamp), TABLE1.timestamp_expired
 				FROM `{board}` TABLE1
 					INNER JOIN `{board}` TABLE2 ON TABLE2.thread_num = TABLE1.num
 				WHERE TABLE1.op = 1
@@ -541,7 +541,7 @@ namespace Hayden.Consumers
 						hashes.Add(((uint)postRow[0], hash));
 					}
 
-					items.Add(new ExistingThreadInfo((uint)row[0], Utility.ConvertNewYorkTimestamp((uint)row[1]).UtcDateTime, hashes));
+					items.Add(new ExistingThreadInfo((uint)row[0], (uint)Convert.ChangeType(row[0], typeof(uint)) != 0, Utility.ConvertNewYorkTimestamp((uint)row[1]).UtcDateTime, hashes));
 				}
 
 				return items;
