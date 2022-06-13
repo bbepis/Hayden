@@ -229,13 +229,15 @@ namespace Hayden.Consumers
 			
 			var imageFilename = Common.CalculateFilename(Config.DownloadLocation, board, Common.MediaType.Image, sha256Hash, post.FileExtension);
 
-			await Utility.WriteAllBytesAsync(imageFilename, imageData.Value);
+			await Utility.WriteAllBytesAsync(imageFilename + ".tmp", imageData.Value);
+			File.Move(imageFilename + ".tmp", imageFilename, true);
 
 			if (thumbnailData.HasValue)
 			{
 				var thumbFilename = Common.CalculateFilename(Config.DownloadLocation, board, Common.MediaType.Thumbnail, sha256Hash, "jpg");
-
-				await Utility.WriteAllBytesAsync(thumbFilename, thumbnailData.Value);
+				
+				await Utility.WriteAllBytesAsync(thumbFilename + ".tmp", thumbnailData.Value);
+				File.Move(thumbFilename + ".tmp", thumbFilename, true);
 			}
 
 			await using var dbContext = GetDBContext();
