@@ -86,7 +86,9 @@ namespace Hayden.Consumers
 					if (!Config.DoNotUseMd5HashForComparison)
 					{
 						var existingFile = await dbContext.Files.FirstOrDefaultAsync(x =>
-							x.Md5Hash == Convert.FromBase64String(post.FileMd5) && x.Size == post.FileSize.Value);
+							x.Md5Hash == Convert.FromBase64String(post.FileMd5)
+							&& x.Size == post.FileSize.Value
+							&& x.BoardId == boardId);
 
 						if (existingFile != null)
 						{
@@ -241,7 +243,8 @@ namespace Hayden.Consumers
 			uint fileId;
 
 			var existingFile = await dbContext.Files
-				.Where(x => x.Sha256Hash == sha256Hash)
+				.Where(x => x.Sha256Hash == sha256Hash
+				            && x.BoardId == boardId)
 				.Select(x => new { x.Id })
 				.FirstOrDefaultAsync();
 
