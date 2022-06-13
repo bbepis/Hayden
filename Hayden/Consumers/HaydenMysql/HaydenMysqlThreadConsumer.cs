@@ -256,6 +256,9 @@ namespace Hayden.Consumers
 				{
 					BoardId = (ushort)boardId,
 					Extension = post.FileExtension.TrimStart('.'),
+					FileExists = true,
+					FileBanned = false,
+					ThumbnailExtension = thumbnailData.HasValue ? "jpg" : null,
 					Md5Hash = md5Hash,
 					Sha1Hash = sha1Hash,
 					Sha256Hash = sha256Hash,
@@ -301,7 +304,13 @@ namespace Hayden.Consumers
 
 			await using var dbContext = GetDBContext();
 
-			var thread = await dbContext.Threads.FirstAsync(x => x.ThreadId == threadId && x.BoardId == boardId);
+			var thread = await dbContext.Threads.FirstOrDefaultAsync(x => x.ThreadId == threadId && x.BoardId == boardId);
+
+			if (thread == null)
+			{
+				// tried to mark a non-existent thread as deleted
+				return;
+			}
 
 			thread.IsDeleted = deleted;
 			thread.IsArchived = archived;

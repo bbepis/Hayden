@@ -25,6 +25,13 @@ namespace Hayden.Consumers.HaydenMysql.DB
 		[Column(TypeName = "varchar(4)")]
 		public string Extension { get; set; }
 
+		[Column(TypeName = "varchar(4)")]
+		public string ThumbnailExtension { get; set; }
+		
+		public bool FileExists { get; set; }
+		
+		public bool FileBanned { get; set; }
+
 		public ushort? ImageWidth { get; set; }
 
 		public ushort? ImageHeight { get; set; }

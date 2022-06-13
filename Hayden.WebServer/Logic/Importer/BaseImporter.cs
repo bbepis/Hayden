@@ -177,12 +177,15 @@ namespace Hayden.WebServer.Logic
 
 							var (newDbFile, _) = await FileImporterTools.UpdateDbFile(sourceFilename);
 
+							newDbFile.FileBanned = false;
+
 							var existingDbFile = await dbContext.Files.FirstOrDefaultAsync(x => x.BoardId == boardObject.Id && x.Sha256Hash == newDbFile.Sha256Hash);
 
 							if (existingDbFile == null)
 							{
 								newDbFile.BoardId = boardObject.Id;
 								newDbFile.Extension = sourceFilename.Substring(sourceFilename.LastIndexOf('.') + 1);
+								newDbFile.FileExists = true;
 
 								dbContext.Add(newDbFile);
 								await dbContext.SaveChangesAsync();
@@ -195,14 +198,22 @@ namespace Hayden.WebServer.Logic
 								if (!File.Exists(destinationFilename))
 								{
 									File.Copy(sourceFilename, destinationFilename);
-									
-									sourceFilename = Path.Combine(subfolder, GetFilesystemThumbnailFilePath(board, thread, post, file));
 
-									// this may not always result in .jpg....
-									destinationFilename = Common.CalculateFilename(config.Value.FileLocation, board,
-										Common.MediaType.Thumbnail, existingDbFile.Sha256Hash, "jpg");
+									var thumbnailFragment = GetFilesystemThumbnailFilePath(board, thread, post, file);
 
-									File.Copy(sourceFilename, destinationFilename);
+									if (thumbnailFragment != null)
+									{
+										sourceFilename = Path.Combine(subfolder, thumbnailFragment);
+
+										var thumbExtension = Path.GetExtension(sourceFilename).TrimStart('.');
+										existingDbFile.ThumbnailExtension = thumbExtension;
+										dbContext.Update(existingDbFile);
+										
+										destinationFilename = Common.CalculateFilename(config.Value.FileLocation, board,
+											Common.MediaType.Thumbnail, existingDbFile.Sha256Hash, thumbExtension);
+
+										File.Copy(sourceFilename, destinationFilename);
+									}
 								}
 							}
 
@@ -252,7 +263,6 @@ namespace Hayden.WebServer.Logic
 
 		protected abstract string GetFilesystemSourceFilePath(string board, TThread thread, TPost post, TPostFile postFile);
 		protected abstract string GetFilesystemThumbnailFilePath(string board, TThread thread, TPost post, TPostFile postFile);
-
 	}
 
 	public static class FileImporterTools
@@ -301,11 +311,13 @@ namespace Hayden.WebServer.Logic
 
 				JArray array = !obj.TryGetValue(key, out var rawArray) ? new JArray() : (JArray)rawArray;
 
-				array.Add(new Md5Conflict(oldMd5Hash, file.Md5Hash));
+				array.Add(JObject.FromObject(new Md5Conflict(oldMd5Hash, file.Md5Hash)));
 
 				obj[key] = array;
 				file.AdditionalMetadata = obj;
 			}
+
+			file.FileExists = true;
 
 			return (file, md5HashChanged);
 		}
