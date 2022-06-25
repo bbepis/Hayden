@@ -120,6 +120,7 @@ namespace Hayden
 
 						// Locking on the tracking sortedlist is not required since all operations at this point in time are read-only
 
+						// TODO: this code causes "Collection was modified after the enumerator was instantiated." issues
 						var missingTrackedThreads = TrackedThreads.Where(x => x.Key.Board == board && !allThreads.Contains(x.Key));
 
 						foreach (var (pointer, _) in missingTrackedThreads)
