@@ -41,7 +41,7 @@ namespace Hayden
 				file.ImageWidth = result["streams"][0].Value<ushort>("width");
 				file.ImageHeight = result["streams"][0].Value<ushort>("height");
 			}
-			catch (Exception ex) when (ex.Message.Contains("magick"))
+			catch (MagickException)
 			{
 				file.ImageWidth = null;
 				file.ImageHeight = null;
@@ -49,8 +49,30 @@ namespace Hayden
 
 			return file;
 		}
+
+		public static async Task<string> DetermineMediaTypeAsync(Stream inputStream)
+		{
+			try
+			{
+				var result = await RunJsonCommandAsync("ffprobe", $"-v quiet -hide_banner -show_streams -print_format json -", inputStream);
+				
+				Console.WriteLine(result?.ToString() ?? "<null>");
+
+				var streamsArray = result["streams"] as JArray;
+
+				if (streamsArray == null || streamsArray.Count != 1)
+					return null;
+
+				return streamsArray[0].Value<string>("codec_name");
+			}
+			catch (MagickException ex)
+			{
+				Console.WriteLine(ex.ToString());
+				return null;
+			}
+		}
 		
-		public static async Task<JObject> RunJsonCommandAsync(string executable, string arguments)
+		public static async Task<JObject> RunJsonCommandAsync(string executable, string arguments, Stream inputStream = null)
 		{
 			using var process = new Process
 			{
@@ -58,7 +80,8 @@ namespace Hayden
 				{
 					UseShellExecute = false,
 					RedirectStandardError = true,
-					RedirectStandardOutput = true
+					RedirectStandardOutput = true,
+					RedirectStandardInput = inputStream != null
 				}
 			};
 
@@ -69,6 +92,15 @@ namespace Hayden
 			process.EnableRaisingEvents = true;
 
 			process.Start();
+
+			if (inputStream != null)
+			{
+				var inputTask = Task.Run(async () =>
+				{
+					await inputStream.CopyToAsync(process.StandardInput.BaseStream);
+					process.StandardInput.Close();
+				});
+			}
 
 			var errorTask = process.StandardError.ReadToEndAsync();
 
@@ -84,7 +116,7 @@ namespace Hayden
 
 			if (process.ExitCode > 0)
 			{
-				throw new Exception($"magick returned {process.ExitCode}: {error}");
+				throw new MagickException(process.ExitCode, error);
 			}
 
 			return result;
@@ -125,8 +157,22 @@ namespace Hayden
 			{
 				var error = await errorTask;
 
-				throw new Exception($"magick returned {process.ExitCode}: {error}");
+				throw new MagickException(process.ExitCode, error);
 			}
 		}
 	}
+
+    public class MagickException : Exception
+    {
+		public int ExitCode { get; }
+		public string Error { get; }
+
+		public MagickException(int exitCode, string error)
+		{
+			ExitCode = exitCode;
+			Error = error;
+		}
+
+		public override string Message => $"magick returned {ExitCode}: {Error}";
+    }
 }
