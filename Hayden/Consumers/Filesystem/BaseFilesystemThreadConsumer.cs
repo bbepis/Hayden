@@ -183,11 +183,14 @@ namespace Hayden.Consumers
 			{
 				string threadFileName = Path.Combine(ArchiveDirectory, board, threadId.ToString(), "thread.json");
 
-				var thread = ReadJson(threadFileName);
+				if (File.Exists(threadFileName))
+				{
+					var thread = ReadJson(threadFileName);
 
-				thread.IsDeleted = true;
+					thread.IsDeleted = true;
 
-				WriteJson(threadFileName, thread);
+					WriteJson(threadFileName, thread);
+				}
 			}
 
 			// ConsumeThread is always called with the archive flag before calling this method, so we don't need to worry about setting the archived flag
