@@ -1,5 +1,31 @@
-﻿/* Please see documentation at https://docs.microsoft.com/aspnet/core/client-side/bundling-and-minification
-for details on configuring this project to bundle and minify static web assets. */
+﻿:root.theme-yotsuba {
+  --text-color: #800000;
+  --text-font: 10px Tahoma, sans-serif;
+  --page-background-color: #FFFFEE;
+  --post-background-color: #f0e0d6;
+  --post-border-color: #d9bfb7;
+  --nav-text-color: #000000;
+  --nav-dropdown-bgcolor: #f0e0d6;
+  --link-text-color: #00d;
+  --link-visited-text-color: #9881be;
+  --subject-color: #a321ca;
+  --quote-color: #789922;;
+}
+
+:root.theme-tomorrow {
+  --text-color: #c5c8c6;
+  --text-font: 14px arial,helvetica,sans-serif;
+  --page-background-color: #111111;
+  --post-background-color: #282a2e;
+  --post-border-color: #282a2e;
+  --nav-text-color: #81a2be;
+  --nav-dropdown-bgcolor: #282a2e;
+  --link-text-color: #81a2be;
+  --link-visited-text-color: #9881be;
+  --subject-color: #b294bb;
+  --quote-color: #b5bd68;
+}
+
 
 a.navbar-brand {
   white-space: normal;
@@ -19,7 +45,7 @@ a {
 }
 
 .nav-pills .nav-link.active, .nav-pills .show > .nav-link {
-  color: #fff;
+  color: var(--nav-text-color);
   background-color: #1b6ec2;
   border-color: #1861ac;
 }
@@ -27,7 +53,8 @@ a {
 /* Sticky footer styles
 -------------------------------------------------- */
 html {
-  font-size: 14px;
+  font: var(--text-font);
+  color: var(--text-color);
 }
 @media (min-width: 768px) {
   html {
@@ -56,11 +83,17 @@ button.accept-policy {
 html {
   position: relative;
   min-height: 100%;
+  background-color: var(--page-background-color);
 }
 
 body {
   /* Margin bottom by footer height */
   margin-bottom: 60px;
+	background-color: var(--page-background-color);
+}
+
+.container-margin {
+  margin: 0px 75px;
 }
 
 .footer {
@@ -76,27 +109,27 @@ body {
 .post {
     margin: 4px 0;
     overflow: hidden;
-    color: #c5c8c6;
-    font-family: arial,helvetica,sans-serif;
+    color: var(--text-color);
+    /* font-family: arial,helvetica,sans-serif; */
     /*font-size: 10pt;*/
     line-height: normal;
 }
 
 .subject {
-  color: #b294bb;
+  color: var(--subject-color);
   font-weight: 700;
 }
 
 .reply {
-    background-color: #282a2e;
-    border: 1px solid #282a2e;
+    background-color: var(--post-background-color);
+    border: 1px solid var(--post-border-color);
     display: table;
     padding: 2px;
 }
 
 .reply:target, .reply.highlight {
-  background: #1d1d21 !important;
-  border: 1px solid #111 !important;
+  background: var(--post-background-color) !important;
+  border: 1px solid var(--post-border-color) !important;
   padding: 2px;
 }
 
@@ -117,7 +150,7 @@ div.post div.postInfo {
 }
 
 .name {
-    color: #c5c8c6;
+    color: #2a994d;
     font-weight: 700;
 }
 
@@ -142,10 +175,33 @@ blockquote {
     max-height: 125px;*/
 }
 
-a, a:visited {
-    color: #81a2be !important;
+a {
+    color: var(--link-text-color) !important;
     text-decoration: none;
 }
+
+nav a, nav a:visited {
+    color: var(--nav-text-color);
+    text-decoration: none;
+}
+
+nav, .navbar-light {
+	background-color: var(--post-background-color);
+  color: var(--nav-text-color);
+}
+
+nav .dropdown-menu, .dropdown-item:focus, .dropdown-item:hover {
+  background-color: var(--nav-dropdown-bgcolor);
+}
+
+.dropdown-item:focus, .dropdown-item:hover {
+  background-color: #47494d;
+}
+
+/* a:visited {
+    color: var(--link-visited-text-color) !important;
+    text-decoration: none;
+} */
 
 a.quotelink {
     text-decoration: underline;
@@ -156,7 +212,7 @@ a:hover {
 }
 
 blockquote > span.quote {
-    color: #b5bd68;
+    color: var(--quote-color);
 }
 
 s:hover, s:focus, s:hover a {
