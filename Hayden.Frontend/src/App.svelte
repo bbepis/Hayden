@@ -8,6 +8,9 @@
 	import ThreadPage from "./page/ThreadPage.svelte";
 	import SearchPage from "./page/SearchPage.svelte";
 	import AdminPage from "./page/AdminPage.svelte";
+	import BoardPage from "./page/BoardPage.svelte";
+	import LoginPage from "./page/LoginPage.svelte";
+	import RegisterPage from "./page/RegisterPage.svelte";
 
 	export let info : InfoObject;
 
@@ -17,11 +20,22 @@
 </script>
 
 <Layout>
-	<Route path="/"><IndexPage dataPromise={Utility.FetchData("/index")} /></Route>
+	<Route path="/"><IndexPage /></Route>
 	<Route path="/:board/thread/:threadid" let:meta><ThreadPage board={meta.params.board} threadId={Number(meta.params.threadid)} /></Route>
-	<Route path="/board/:board" let:meta><IndexPage dataPromise={Utility.FetchData("/board/" + meta.params.board + "/index")} /></Route>
+	<Route path="/board/:board/*" firstmatch let:meta={boardMeta}>
+		<Route path="/page/:page" let:meta>
+			<BoardPage board={boardMeta.params.board} initialCurrentPage={Utility.TryCastInt(meta.params.page) ?? 1} />
+		</Route>
+		<Route path="/page/:page/*" let:meta>
+			<BoardPage board={boardMeta.params.board} initialCurrentPage={Utility.TryCastInt(meta.params.page) ?? 1} />
+		</Route>
+		<Route fallback>
+			<BoardPage board={boardMeta.params.board} />
+		</Route>
+	</Route>
 	<Route path="/Search"><SearchPage /></Route>
-	<Route path="/Privacy"><h1>This is the privacy page</h1></Route>
+	<Route path="/Login"><LoginPage /></Route>
+	<Route path="/Register"><RegisterPage /></Route>
 	<Route path="/Admin"><AdminPage bind:this={adminComponent} /></Route>
 </Layout>
 

@@ -1,32 +1,18 @@
 ﻿using System;
-using System.IO;
 using System.Linq;
-using System.Security.Cryptography;
-using System.Threading;
 using System.Threading.Tasks;
 using Hayden.Consumers.HaydenMysql.DB;
 using Hayden.WebServer.DB.Elasticsearch;
-using Hayden.WebServer.Routing;
 using Hayden.WebServer.View;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Options;
 using Nest;
 
-namespace Hayden.WebServer.Controllers
+namespace Hayden.WebServer.Controllers.Api
 {
-	[ApiModeActionFilter(true)]
-	[Route("api")]
-	public class ArchiveApiController : Controller
+	public partial class ApiController
 	{
-		protected IOptions<Config> Config { get; set; }
-
-		public ArchiveApiController(IOptions<Config> config)
-		{
-			Config = config;
-		}
-
 		[HttpGet("index")]
 		public async Task<IActionResult> Index([FromServices] HaydenDbContext dbContext)
 		{
@@ -95,7 +81,7 @@ namespace Hayden.WebServer.Controllers
 					x.Wildcard(y => y.PostRawText, searchTerm),
 					x.Wildcard(y => y.Subject, searchTerm)))));
 
-				
+
 			}
 			else
 			{
@@ -166,8 +152,8 @@ namespace Hayden.WebServer.Controllers
 			if (thread == null)
 				return NotFound();
 
-			return Json(new JsonThreadModel(boardObj, thread, posts.Select(x => 
-				new JsonPostModel(x, 
+			return Json(new JsonThreadModel(boardObj, thread, posts.Select(x =>
+				new JsonPostModel(x,
 					mappings.Where(y => y.Item1.PostId == x.PostId)
 						.Select(y =>
 						{
@@ -188,19 +174,22 @@ namespace Hayden.WebServer.Controllers
 		}
 
 		[HttpGet("board/{board}/index")]
-		public async Task<IActionResult> BoardIndex([FromServices] HaydenDbContext dbContext, string board)
+		public async Task<IActionResult> BoardIndex([FromServices] HaydenDbContext dbContext, string board, [FromQuery] int? page)
 		{
 			var boardInfo = await dbContext.Boards.AsNoTracking().Where(x => x.ShortName == board).FirstOrDefaultAsync();
 
 			if (boardInfo == null)
 				return NotFound();
 
-			var topThreads = await dbContext.Threads.AsNoTracking()
-				.Where(x => x.BoardId == boardInfo.Id)
+			var query = dbContext.Threads.AsNoTracking()
+				.Where(x => x.BoardId == boardInfo.Id);
+
+			var totalCount = await query.CountAsync();
+
+			var topThreads = await query
 				.OrderByDescending(x => x.LastModified)
+				.Skip(page.HasValue ? ((page.Value - 1) * 10) : 0)
 				.Take(10)
-				//.Join(dbContext.Posts.AsNoTracking(), t => new { t.ThreadId, t.BoardId }, p => new { p.ThreadId, p.BoardId }, (t, p) => new { t, p })
-				//.Take(10)
 				.ToArrayAsync();
 
 			// This is incredibly inefficient and slow, but it's prototype code so who cares
@@ -234,173 +223,19 @@ namespace Hayden.WebServer.Controllers
 					.ToArray());
 			}
 
-			return Json(threadModels);
+			return Json(new JsonBoardPageModel
+			{
+				totalThreadCount = totalCount,
+				threads = threadModels,
+				boardInfo = boardInfo
+			});
 		}
-
-		private readonly SemaphoreSlim PostSemaphore = new SemaphoreSlim(1);
-
-		[RequestSizeLimit((int)(4.1 * 1024 * 1024))]
-		[HttpPost("makepost")]
-		public async Task<IActionResult> MakePost([FromServices] HaydenDbContext dbContext, [FromForm] PostForm form)
+		
+		public class JsonBoardPageModel
 		{
-			if (form == null || form.board == null || form.threadId == 0)
-				return BadRequest();
-
-			if (string.IsNullOrWhiteSpace(form.text) && form.file == null)
-				return BadRequest();
-
-			var threadInfo = await dbContext.GetThreadInfo(form.threadId, form.board, true);
-
-			if (threadInfo.Item2 == null)
-				return NotFound();
-			
-			uint? fileId = null;
-
-			if (form.file != null)
-			{
-				var extension = Path.GetExtension(form.file.FileName).TrimStart('.').ToLower();
-
-				if (extension != "png" && extension != "jpg" && extension != "jpeg")
-					return BadRequest();
-
-				fileId = await ProcessUploadedFile(dbContext, form.file, threadInfo.Item1, extension);
-			}
-
-			await PostSemaphore.WaitAsync();
-
-			try
-			{
-				var nextPostId = await dbContext.Posts.Where(x => x.BoardId == threadInfo.Item1.Id).MaxAsync(x => x.PostId) + 1;
-
-				var newPost = new DBPost()
-				{
-					Author = form.name.TrimAndNullify(),
-					BoardId = threadInfo.Item1.Id,
-					ContentRaw = form.text.TrimAndNullify(),
-					ContentHtml = null,
-					DateTime = DateTime.UtcNow,
-					Email = null,
-					IsDeleted = false,
-					PostId = nextPostId,
-					ThreadId = form.threadId,
-					Tripcode = null
-				};
-
-				dbContext.Add(newPost);
-
-				threadInfo.Item2.LastModified = newPost.DateTime;
-				dbContext.Update(threadInfo.Item2);
-
-				await dbContext.SaveChangesAsync();
-
-				if (fileId.HasValue)
-				{
-					var fileMapping = new DBFileMapping
-					{
-						BoardId = threadInfo.Item1.Id,
-						PostId = nextPostId,
-						FileId = fileId.Value,
-						Filename = Path.GetFileNameWithoutExtension(form.file.FileName),
-						Index = 0,
-						IsDeleted = false,
-						IsSpoiler = true
-					};
-
-					dbContext.Add(fileMapping);
-
-					await dbContext.SaveChangesAsync();
-				}
-			}
-			finally
-			{
-				PostSemaphore.Release();
-			}
-
-			return NoContent();
-		}
-
-		private async Task<uint> ProcessUploadedFile(HaydenDbContext dbContext, IFormFile file, DBBoard boardInfo, string extension)
-		{
-			byte[] sha256Hash;
-			byte[] md5Hash;
-			byte[] sha1Hash;
-			byte[] fileData;
-
-			await using (var readStream = file.OpenReadStream())
-			{
-				fileData = new byte[file.Length];
-
-				await readStream.ReadAsync(fileData);
-			}
-
-			using (var sha256 = SHA256.Create())
-				sha256Hash = sha256.ComputeHash(fileData);
-
-			var fileId = (await dbContext.Files.FirstOrDefaultAsync(x => x.BoardId == boardInfo.Id && x.Sha256Hash == sha256Hash))?.Id;
-
-			if (fileId.HasValue)
-				return fileId.Value;
-
-			using (var md5 = MD5.Create())
-				md5Hash = md5.ComputeHash(fileData);
-
-			using (var sha1 = SHA1.Create())
-				sha1Hash = sha1.ComputeHash(fileData);
-
-			var destinationFilename = Common.CalculateFilename(Config.Value.FileLocation, boardInfo.ShortName,
-				Common.MediaType.Image, sha256Hash, extension);
-
-			var thumbnailFilename = Common.CalculateFilename(Config.Value.FileLocation, boardInfo.ShortName,
-				Common.MediaType.Image, sha256Hash, "jpg");
-
-			if (!System.IO.File.Exists(destinationFilename))
-			{
-				using var dataStream = new MemoryStream(fileData);
-				using var thumbStream = new MemoryStream();
-
-				await Common.RunStreamCommandAsync("magick", $"convert - -resize 125x125 -background grey -flatten jpg:-", dataStream, thumbStream);
-				
-				await System.IO.File.WriteAllBytesAsync(destinationFilename, fileData);
-				await System.IO.File.WriteAllBytesAsync(thumbnailFilename, thumbStream.ToArray());
-			}
-
-			var dbFile = new DBFile
-			{
-				BoardId = boardInfo.Id,
-				Extension = extension,
-				Md5Hash = md5Hash,
-				Sha1Hash = sha1Hash,
-				Sha256Hash = sha256Hash,
-				Size = (uint)fileData.Length
-			};
-
-			try
-			{
-				var result = await Common.RunJsonCommandAsync("ffprobe", $"-v quiet -hide_banner -show_streams -print_format json \"{destinationFilename}\"");
-
-				dbFile.ImageWidth = result["streams"][0].Value<ushort>("width");
-				dbFile.ImageHeight = result["streams"][0].Value<ushort>("height");
-			}
-			catch (Exception ex) when (ex.Message.Contains("magick"))
-			{
-				dbFile.ImageWidth = null;
-				dbFile.ImageHeight = null;
-			}
-
-			dbContext.Files.Add(dbFile);
-
-			await dbContext.SaveChangesAsync();
-
-			return dbFile.Id;
-		}
-
-		public class PostForm
-		{
-			public string name { get; set; }
-			public string text { get; set; }
-			public IFormFile file { get; set; }
-			public string board { get; set; }
-			public ulong threadId { get; set; }
+			public int totalThreadCount { get; set; }
+			public DBBoard boardInfo { get; set; }
+			public JsonThreadModel[] threads { get; set; }
 		}
 
 		public class JsonThreadModel
@@ -408,13 +243,13 @@ namespace Hayden.WebServer.Controllers
 			public ulong threadId { get; set; }
 
 			public DBBoard board { get; set; }
-			
+
 			public string subject { get; set; }
 			public DateTime lastModified { get; set; }
 
 			public bool archived { get; set; }
 			public bool deleted { get; set; }
-			
+
 			public JsonPostModel[] posts { get; set; }
 
 			public JsonThreadModel(DBBoard board, DBThread thread, JsonPostModel[] posts)
@@ -426,7 +261,7 @@ namespace Hayden.WebServer.Controllers
 				lastModified = thread.LastModified;
 				archived = thread.IsArchived;
 				deleted = thread.IsDeleted;
-				
+
 				this.posts = posts;
 			}
 		}
@@ -437,7 +272,7 @@ namespace Hayden.WebServer.Controllers
 
 			public string contentHtml { get; set; }
 			public string contentRaw { get; set; }
-			
+
 			public string author { get; set; }
 
 			public DateTime dateTime { get; set; }
@@ -462,11 +297,11 @@ namespace Hayden.WebServer.Controllers
 		public class JsonFileModel
 		{
 			public uint fileId { get; set; }
-			
+
 			public byte[] md5Hash { get; set; }
 			public byte[] sha1Hash { get; set; }
 			public byte[] sha256Hash { get; set; }
-			
+
 			public string extension { get; set; }
 
 			public ushort? imageWidth { get; set; }
@@ -475,7 +310,7 @@ namespace Hayden.WebServer.Controllers
 			public uint fileSize { get; set; }
 
 			public byte index { get; set; }
-			
+
 			public string filename { get; set; }
 
 			public bool spoiler { get; set; }

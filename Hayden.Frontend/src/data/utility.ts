@@ -123,4 +123,25 @@ export class Utility {
 
         return obj;
     }
+
+    static TryCastInt(value: string) : number | null {
+        const number = parseInt(value);
+
+        if (isNaN(number))
+            return null;
+        
+        return number;
+    }
+
+    static RangeTo(startIndex : number, endIndex: number): number[] {
+        let outputArray : number[] = []
+    
+        let counter = 0;
+        while (counter + startIndex < endIndex) {
+            outputArray.push(startIndex + counter);
+            counter++;
+        }
+    
+        return outputArray;
+    }
 }

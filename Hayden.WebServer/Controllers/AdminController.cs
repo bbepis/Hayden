@@ -1,11 +1,11 @@
 ﻿using System;
 using System.Diagnostics;
-using System.IO;
 using System.Linq;
 using System.Runtime;
 using System.Threading;
 using System.Threading.Tasks;
 using Hayden.Consumers.HaydenMysql.DB;
+using Hayden.WebServer.Controllers.Api;
 using Hayden.WebServer.DB.Elasticsearch;
 using Hayden.WebServer.Logic;
 using Hayden.WebServer.Logic.Importer;
@@ -15,10 +15,12 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Nest;
+using Newtonsoft.Json.Linq;
 
 namespace Hayden.WebServer.Controllers
 {
 	[Route("admin")]
+	[AdminAccessFilter(ModeratorRole.Admin, ModeratorRole.Developer)]
 	public class AdminController : Controller
 	{
 		[HttpGet]
@@ -41,6 +43,9 @@ namespace Hayden.WebServer.Controllers
 
 		private IActionResult StartTask(Func<IServiceProvider, Task> action, IServiceProvider serviceProvider)
 		{
+			if (!HttpContext.User.IsLoggedIn())
+				Unauthorized();
+
 			if (CurrentTask?.IsCompleted == false)
 				return StatusCode(StatusCodes.Status102Processing);
 			
@@ -61,8 +66,285 @@ namespace Hayden.WebServer.Controllers
 
 			return StatusCode(StatusCodes.Status202Accepted);
 		}
-
+		
 		[HttpGet("StartRehash")]
+		public IActionResult StartRename([FromServices] IServiceProvider serviceProvider)
+		{
+			return StartTask(async provider =>
+			{
+				CurrentStatus = "Reading files from database";
+
+				await using var context = provider.GetRequiredService<HaydenDbContext>();
+				var config = provider.GetRequiredService<IOptions<Config>>();
+
+				var boards = await context.Boards.AsNoTracking().ToDictionaryAsync(x => x.Id);
+
+				var files = await context.Files.AsNoTracking()
+					.Where(x => x.Size != 0)
+					.ToArrayAsync();
+
+				var semaphore = new SemaphoreSlim(1);
+
+				async Task Persist()
+				{
+					try
+					{
+						await semaphore.WaitAsync();
+
+						await context.SaveChangesAsync().ConfigureAwait(true);
+						context.DetachAllEntities();
+
+						GCSettings.LargeObjectHeapCompactionMode = GCLargeObjectHeapCompactionMode.CompactOnce;
+						GC.Collect();
+					}
+					finally
+					{
+						semaphore.Release();
+					}
+				}
+
+				float total = files.Length;
+				int current = 0;
+
+				CurrentStatus = (FormattableString)$"Renaming files ({new Box<int>(1)} / {files.Length})";
+
+#if DEBUG
+				const int concurrent = 1;
+#else
+				const int concurrent = 8;
+#endif
+
+				//await files.ForEachAsync(async file =>
+				foreach (var file in files)
+				{
+					try
+					{
+						Progress = current / total;
+						var localCurrent = Interlocked.Increment(ref current);
+						CurrentStatus.SetBox(0, current);
+
+						if (localCurrent % 100 == 0)
+							await Persist();
+
+						//var oldFilename = Common.CalculateFilename(config.Value.FileLocation,
+						//	boards[file.BoardId].ShortName, Common.MediaType.Image, file.Md5Hash, file.Extension);
+
+						//if (System.IO.File.Exists(oldFilename))
+						//{
+						//	var newFilename = Common.CalculateFilename(config.Value.FileLocation,
+						//		boards[file.BoardId].ShortName, Common.MediaType.Image, file.Sha256Hash, file.Extension);
+
+						//	System.IO.File.Move(oldFilename, newFilename);
+						//}
+
+						//oldFilename = Common.CalculateFilename(config.Value.FileLocation,
+						//	boards[file.BoardId].ShortName, Common.MediaType.Thumbnail, file.Md5Hash, "jpg");
+
+						//if (System.IO.File.Exists(oldFilename))
+						//{
+						//	var newFilename = Common.CalculateFilename(config.Value.FileLocation,
+						//		boards[file.BoardId].ShortName, Common.MediaType.Thumbnail, file.Sha256Hash, "jpg");
+
+						//	System.IO.File.Move(oldFilename, newFilename);
+						//}
+
+						var imageFilename = Common.CalculateFilename(config.Value.FileLocation,
+							boards[file.BoardId].ShortName, Common.MediaType.Image, file.Sha256Hash, file.Extension);
+
+						if (System.IO.File.Exists(imageFilename))
+						{
+							file.FileExists = true;
+							context.Update(file);
+						}
+
+						var thumbFilename = Common.CalculateFilename(config.Value.FileLocation,
+							boards[file.BoardId].ShortName, Common.MediaType.Thumbnail, file.Sha256Hash, "jpg");
+
+						if (System.IO.File.Exists(thumbFilename))
+						{
+							file.ThumbnailExtension = "jpg";
+							context.Update(file);
+						}
+					}
+					catch (Exception ex)
+					{
+						Console.WriteLine(ex.ToStringDemystified());
+					}
+				}
+				//}, concurrent);
+
+				await Persist();
+
+				Progress = 1;
+				CurrentStatus = "Done";
+			}, serviceProvider);
+		}
+		
+		public IActionResult StartRemap([FromServices] IServiceProvider serviceProvider)
+		{
+			return StartTask(async provider =>
+			{
+				CurrentStatus = "Reading file mappings from database";
+
+				await using var context = provider.GetRequiredService<HaydenDbContext>();
+				var config = provider.GetRequiredService<IOptions<Config>>();
+
+				var boards = await context.Boards.AsNoTracking().ToDictionaryAsync(x => x.Id);
+
+				var fileMappings = await context.FileMappings.AsNoTracking()
+					.GroupJoin(context.Files.AsNoTracking(),
+						fileMapping => new { fileMapping.BoardId, fileMapping.FileId },
+						file => new { file.BoardId, FileId = file.Id },
+						(mapping, enumerable) => new { mapping, enumerable })
+					.SelectMany(x => x.enumerable.DefaultIfEmpty(), (x, file) => new { x.mapping, file })
+					.Where(x => x.file == null)
+					.Select(x => x.mapping)
+					.ToArrayAsync();
+
+				//var files = await context.Files.AsNoTracking()
+				//	.Where(x => fileMappings.Select(x => x.mapping.FileId).Contains(x.Id))
+				//	.Distinct()
+				//	.ToDictionaryAsync(x => x.Id);
+
+				var semaphore = new SemaphoreSlim(1);
+
+				async Task Persist()
+				{
+					try
+					{
+						await semaphore.WaitAsync();
+
+						await context.SaveChangesAsync().ConfigureAwait(true);
+						context.DetachAllEntities();
+
+						GCSettings.LargeObjectHeapCompactionMode = GCLargeObjectHeapCompactionMode.CompactOnce;
+						GC.Collect();
+					}
+					finally
+					{
+						semaphore.Release();
+					}
+				}
+
+				float total = fileMappings.Length;
+				int current = 0;
+
+				CurrentStatus = (FormattableString)$"Renaming files ({new Box<int>(1)} / {fileMappings.Length})";
+				
+
+				foreach (var fileMapping in fileMappings)
+				{
+					try
+					{
+						Progress = current / total;
+						var localCurrent = Interlocked.Increment(ref current);
+						CurrentStatus.SetBox(0, current);
+
+						if (localCurrent % 100 == 0)
+							await Persist();
+
+						var files = await context.Files.AsNoTracking().Where(x =>
+								x.Sha256Hash == context.Files.AsNoTracking()
+									.First(y => y.Id == fileMapping.FileId).Sha256Hash)
+							.ToArrayAsync();
+
+						var actualReferencedFile = files.FirstOrDefault(x => x.BoardId == fileMapping.BoardId);
+
+						uint newFileId;
+
+						if (actualReferencedFile != null)
+						{
+							newFileId = actualReferencedFile.Id;
+						}
+						else
+						{
+							var oldFile = files.FirstOrDefault();
+							if (oldFile == null)
+								throw new Exception("why");
+
+							var oldImageFilename = Common.CalculateFilename(config.Value.FileLocation,
+								boards[oldFile.BoardId].ShortName,
+								Common.MediaType.Image, oldFile.Sha256Hash, oldFile.Extension);
+							var oldThumbFilename = Common.CalculateFilename(config.Value.FileLocation,
+								boards[oldFile.BoardId].ShortName,
+								Common.MediaType.Thumbnail, oldFile.Sha256Hash, "jpg");
+
+							var newImageFilename = Common.CalculateFilename(config.Value.FileLocation,
+								boards[fileMapping.BoardId].ShortName,
+								Common.MediaType.Image, oldFile.Sha256Hash, oldFile.Extension);
+							var newThumbFilename = Common.CalculateFilename(config.Value.FileLocation,
+								boards[fileMapping.BoardId].ShortName,
+								Common.MediaType.Thumbnail, oldFile.Sha256Hash, "jpg");
+
+							if (!System.IO.File.Exists(newImageFilename))
+								System.IO.File.Copy(oldImageFilename, newImageFilename);
+
+							if (!System.IO.File.Exists(newThumbFilename))
+							{
+								if (!System.IO.File.Exists(oldThumbFilename))
+								{
+									var md5Filename = Common.CalculateFilename(config.Value.FileLocation,
+										boards[fileMapping.BoardId].ShortName, Common.MediaType.Thumbnail, oldFile.Md5Hash, "jpg");
+
+									System.IO.File.Move(md5Filename, oldThumbFilename);
+								}
+
+								System.IO.File.Copy(oldThumbFilename, newThumbFilename);
+							}
+
+							var newFile = new DBFile
+							{
+								BoardId = fileMapping.BoardId,
+								Extension = oldFile.Extension,
+								Sha256Hash = oldFile.Sha256Hash,
+								Sha1Hash = oldFile.Sha1Hash,
+								Md5Hash = oldFile.Md5Hash,
+								ImageHeight = oldFile.ImageHeight,
+								ImageWidth = oldFile.ImageWidth,
+								Size = oldFile.Size,
+								AdditionalMetadata = oldFile.AdditionalMetadata
+							};
+
+							context.Add(newFile);
+
+							await Persist();
+
+							newFileId = newFile.Id;
+						}
+
+						context.Remove(fileMapping);
+
+						var newFileMapping = new DBFileMapping
+						{
+							BoardId = fileMapping.BoardId,
+							PostId = fileMapping.PostId,
+							FileId = newFileId,
+							Filename = fileMapping.Filename,
+							Index = fileMapping.Index,
+							IsDeleted = fileMapping.IsDeleted,
+							IsSpoiler = fileMapping.IsSpoiler,
+							AdditionalMetadata = fileMapping.AdditionalMetadata
+						};
+
+
+						context.Remove(fileMapping);
+						context.Add(newFileMapping);
+
+						await Persist();
+					}
+					catch (Exception ex)
+					{
+						Console.WriteLine(ex.Message);
+					}
+				}
+
+				await Persist();
+
+				Progress = 1;
+				CurrentStatus = "Done";
+			}, serviceProvider);
+		}
+		
 		public IActionResult StartRehash([FromServices] IServiceProvider serviceProvider)
 		{
 			return StartTask(async provider =>
@@ -75,13 +357,7 @@ namespace Hayden.WebServer.Controllers
 				var boards = await context.Boards.AsNoTracking().ToDictionaryAsync(x => x.Id);
 
 				var files = await context.Files.AsNoTracking()
-					.Where(x => (x.Extension == "jpg"
-					|| x.Extension == "jpeg"
-					|| x.Extension == "png"
-					|| x.Extension == "gif"
-					|| x.Extension == "webp"
-					|| x.Extension == "bmp")
-					&& x.Size == 0)
+					.Where(x => x.Size == 0)
 					.ToArrayAsync();
 				
 				var semaphore = new SemaphoreSlim(1);
@@ -109,6 +385,14 @@ namespace Hayden.WebServer.Controllers
 
 				CurrentStatus = (FormattableString)$"Processing files ({new Box<int>(1)} / {files.Length})";
 
+#if DEBUG
+				const int concurrent = 1;
+				const int persistPeriod = 1;
+#else
+				const int concurrent = 8;
+				const int persistPeriod = 100;
+#endif
+
 				await files.ForEachAsync(async file =>
 				{
 					try
@@ -125,18 +409,80 @@ namespace Hayden.WebServer.Controllers
 						{
 							await semaphore.WaitAsync();
 
-							context.Update(file);
+							if (md5Changed)
+							{
+								var newFilename = Common.CalculateFilename(config.Value.FileLocation,
+									boards[file.BoardId].ShortName, Common.MediaType.Image, file.Sha256Hash,
+									file.Extension);
+
+								var existingFile = await context.Files.FirstOrDefaultAsync(x =>
+									                   x.BoardId == file.BoardId && x.Sha256Hash == file.Sha256Hash) ??
+								                   context.Files.Local.FirstOrDefault(x =>
+									                   x.BoardId == file.BoardId &&
+									                   x.Sha256Hash.ByteArrayEquals(file.Sha256Hash));
+
+								if (existingFile != null)
+								{
+									if (existingFile.Id == 0) // conflicts with new file that hasn't been pushed yet
+										return;
+
+									await context.Database.ExecuteSqlRawAsync(
+										$"UPDATE file_mappings SET FileId = {existingFile.Id} WHERE FileId = {file.Id} AND BoardId = {file.BoardId}");
+
+									//foreach (var invalidFileMapping in context.FileMappings.Where(x => x.BoardId == file.BoardId && x.FileId == file.Id))
+									//{
+									//	invalidFileMapping.FileId = existingFile.Id;
+									//	context.Update(invalidFileMapping);
+									//}
+
+									if (!System.IO.File.Exists(newFilename))
+									{
+										System.IO.File.Copy(filename, newFilename);
+									}
+
+
+									//existingFile.OriginalMd5Hash = file.OriginalMd5Hash;
+
+									var obj = existingFile.AdditionalMetadata ?? new JObject();
+
+									const string key = "md5ConflictHistory";
+
+									JArray array = !obj.TryGetValue(key, out var rawArray) ? new JArray() : (JArray)rawArray;
+
+									array.Add(JObject.FromObject(new Md5Conflict(file.Md5Hash, existingFile.Md5Hash)));
+
+									obj[key] = array;
+									existingFile.AdditionalMetadata = obj;
+
+									context.Update(existingFile);
+									context.Remove(file);
+								}
+								else
+								{
+									if (!System.IO.File.Exists(newFilename))
+										System.IO.File.Copy(filename, newFilename);
+
+									context.Update(file);
+								}
+							}
+							else
+							{
+								context.Update(file);
+							}
 						}
 						finally
 						{
 							semaphore.Release();
 						}
 
-						if (current % 100 == 0)
+						if (current % persistPeriod == 0)
 							await Persist();
 					}
-					catch {  }
-				}, 8);
+					catch (Exception ex)
+					{
+						Console.WriteLine(ex.Message);
+					}
+				}, concurrent);
 
 				await Persist();
 				
@@ -154,220 +500,230 @@ namespace Hayden.WebServer.Controllers
 				var dbContext = provider.GetRequiredService<HaydenDbContext>();
 				var config = provider.GetRequiredService<IOptions<Config>>();
 
-				Progress = 0;
-				CurrentStatus = "Initializing";
+				var importer = new FoolFuukaImporter();
 
-				//const string searchDir = "G:\\utg-archive\\anoncafe";
-				const string searchDir = "G:\\utg-archive\\tvch";
-
-				foreach (var subfolder in Directory.EnumerateDirectories(searchDir, "*", SearchOption.TopDirectoryOnly))
+				await importer.Import("/mnt/nas3btank/Data/HaydenServer/foolfuuka", dbContext, config, new Progress<(float, FormattedString)>(tuple =>
 				{
-					string board = Path.GetFileName(subfolder);
+					var (progress, status) = tuple;
 
-					if (board == "hayden" || board == "server" || board == "temp")
-						continue;
+					Progress = progress;
+					CurrentStatus = status;
+				}));
 
-					static T ReadJson<T>(string filename)
-					{
-						using StreamReader streamReader = new StreamReader(System.IO.File.OpenRead(filename));
-						using JsonReader reader = new JsonTextReader(streamReader);
+				//Progress = 0;
+				//CurrentStatus = "Initializing";
 
-						return JToken.Load(reader).ToObject<T>();
-					}
+				////const string searchDir = "G:\\utg-archive\\anoncafe";
+				//const string searchDir = "G:\\utg-archive\\tvch";
 
-					var boardObject = await dbContext.Boards.FirstOrDefaultAsync(x => x.ShortName == board);
+				//foreach (var subfolder in Directory.EnumerateDirectories(searchDir, "*", SearchOption.TopDirectoryOnly))
+				//{
+				//	string board = Path.GetFileName(subfolder);
 
-					if (boardObject == null)
-					{
-						boardObject = new DBBoard
-						{
-							ShortName = board,
-							LongName = board,
-							Category = "tob",
-							IsNSFW = true
-						};
+				//	if (board == "hayden" || board == "server" || board == "temp")
+				//		continue;
 
-						dbContext.Add(boardObject);
-						await dbContext.SaveChangesAsync();
-					}
+				//	static T ReadJson<T>(string filename)
+				//	{
+				//		using StreamReader streamReader = new StreamReader(System.IO.File.OpenRead(filename));
+				//		using JsonReader reader = new JsonTextReader(streamReader);
 
-					var baseDirectory = Path.Combine(config.Value.FileLocation, board);
-					Directory.CreateDirectory(Path.Combine(baseDirectory, "image"));
-					Directory.CreateDirectory(Path.Combine(baseDirectory, "thumb"));
-					Directory.CreateDirectory(Path.Combine(baseDirectory, "thread"));
+				//		return JToken.Load(reader).ToObject<T>();
+				//	}
 
-					int totalCount = Directory.EnumerateFiles(subfolder, "thread.json", SearchOption.AllDirectories).Count();
-					int currentCount = 0;
+				//	var boardObject = await dbContext.Boards.FirstOrDefaultAsync(x => x.ShortName == board);
 
-					int currentPosts;
+				//	if (boardObject == null)
+				//	{
+				//		boardObject = new DBBoard
+				//		{
+				//			ShortName = board,
+				//			LongName = board,
+				//			Category = "tob",
+				//			IsNSFW = true
+				//		};
 
-					CurrentStatus = (FormattableString)$"Processing threads ({new Box<int>(currentCount)} / {totalCount}) (post {new Box<int>(0)} / {new Box<int>(0)})";
+				//		dbContext.Add(boardObject);
+				//		await dbContext.SaveChangesAsync();
+				//	}
 
-					foreach (var jsonFile in Directory.EnumerateFiles(subfolder, "thread.json", SearchOption.AllDirectories))
-					{
-						CurrentStatus.SetBox(0, ++currentCount);
-						Progress = currentCount / (float)totalCount;
+				//	var baseDirectory = Path.Combine(config.Value.FileLocation, board);
+				//	Directory.CreateDirectory(Path.Combine(baseDirectory, "image"));
+				//	Directory.CreateDirectory(Path.Combine(baseDirectory, "thumb"));
+				//	Directory.CreateDirectory(Path.Combine(baseDirectory, "thread"));
 
-						currentPosts = 0;
-						CurrentStatus.SetBox(2, currentPosts);
+				//	int totalCount = Directory.EnumerateFiles(subfolder, "thread.json", SearchOption.AllDirectories).Count();
+				//	int currentCount = 0;
 
-						//if (jsonFile.StartsWith(config.Value.FileLocation))
-						//	continue;
+				//	int currentPosts;
 
-						var thread = ReadJson<LynxChanThread>(jsonFile);
+				//	CurrentStatus = (FormattableString)$"Processing threads ({new Box<int>(currentCount)} / {totalCount}) (post {new Box<int>(0)} / {new Box<int>(0)})";
 
-						CurrentStatus.SetBox(3, thread.Posts.Count);
+				//	foreach (var jsonFile in Directory.EnumerateFiles(subfolder, "thread.json", SearchOption.AllDirectories))
+				//	{
+				//		CurrentStatus.SetBox(0, ++currentCount);
+				//		Progress = currentCount / (float)totalCount;
 
-						var existingThread = await dbContext.Threads.FirstOrDefaultAsync(x => x.BoardId == boardObject.Id && x.ThreadId == thread.OriginalPost.PostNumber);
+				//		currentPosts = 0;
+				//		CurrentStatus.SetBox(2, currentPosts);
 
-						var lastModifiedTime = thread.Posts.Max(x => x.CreationDateTime).UtcDateTime;
+				//		//if (jsonFile.StartsWith(config.Value.FileLocation))
+				//		//	continue;
 
-						if (existingThread != null)
-						{
-							existingThread.IsDeleted = thread.IsDeleted == true;
-							existingThread.IsArchived = thread.Archived;
-							existingThread.LastModified = lastModifiedTime;
-							existingThread.Title = thread.Subject;
-						}
-						else
-						{
-							existingThread = new DBThread()
-							{
-								BoardId = boardObject.Id,
-								ThreadId = thread.OriginalPost.PostNumber,
-								Title = thread.OriginalPost.Subject,
-								IsArchived = thread.Archived == true,
-								IsDeleted = thread.IsDeleted == true,
-								LastModified = lastModifiedTime
-							};
+				//		var thread = ReadJson<LynxChanThread>(jsonFile);
 
-							dbContext.Add(existingThread);
-						}
+				//		CurrentStatus.SetBox(3, thread.Posts.Count);
 
-						var existingPosts = await dbContext.Posts.Where(x => x.BoardId == boardObject.Id && x.ThreadId == thread.OriginalPost.PostNumber).ToArrayAsync();
+				//		var existingThread = await dbContext.Threads.FirstOrDefaultAsync(x => x.BoardId == boardObject.Id && x.ThreadId == thread.OriginalPost.PostNumber);
+
+				//		var lastModifiedTime = thread.Posts.Max(x => x.CreationDateTime).UtcDateTime;
+
+				//		if (existingThread != null)
+				//		{
+				//			existingThread.IsDeleted = thread.IsDeleted == true;
+				//			existingThread.IsArchived = thread.Archived;
+				//			existingThread.LastModified = lastModifiedTime;
+				//			existingThread.Title = thread.Subject;
+				//		}
+				//		else
+				//		{
+				//			existingThread = new DBThread()
+				//			{
+				//				BoardId = boardObject.Id,
+				//				ThreadId = thread.OriginalPost.PostNumber,
+				//				Title = thread.OriginalPost.Subject,
+				//				IsArchived = thread.Archived == true,
+				//				IsDeleted = thread.IsDeleted == true,
+				//				LastModified = lastModifiedTime
+				//			};
+
+				//			dbContext.Add(existingThread);
+				//		}
+
+				//		var existingPosts = await dbContext.Posts.Where(x => x.BoardId == boardObject.Id && x.ThreadId == thread.OriginalPost.PostNumber).ToArrayAsync();
 
 
-						foreach (var post in thread.Posts)
-						{
-							CurrentStatus.SetBox(2, ++currentPosts);
+				//		foreach (var post in thread.Posts)
+				//		{
+				//			CurrentStatus.SetBox(2, ++currentPosts);
 
-							if (post == null)
-								System.Diagnostics.Debugger.Break();
+				//			if (post == null)
+				//				System.Diagnostics.Debugger.Break();
 
-							var existingPost = existingPosts.FirstOrDefault(x => x.BoardId == boardObject.Id && x.PostId == post.PostNumber);
+				//			var existingPost = existingPosts.FirstOrDefault(x => x.BoardId == boardObject.Id && x.PostId == post.PostNumber);
 
-							if (existingPost != null)
-							{
-								existingPost.Author = post.Name;
-								existingPost.DateTime = post.CreationDateTime.UtcDateTime;
-								existingPost.IsDeleted = post.ExtensionIsDeleted == true;
-								existingPost.ContentHtml = post.Markdown;
-								existingPost.ContentRaw = post.Message;
-							}
-							else
-							{
-								existingPost = new DBPost()
-								{
-									BoardId = boardObject.Id,
-									PostId = post.PostNumber,
-									ThreadId = thread.OriginalPost.PostNumber,
-									ContentHtml = post.Markdown,
-									ContentRaw = post.Message,
-									Author = post.Name == "Anonymous" ? null : post.Name,
-									DateTime = post.CreationDateTime.UtcDateTime,
-									IsDeleted = post.ExtensionIsDeleted == true
-								};
+				//			if (existingPost != null)
+				//			{
+				//				existingPost.Author = post.Name;
+				//				existingPost.DateTime = post.CreationDateTime.UtcDateTime;
+				//				existingPost.IsDeleted = post.ExtensionIsDeleted == true;
+				//				existingPost.ContentHtml = post.Markdown;
+				//				existingPost.ContentRaw = post.Message;
+				//			}
+				//			else
+				//			{
+				//				existingPost = new DBPost()
+				//				{
+				//					BoardId = boardObject.Id,
+				//					PostId = post.PostNumber,
+				//					ThreadId = thread.OriginalPost.PostNumber,
+				//					ContentHtml = post.Markdown,
+				//					ContentRaw = post.Message,
+				//					Author = post.Name == "Anonymous" ? null : post.Name,
+				//					DateTime = post.CreationDateTime.UtcDateTime,
+				//					IsDeleted = post.ExtensionIsDeleted == true
+				//				};
 
-								// This block of logic is to fix a bug with JSON files specifying the same posts multiple times
-								var trackedPost = dbContext.Posts.Local.FirstOrDefault(x => x.BoardId == boardObject.Id && x.PostId == post.PostNumber);
+				//				// This block of logic is to fix a bug with JSON files specifying the same posts multiple times
+				//				var trackedPost = dbContext.Posts.Local.FirstOrDefault(x => x.BoardId == boardObject.Id && x.PostId == post.PostNumber);
 
-								if (trackedPost != null)
-								{
-									dbContext.Entry(trackedPost).State = EntityState.Detached;
-								}
+				//				if (trackedPost != null)
+				//				{
+				//					dbContext.Entry(trackedPost).State = EntityState.Detached;
+				//				}
 
-								dbContext.Add(existingPost);
-								await dbContext.SaveChangesAsync();
-							}
+				//				dbContext.Add(existingPost);
+				//				await dbContext.SaveChangesAsync();
+				//			}
 
-							int index = -1;
+				//			int index = -1;
 
-							foreach (var file in post.Files)
-							{
-								index++;
+				//			foreach (var file in post.Files)
+				//			{
+				//				index++;
 
-								string sourceFilename = Path.Combine(subfolder, existingThread.ThreadId.ToString(), file.DirectPath);
+				//				string sourceFilename = Path.Combine(subfolder, existingThread.ThreadId.ToString(), file.DirectPath);
 
-								var newDbFile = await UpdateDbFile(sourceFilename);
+				//				var (newDbFile, _) = await FileImporterTools.UpdateDbFile(sourceFilename);
 
-								var existingDbFile = await dbContext.Files.FirstOrDefaultAsync(x => x.BoardId == boardObject.Id && x.Sha256Hash == newDbFile.Sha256Hash);
+				//				var existingDbFile = await dbContext.Files.FirstOrDefaultAsync(x => x.BoardId == boardObject.Id && x.Sha256Hash == newDbFile.Sha256Hash);
 
-								if (existingDbFile == null)
-								{
-									newDbFile.BoardId = boardObject.Id;
-									newDbFile.Extension = sourceFilename.Substring(sourceFilename.LastIndexOf('.') + 1);
-									
-									dbContext.Add(newDbFile);
-									await dbContext.SaveChangesAsync();
+				//				if (existingDbFile == null)
+				//				{
+				//					newDbFile.BoardId = boardObject.Id;
+				//					newDbFile.Extension = sourceFilename.Substring(sourceFilename.LastIndexOf('.') + 1);
 
-									existingDbFile = newDbFile;
+				//					dbContext.Add(newDbFile);
+				//					await dbContext.SaveChangesAsync();
 
-									var base64Name = Utility.ConvertToBase(existingDbFile.Md5Hash);
+				//					existingDbFile = newDbFile;
 
-									if (string.IsNullOrWhiteSpace(base64Name))
-										System.Diagnostics.Debugger.Break();
+				//					var base64Name = Utility.ConvertToBase(existingDbFile.Md5Hash);
 
-									var destinationFilename = Path.Combine(config.Value.FileLocation, board, "image",
-										$"{base64Name}.{existingDbFile.Extension}");
+				//					if (string.IsNullOrWhiteSpace(base64Name))
+				//						System.Diagnostics.Debugger.Break();
 
-									if (!System.IO.File.Exists(destinationFilename))
-									{
-										System.IO.File.Copy(sourceFilename, destinationFilename);
+				//					var destinationFilename = Path.Combine(config.Value.FileLocation, board, "image",
+				//						$"{base64Name}.{existingDbFile.Extension}");
 
-										sourceFilename = Path.Combine(subfolder, existingPost.ThreadId.ToString(), "thumbs",
-											file.DirectThumbPath);
+				//					if (!System.IO.File.Exists(destinationFilename))
+				//					{
+				//						System.IO.File.Copy(sourceFilename, destinationFilename);
 
-										// this may not always result in .jpg....
-										destinationFilename = Path.Combine(config.Value.FileLocation, board, "thumb",
-											base64Name + ".jpg");
+				//						sourceFilename = Path.Combine(subfolder, existingPost.ThreadId.ToString(), "thumbs",
+				//							file.DirectThumbPath);
 
-										System.IO.File.Copy(sourceFilename, destinationFilename);
-									}
-								}
+				//						// this may not always result in .jpg....
+				//						destinationFilename = Path.Combine(config.Value.FileLocation, board, "thumb",
+				//							base64Name + ".jpg");
 
-								var existingFileMapping = await dbContext.FileMappings.FirstOrDefaultAsync(x =>
-									x.BoardId == boardObject.Id && x.PostId == post.PostNumber && x.FileId == existingDbFile.Id);
+				//						System.IO.File.Copy(sourceFilename, destinationFilename);
+				//					}
+				//				}
 
-								if (existingFileMapping == null)
-								{
-									existingFileMapping = new DBFileMapping
-									{
-										BoardId = boardObject.Id,
-										FileId = existingDbFile.Id,
-										PostId = post.PostNumber,
-										Index = (byte)index,
-										Filename = !file.OriginalName.Contains('.') ? file.OriginalName : file.OriginalName.Remove(file.OriginalName.LastIndexOf('.')),
-										IsDeleted = file.IsDeleted == true,
-										IsSpoiler = file.ThumbnailUrl.Contains("spoiler")
-									};
+				//				var existingFileMapping = await dbContext.FileMappings.FirstOrDefaultAsync(x =>
+				//					x.BoardId == boardObject.Id && x.PostId == post.PostNumber && x.FileId == existingDbFile.Id);
 
-									dbContext.FileMappings.Add(existingFileMapping);
-								}
-								else
-								{
-									existingFileMapping.IsSpoiler = file.ThumbnailUrl.Contains("spoiler");
-								}
-							}
-						}
+				//				if (existingFileMapping == null)
+				//				{
+				//					existingFileMapping = new DBFileMapping
+				//					{
+				//						BoardId = boardObject.Id,
+				//						FileId = existingDbFile.Id,
+				//						PostId = post.PostNumber,
+				//						Index = (byte)index,
+				//						Filename = !file.OriginalName.Contains('.') ? file.OriginalName : file.OriginalName.Remove(file.OriginalName.LastIndexOf('.')),
+				//						IsDeleted = file.IsDeleted == true,
+				//						IsSpoiler = file.ThumbnailUrl.Contains("spoiler")
+				//					};
 
-						await dbContext.SaveChangesAsync();
-						dbContext.DetachAllEntities();
+				//					dbContext.FileMappings.Add(existingFileMapping);
+				//				}
+				//				else
+				//				{
+				//					existingFileMapping.IsSpoiler = file.ThumbnailUrl.Contains("spoiler");
+				//				}
+				//			}
+				//		}
 
-						System.IO.File.Copy(jsonFile, Path.Combine(config.Value.FileLocation, board, "thread", thread.OriginalPost.PostNumber + ".json"), true);
-					}
-				}
+				//		await dbContext.SaveChangesAsync();
+				//		dbContext.DetachAllEntities();
 
-				CurrentStatus = "Done";
+				//		System.IO.File.Copy(jsonFile, Path.Combine(config.Value.FileLocation, board, "thread", thread.OriginalPost.PostNumber + ".json"), true);
+				//	}
+				//}
+
+				//CurrentStatus = "Done";
 			}, serviceProvider);
 		}
 

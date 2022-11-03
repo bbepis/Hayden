@@ -13,6 +13,13 @@ export class BoardModel {
     isReadOnly: boolean;
 }
 
+export class BoardPageModel {
+    threads: ThreadModel[];
+
+    totalThreadCount: number;
+    boardInfo: BoardModel;
+}
+
 export class ThreadModel {
     threadId: number;
 

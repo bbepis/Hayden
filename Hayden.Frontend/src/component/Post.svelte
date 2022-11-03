@@ -5,6 +5,8 @@
     import { onMount } from "svelte";
     import { Utility } from "../data/utility";
     import { RenderRawPost } from "../data/postrender";
+    import PostMenu from "./PostMenu.svelte";
+    import { moderatorUserStore } from "../data/stores";
 
     export let threadId: number;
     export let post: PostModel;
@@ -14,9 +16,28 @@
 
     const time = moment(post.dateTime + "Z");
 
+    let showDropdown: boolean = false;
+    let menu: HTMLElement;
+
     onMount(() => {
         jQuery(".post-contents a").attr("tinro-ignore", "true");
     });
+
+    function toggleMenu(value: boolean | null) {
+        showDropdown = value ?? !showDropdown;
+
+        if (showDropdown) {
+            //setImmediate(() => {menu.focus();});
+            setTimeout(() => {menu.focus();}, 0);
+        }
+    }
+
+    function menuKeyDown(e: KeyboardEvent) {
+        if (e.keyCode === 27) {
+            menu.blur();
+            e.preventDefault();
+        }
+    }
 </script>
 
 <div id="p{post.postId}" class="post reply">
@@ -35,6 +56,20 @@
                 >No. {post.postId}</a
             >
         </span>
+
+        {#if $moderatorUserStore}
+            <span class="menu-button" on:click={() => toggleMenu(!showDropdown)}>
+                ▼
+                <div tabindex="-1"
+                    class="menu" class:hidden={!showDropdown}
+                    on:blur={() => {toggleMenu(false);}}
+                    on:keydown={menuKeyDown}
+                    on:click={e => {e.stopPropagation();}}
+                    bind:this={menu}>
+                    <PostMenu />
+                </div>
+            </span>
+        {/if}
         {#if backquotes}
             {#each backquotes as backquoteId (backquoteId)}
                 <div class="backquote">
@@ -105,5 +140,25 @@
         display: inline-block;
         padding-left: 3px;
         padding-right: 3px;
+    }
+
+    .hidden {
+        display: none;
+    }
+
+    .menu-button {
+        cursor: pointer;
+        position: relative;
+    }
+
+    .menu {
+        position: absolute;
+        top: 100%;
+        left: 0;
+        cursor: initial;
+    }
+
+    .post {
+        overflow: initial;
     }
 </style>

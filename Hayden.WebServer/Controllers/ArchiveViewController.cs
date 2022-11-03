@@ -71,6 +71,20 @@ namespace Hayden.WebServer.Controllers
 			return NotFound();
 		}
 
+		[HttpGet]
+		[Route("Login")]
+		public IActionResult Login()
+		{
+			return NotFound();
+		}
+
+		[HttpGet]
+		[Route("Register")]
+		public IActionResult Register()
+		{
+			return NotFound();
+		}
+
 		[NonAction]
 		private static YotsubaThread ReadJson(string filename)
 		{

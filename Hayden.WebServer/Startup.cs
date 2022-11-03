@@ -4,24 +4,28 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using System;
+using System.Threading.Tasks;
 using Hayden.Consumers.HaydenMysql.DB;
+using Hayden.WebServer.Controllers.Api;
 using Hayden.WebServer.DB.Elasticsearch;
+using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 using Nest;
-using Pomelo.EntityFrameworkCore.MySql.Infrastructure;
-using Pomelo.EntityFrameworkCore.MySql.Storage;
 
 namespace Hayden.WebServer
 {
 	public class Startup
 	{
-		public Startup(IConfiguration configuration)
+		public Startup(IConfiguration configuration, IWebHostEnvironment env)
 		{
 			Configuration = configuration;
+			Environment = env;
 		}
 
 		public IConfiguration Configuration { get; }
+		public IWebHostEnvironment Environment { get; }
 
 		private Config Config { get; set; }
 
@@ -59,6 +63,19 @@ namespace Hayden.WebServer
 
 				return new ElasticClient(settings);
 			});
+			
+			services.AddAuthentication()
+				.AddCookie(options =>
+				{
+					options.Cookie.Name = "identity";
+					options.Cookie.IsEssential = true;
+					options.Cookie.HttpOnly = false;
+					options.Cookie.SameSite = Environment.IsDevelopment() ? SameSiteMode.None : SameSiteMode.Strict;
+					options.Events.OnRedirectToAccessDenied = context => {
+						context.Response.StatusCode = 403;
+						return Task.CompletedTask;
+					};
+				});
 
 			services.AddMvc(x => { x.EnableEndpointRouting = false; });
 		}
@@ -66,6 +83,11 @@ namespace Hayden.WebServer
 		// This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
 		public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
 		{
+			if (env.IsDevelopment())
+			{
+				ApiController.RegisterCodes.Add("development", ModeratorRole.Developer);
+			}
+
 			if (env.IsDevelopment())
 			{
 				app.UseDeveloperExceptionPage();
@@ -82,7 +104,11 @@ namespace Hayden.WebServer
 				ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
 			});
 
-			app.UseHttpsRedirection();
+			if (!env.IsDevelopment())
+			{
+				app.UseHttpsRedirection();
+			}
+
 			app.UseStaticFiles();
 
 			if (env.IsDevelopment())
@@ -97,6 +123,7 @@ namespace Hayden.WebServer
 
 			app.UseRouting();
 
+			app.UseAuthentication();
 			app.UseAuthorization();
 
 			app.UseMvc();
