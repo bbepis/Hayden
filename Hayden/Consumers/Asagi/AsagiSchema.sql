@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS `{0}` (
   `op` bool NOT NULL DEFAULT '0',
   `timestamp` int unsigned NOT NULL,
   `timestamp_expired` int unsigned NOT NULL,
-  `preview_orig` varchar(20),
+  `preview_orig` varchar(255),
   `preview_w` smallint unsigned NOT NULL DEFAULT '0',
   `preview_h` smallint unsigned NOT NULL DEFAULT '0',
   `media_filename` text,
@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS `{0}` (
   `media_h` smallint unsigned NOT NULL DEFAULT '0',
   `media_size` int unsigned NOT NULL DEFAULT '0',
   `media_hash` varchar(25),
-  `media_orig` varchar(20),
+  `media_orig` varchar(255),
   `spoiler` bool NOT NULL DEFAULT '0',
   `deleted` bool NOT NULL DEFAULT '0',
   `capcode` varchar(1) NOT NULL DEFAULT 'N',
@@ -97,9 +97,9 @@ CREATE TABLE IF NOT EXISTS `{0}_users` (
 CREATE TABLE IF NOT EXISTS `{0}_images` (
   `media_id` int unsigned NOT NULL auto_increment,
   `media_hash` varchar(25) NOT NULL,
-  `media` varchar(20),
-  `preview_op` varchar(20),
-  `preview_reply` varchar(20),
+  `media` varchar(255),
+  `preview_op` varchar(255),
+  `preview_reply` varchar(255),
   `total` int(10) unsigned NOT NULL DEFAULT '0',
   `banned` smallint unsigned NOT NULL DEFAULT '0',
 
@@ -252,7 +252,7 @@ DROP PROCEDURE IF EXISTS `insert_image_{0}`; $
 
 
 CREATE PROCEDURE `insert_image_{0}` (n_media_hash VARCHAR(25),
- n_media VARCHAR(20), n_preview VARCHAR(20), n_op INT)
+ n_media VARCHAR(255), n_preview VARCHAR(255), n_op INT)
 BEGIN
   IF n_op = 1 THEN
     INSERT INTO `{0}_images` (media_hash, media, preview_op, total)
