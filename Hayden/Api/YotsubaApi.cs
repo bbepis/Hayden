@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Hayden.Api;
 using Hayden.Models;
+using NodaTime;
 
 namespace Hayden
 {
@@ -31,13 +32,17 @@ namespace Hayden
 		/// <inheritdoc />
 		public override Task<ApiResponse<YotsubaThread>> GetThread(string board, ulong threadNumber, HttpClient client, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default)
 		{
-			return MakeJsonApiCall<YotsubaThread>(new Uri($"https://a.4cdn.org/{board}/thread/{threadNumber}.json"), client, modifiedSince, cancellationToken);
+			var timestampNow = SystemClock.Instance.GetCurrentInstant().ToUnixTimeSeconds();
+
+			return MakeJsonApiCall<YotsubaThread>(new Uri($"https://a.4cdn.org/{board}/thread/{threadNumber}.json?t={timestampNow}"), client, modifiedSince, cancellationToken);
 		}
 
 		/// <inheritdoc />
 		public override async Task<ApiResponse<PageThread[]>> GetBoard(string board, HttpClient client, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default)
 		{
-			var result = await MakeJsonApiCall<Page[]>(new Uri($"https://a.4cdn.org/{board}/catalog.json"), client, modifiedSince, cancellationToken);
+			var timestampNow = SystemClock.Instance.GetCurrentInstant().ToUnixTimeSeconds();
+
+			var result = await MakeJsonApiCall<Page[]>(new Uri($"https://a.4cdn.org/{board}/catalog.json?t={timestampNow}"), client, modifiedSince, cancellationToken);
 
 			if (result.ResponseType != ResponseType.Ok)
 				return new ApiResponse<PageThread[]>(result.ResponseType, null);
@@ -48,7 +53,9 @@ namespace Hayden
 		/// <inheritdoc />
 		public override Task<ApiResponse<ulong[]>> GetArchive(string board, HttpClient client, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default)
 		{
-			return MakeJsonApiCall<ulong[]>(new Uri($"https://a.4cdn.org/{board}/archive.json"), client, modifiedSince, cancellationToken);
+			var timestampNow = SystemClock.Instance.GetCurrentInstant().ToUnixTimeSeconds();
+
+			return MakeJsonApiCall<ulong[]>(new Uri($"https://a.4cdn.org/{board}/archive.json?t={timestampNow}"), client, modifiedSince, cancellationToken);
 		}
 	}
 }
