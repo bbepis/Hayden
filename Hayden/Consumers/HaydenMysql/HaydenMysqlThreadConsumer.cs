@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Data;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
@@ -9,6 +8,8 @@ using Hayden.Consumers.HaydenMysql.DB;
 using Hayden.Contract;
 using Hayden.Models;
 using Microsoft.EntityFrameworkCore;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 
 namespace Hayden.Consumers
 {
@@ -81,62 +82,62 @@ namespace Hayden.Consumers
 				if (!Config.FullImagesEnabled && !Config.ThumbnailsEnabled)
 					return; // skip the DB check since we're not even bothering with images
 
-				if (post.FileMd5 != null)
+				if (post.FileMd5 == null)
+					return;
+
+				if (!Config.DoNotUseMd5HashForComparison)
 				{
-					if (!Config.DoNotUseMd5HashForComparison)
-					{
-						var existingFile = await dbContext.Files.FirstOrDefaultAsync(x =>
-							x.Md5Hash == Convert.FromBase64String(post.FileMd5)
-							&& x.Size == post.FileSize.Value
-							&& x.BoardId == boardId);
+					var existingFile = await dbContext.Files.FirstOrDefaultAsync(x =>
+						x.Md5Hash == Convert.FromBase64String(post.FileMd5)
+						&& x.Size == post.FileSize.Value
+						&& x.BoardId == boardId);
 
-						if (existingFile != null)
+					if (existingFile != null)
+					{
+						// We know we have the file. Just attach it
+
+						var fileMapping = new DBFileMapping
 						{
-							// We know we have the file. Just attach it
+							BoardId = boardId,
+							PostId = post.PostNumber,
+							FileId = existingFile.Id,
+							Filename = Path.GetFileNameWithoutExtension(post.OriginalFilename),
+							Index = 0,
+							IsDeleted = post.FileDeleted.GetValueOrDefault(),
+							IsSpoiler = post.SpoilerImage.GetValueOrDefault()
+						};
 
-							var fileMapping = new DBFileMapping
-							{
-								BoardId = boardId,
-								PostId = post.PostNumber,
-								FileId = existingFile.Id,
-								Filename = Path.GetFileNameWithoutExtension(post.OriginalFilename),
-								Index = 0,
-								IsDeleted = post.FileDeleted.GetValueOrDefault(),
-								IsSpoiler = post.SpoilerImage.GetValueOrDefault()
-							};
+						dbContext.Add(fileMapping);
 
-							dbContext.Add(fileMapping);
-
-							return;
-						}
+						return;
 					}
-
-					Uri imageUrl = null;
-					Uri thumbUrl = null;
-
-					if (Config.FullImagesEnabled)
-					{
-						string imageDirectory = Path.Combine(Config.DownloadLocation, board, "image");
-						Directory.CreateDirectory(imageDirectory);
-
-						imageUrl = new Uri($"https://i.4cdn.org/{board}/{post.TimestampedFilenameFull}");
-					}
-
-					if (Config.ThumbnailsEnabled)
-					{
-						string thumbnailDirectory = Path.Combine(Config.DownloadLocation, board, "thumb");
-						Directory.CreateDirectory(thumbnailDirectory);
-
-						thumbUrl = new Uri($"https://i.4cdn.org/{board}/{post.TimestampedFilename}s.jpg");
-					}
-					
-					imageDownloads.Add(new QueuedImageDownload(imageUrl, thumbUrl, new()
-					{
-						["board"] = board,
-						["boardId"] = boardId,
-						["post"] = post
-					}));
 				}
+
+				Uri imageUrl = null;
+				Uri thumbUrl = null;
+
+				if (Config.FullImagesEnabled)
+				{
+					string imageDirectory = Path.Combine(Config.DownloadLocation, board, "image");
+					Directory.CreateDirectory(imageDirectory);
+
+					imageUrl = new Uri($"https://i.4cdn.org/{board}/{post.TimestampedFilenameFull}");
+				}
+
+				if (Config.ThumbnailsEnabled)
+				{
+					string thumbnailDirectory = Path.Combine(Config.DownloadLocation, board, "thumb");
+					Directory.CreateDirectory(thumbnailDirectory);
+
+					thumbUrl = new Uri($"https://i.4cdn.org/{board}/{post.TimestampedFilename}s.jpg");
+				}
+
+				imageDownloads.Add(new QueuedImageDownload(imageUrl, thumbUrl, new()
+				{
+					["board"] = board,
+					["boardId"] = boardId,
+					["post"] = post
+				}));
 			}
 
 			if (threadUpdateInfo.IsNewThread)
