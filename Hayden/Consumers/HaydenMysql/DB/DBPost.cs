@@ -15,6 +15,9 @@ namespace Hayden.Consumers.HaydenMysql.DB
 		public string ContentRaw { get; set; }
 
 		[Column(TypeName = "varchar(255)")]
+		public ContentType ContentType { get; set; }
+
+		[Column(TypeName = "varchar(255)")]
 		public string Author { get; set; }
 
 		[Column(TypeName = "varchar(255)")]
@@ -27,7 +30,15 @@ namespace Hayden.Consumers.HaydenMysql.DB
 
 		public bool IsDeleted { get; set; }
 
+		public byte[] PosterIP { get; set; }
+
 		[Column(TypeName = "json")]
 		public string AdditionalMetadata { get; set; }
+	}
+
+	public enum ContentType
+	{
+		Hayden,
+		Yotsuba
 	}
 }

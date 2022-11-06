@@ -18,6 +18,10 @@ namespace Hayden.Consumers.HaydenMysql.DB
 		public virtual DbSet<DBFileMapping> FileMappings { get; set; }
 		public virtual DbSet<DBFile> Files { get; set; }
 
+		// live imageboard only
+		public virtual DbSet<DBBannedPoster> BannedPosters { get; set; }
+		public virtual DbSet<DBModerator> Moderators { get; set; }
+
 		public HaydenDbContext(DbContextOptions options) : base(options) { }
 
 		protected override void OnModelCreating(ModelBuilder modelBuilder)

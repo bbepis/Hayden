@@ -16,5 +16,8 @@ namespace Hayden.Consumers.HaydenMysql.DB
 
 		public bool IsArchived { get; set; }
 		public bool IsDeleted { get; set; }
+
+		[Column(TypeName = "json")]
+		public string AdditionalMetadata { get; set; }
 	}
 }

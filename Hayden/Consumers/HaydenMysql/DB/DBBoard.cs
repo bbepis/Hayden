@@ -23,9 +23,12 @@ namespace Hayden.Consumers.HaydenMysql.DB
 		public bool IsNSFW { get; set; }
 
 		[Column(TypeName = "tinyint")]
-		public bool IsMultiImage { get; set; }
+		public byte MultiImageLimit { get; set; }
 
 		[Column(TypeName = "tinyint")]
 		public bool IsReadOnly { get; set; }
+
+		[Column(TypeName = "tinyint")]
+		public bool ShowsDeletedPosts { get; set; }
 	}
 }
