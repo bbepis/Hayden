@@ -157,12 +157,16 @@ namespace Hayden.Consumers
 
 			foreach (var post in threadUpdateInfo.NewPosts)
 			{
+				var rawComment = AsagiThreadConsumer.CleanComment(post.Comment);
+
 				dbContext.Add(new DBPost
 				{
 					BoardId = boardId,
 					PostId = post.PostNumber,
 					ThreadId = post.ReplyPostNumber != 0 ? post.ReplyPostNumber : post.PostNumber,
 					ContentHtml = post.Comment,
+					ContentRaw = rawComment.TrimAndNullify(),
+					ContentType = ContentType.Yotsuba,
 					Author = post.Name == "Anonymous" ? null : post.Name,
 					Tripcode = post.Trip,
 					DateTime = Utility.ConvertGMTTimestamp(post.UnixTimestamp).UtcDateTime
@@ -185,7 +189,37 @@ namespace Hayden.Consumers
 				var dbPost = await dbContext.Posts.FirstAsync(x => x.BoardId == boardId && x.PostId == post.PostNumber);
 				var dbPostMappings = await dbContext.FileMappings.Where(x => x.BoardId == boardId && x.PostId == post.PostNumber).ToArrayAsync();
 
-				dbPost.ContentHtml = post.Comment;
+				var newRawComment = AsagiThreadConsumer.CleanComment(post.Comment).TrimAndNullify();
+
+				//if (post.Comment != dbPost.ContentHtml)
+				if (dbPost.ContentRaw != null && newRawComment != dbPost.ContentRaw)
+				{
+					// this needs to be made more efficient
+					// this also doesn't cooperate well with deadlinks (why the fuck is that passed through the api html render?)
+
+					var jsonAdditionalMetadata = !string.IsNullOrWhiteSpace(dbPost.AdditionalMetadata)
+						? JObject.Parse(dbPost.AdditionalMetadata)
+						: new JObject();
+
+					const string jsonKey = "content_modifications";
+
+					var modificationsArray = jsonAdditionalMetadata.GetValue(jsonKey) as JArray ??
+											 new JArray();
+
+					modificationsArray.Add(JToken.FromObject(new
+					{
+						time = DateTimeOffset.UtcNow,
+						old_content = dbPost.ContentHtml,
+						new_content = post.Comment
+					}));
+
+					jsonAdditionalMetadata[jsonKey] = modificationsArray;
+					dbPost.AdditionalMetadata = jsonAdditionalMetadata.ToString(Formatting.None);
+					
+					dbPost.ContentHtml = post.Comment;
+					dbPost.ContentRaw = newRawComment;
+				}
+
 				dbPost.IsDeleted = false;
 
 				foreach (var dbPostMapping in dbPostMappings)
