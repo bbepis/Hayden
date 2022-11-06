@@ -29,7 +29,7 @@ namespace Hayden.Api
 									+ TimeSpan.FromMilliseconds(random.Next(0, 5000)) // plus some jitter: up to 5 seconds
 				)
 				.WrapAsync(
-					Policy.TimeoutAsync(10, TimeoutStrategy.Optimistic, (context, span, failedTask) =>
+					Policy.TimeoutAsync(10, TimeoutStrategy.Pessimistic, (context, span, failedTask) =>
 					{
 						Program.Log($"Timeout occurred: {context.OperationKey}", true);
 						return Task.CompletedTask;
@@ -45,12 +45,12 @@ namespace Hayden.Api
 		{
 			return Policy<T>
 				   .Handle<Exception>()
-				   .WaitAndRetryAsync(99999,
+				   .WaitAndRetryAsync(tries,
 					   retryAttempt => TimeSpan.FromSeconds(Math.Pow(2, Math.Min(retryAttempt, 5))) // exponential back-off: 2, 4, 8 etc
 				                                      + TimeSpan.FromMilliseconds(random.Next(0, 5000)) // plus some jitter: up to 5 seconds
 				   )
 				   .WrapAsync(
-					   Policy.TimeoutAsync(10, TimeoutStrategy.Optimistic, (context, span, failedTask) =>
+					   Policy.TimeoutAsync(10, TimeoutStrategy.Pessimistic, (context, span, failedTask) =>
 					   {
 						   Program.Log($"Timeout occurred: {context.OperationKey}", true);
 						   return Task.CompletedTask;

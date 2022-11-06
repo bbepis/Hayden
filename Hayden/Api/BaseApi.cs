@@ -33,14 +33,14 @@ namespace Hayden.Api
 		private async Task<(bool, HttpResponseMessage, ResponseType)> MakeApiCallInternal(Uri uri, HttpClient client, DateTimeOffset? modifiedSince, CancellationToken cancellationToken)
 		{
 			int callCount = 0;
-			var httpResponse = await NetworkPolicies.HttpApiPolicy.ExecuteAsync(_ =>
+			var httpResponse = await NetworkPolicies.HttpApiPolicy.ExecuteAsync((context, requestToken) =>
 			{
 				Program.Log($"HttpApiPolicy call ({callCount}): {uri.AbsoluteUri}", true);
 
 				using var request = CreateRequest(uri, modifiedSince);
 
-				return client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-			}, new Context(uri.AbsoluteUri)).ConfigureAwait(false);
+				return client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, requestToken);
+			}, new Context(uri.AbsoluteUri), cancellationToken).ConfigureAwait(false);
 
 			if (httpResponse.StatusCode == HttpStatusCode.NotModified)
 			{
@@ -68,7 +68,7 @@ namespace Hayden.Api
 				return new ApiResponse<T>(responseType, default);
 			}
 
-			await using var responseStream = await message.Content.ReadAsStreamAsync();
+			await using var responseStream = await message.Content.ReadAsStreamAsync(cancellationToken);
 			using StreamReader streamReader = new StreamReader(responseStream);
 			using JsonReader reader = new JsonTextReader(streamReader);
 
@@ -92,7 +92,7 @@ namespace Hayden.Api
 			// maybe this can be a static property?
 			var parser = new HtmlParser();
 
-			await using var responseStream = await message.Content.ReadAsStreamAsync();
+			await using var responseStream = await message.Content.ReadAsStreamAsync(cancellationToken);
 			
 			var document = await parser.ParseDocumentAsync(responseStream);
 
