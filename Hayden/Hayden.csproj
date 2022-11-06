@@ -37,9 +37,6 @@
     <Reference Include="LiteDB">
       <HintPath>..\lib\LiteDB.dll</HintPath>
     </Reference>
-    <Reference Include="NSocks">
-      <HintPath>..\lib\NSocks.dll</HintPath>
-    </Reference>
   </ItemGroup>
 
 </Project>

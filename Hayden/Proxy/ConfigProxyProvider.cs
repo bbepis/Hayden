@@ -6,7 +6,6 @@ using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using Newtonsoft.Json.Linq;
-using NSocks;
 
 namespace Hayden.Proxy
 {
@@ -31,48 +30,20 @@ namespace Hayden.Proxy
 			if (JsonArray != null)
 				foreach (JObject obj in JsonArray)
 				{
-					string proxyType = obj["type"]?.Value<string>() ?? string.Empty;
+					string url = obj["url"]?.Value<string>();
 
-					if (proxyType.Equals("http", StringComparison.OrdinalIgnoreCase))
-					{
-						string url = obj["url"]?.Value<string>();
+					if (string.IsNullOrWhiteSpace(url))
+						throw new Exception("Proxy URL must be specified and not empty.");
 
-						if (string.IsNullOrWhiteSpace(url))
-							throw new Exception("Proxy URL must be specified and not empty.");
+					string username = obj["username"]?.Value<string>();
+					string password = obj["password"]?.Value<string>();
 
-						string username = obj["username"]?.Value<string>();
-						string password = obj["password"]?.Value<string>();
+					IWebProxy proxy = username != null
+									  ? new WebProxy(url, false, Array.Empty<string>(),
+										  new NetworkCredential(username, password))
+									  : new WebProxy(url);
 
-						IWebProxy proxy = username != null
-										  ? new WebProxy(url, false, new string[0], new NetworkCredential(username, password))
-										  : new WebProxy(url);
-
-						proxies.Add(new HttpClientProxy(CreateNewClient(proxy), $"{username}@{url}"));
-					}
-					else if (proxyType.Equals("socks", StringComparison.OrdinalIgnoreCase))
-					{
-						string url = obj["url"]?.Value<string>();
-
-						if (string.IsNullOrWhiteSpace(url))
-							throw new Exception("Proxy URL must be specified and not empty.");
-
-						Uri uri = new Uri(url);
-
-						string username = obj["username"]?.Value<string>();
-						string password = obj["password"]?.Value<string>();
-
-
-						var handler = new Socks5Handler(uri, username, password);
-						handler.ResolveDnsLocally = ResolveDnsLocally;
-						proxies.Add(new HttpClientProxy(CreateNewClient(handler), $"{username}@{uri.Host}:{uri.Port}"));
-					}
-					else
-					{
-						if (proxyType == string.Empty)
-							throw new Exception("Proxy type must be specified.");
-
-						throw new Exception($"Unknown proxy type: {proxyType}");
-					}
+					proxies.Add(new HttpClientProxy(CreateNewClient(proxy), $"{username}@{url}"));
 				}
 
 			// add a direct connection client too
