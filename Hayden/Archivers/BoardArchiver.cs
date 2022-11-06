@@ -553,9 +553,20 @@ namespace Hayden
 					var existingArchivedThreads = await ThreadConsumer.CheckExistingThreads(archiveRequest.Data, board, false, true);
 
 					Program.Log($"Found {existingArchivedThreads.Count} existing archived threads for board /{board}/");
-					
+
+					// TODO: this is an optimization that needs a config flag for opting out,
+					// i.e. if you change your filter options you might want to rescan all archived posts
+
+					var lastKnownArchivedThread = existingArchivedThreads
+						.Where(x => x.Archived)
+						.OrderByDescending(x => x.ThreadId)
+						.FirstOrDefault();
+
+					var lastKnownArchivedThreadId = lastKnownArchivedThread.ThreadId; // this will default to 0 if none was found, which is what we want
+
 					var filteredArchivedIds = archiveRequest.Data
 						.Except(existingArchivedThreads.Select(x => x.ThreadId))
+						.Where(x => x > lastKnownArchivedThreadId)
 						.Select(x => new ThreadPointer(board, x))
 						.Where(ThreadIdFilter)
 						.ToArray();
