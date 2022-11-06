@@ -3,7 +3,6 @@ using System.Buffers;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
-using System.IO;
 using System.Linq;
 using System.Net.Http;
 using System.Threading;
@@ -336,12 +335,16 @@ namespace Hayden
 
 							if (!success)
 							{
+								// TODO: investigate why threads that error out don't get requeued properly 
+
 								lock (requeuedThreads)
 									requeuedThreads.Add(nextThread);
 
 								outerSuccess = false;
 								return;
 							}
+
+							// TODO: config option to requeue threads that have not been modified, up to a set amount of retries
 
 							if (result.ImageDownloads.Count > 0)
 							{
@@ -607,15 +610,15 @@ namespace Hayden
 			var threads = new List<ThreadPointer>();
 			List<ThreadPointer> allThreads = null;
 
-			var pagesRequest = await NetworkPolicies.GenericRetryPolicy<ApiResponse<PageThread[]>>(12).ExecuteAsync(async (token) =>
+			var pagesRequest = await NetworkPolicies.GenericRetryPolicy<ApiResponse<PageThread[]>>(12).ExecuteAsync(async (requestToken) =>
 			{
-				token.ThrowIfCancellationRequested();
+				requestToken.ThrowIfCancellationRequested();
 				Program.Log($"Requesting threads from board /{board}/...");
 				await using var boardClient = await ProxyProvider.RentHttpClient();
 				return await FrontendApi.GetBoard(board,
 					boardClient.Object.Client,
 					lastDateTimeCheck,
-					token);
+					requestToken);
 			}, token);
 
 			switch (pagesRequest.ResponseType)
@@ -646,7 +649,7 @@ namespace Hayden
 							{
 								threadList.Remove(thread);
 							}
-
+							
 							// Start tracking the thread
 
 							lock (TrackedThreads)
