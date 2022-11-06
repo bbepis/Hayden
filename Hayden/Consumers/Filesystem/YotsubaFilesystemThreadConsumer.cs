@@ -2,7 +2,6 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Threading.Tasks;
 using Hayden.Config;
 using Hayden.Contract;
 using Hayden.Models;

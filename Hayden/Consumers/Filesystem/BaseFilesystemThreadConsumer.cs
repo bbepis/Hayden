@@ -139,40 +139,52 @@ namespace Hayden.Consumers
 
 		public void PerformJsonThreadUpdate(ThreadUpdateInfo<TThread, TPost> threadUpdateInfo, string threadFileName)
 		{
-			if (!File.Exists(threadFileName))
+			TThread writtenThread;
+
+			try
 			{
-				// this is a brand new thread being written, so we just write it as-is
+				writtenThread = ReadJson(threadFileName);
+			}
+			catch
+			{
+				// thread either doesn't exist, or is corrupt. treat it as a never seen before thread by writing it as-is
 
 				WriteJson(threadFileName, threadUpdateInfo.Thread);
+				return;
 			}
-			else
+
+			// this thread already exists on disk. we have to modify it such that we keep post deletions
+
+			// overwrite any modified posts
+
+			PerformThreadUpdate(threadUpdateInfo, writtenThread);
+
+			// mark any deleted posts
+
+			foreach (var deletedPostId in threadUpdateInfo.DeletedPosts)
 			{
-				// this thread already exists on disk. we have to modify it such that we keep post deletions
+				var deletedPost = writtenThread.Posts.FirstOrDefault(x => x.PostNumber == deletedPostId);
 
-				var writtenThread = ReadJson(threadFileName);
-
-				// overwrite any modified posts
-
-				PerformThreadUpdate(threadUpdateInfo, writtenThread);
-
-				// mark any deleted posts
-
-				foreach (var deletedPostId in threadUpdateInfo.DeletedPosts)
+				if (deletedPost != null)
 				{
-					writtenThread.Posts.First(x => x.PostNumber == deletedPostId).ExtensionIsDeleted = true;
+					deletedPost.ExtensionIsDeleted = true;
 				}
-
-				// add any new posts
-
-				foreach (var newPost in threadUpdateInfo.NewPosts)
+				else
 				{
-					writtenThread.Posts.Add(newPost);
+					// not good
 				}
-
-				// write the modified thread back to disk
-
-				WriteJson(threadFileName, writtenThread);
 			}
+
+			// add any new posts
+
+			foreach (var newPost in threadUpdateInfo.NewPosts)
+			{
+				writtenThread.Posts.Add(newPost);
+			}
+
+			// write the modified thread back to disk
+
+			WriteJson(threadFileName, writtenThread);
 		}
 
 		protected abstract void PerformThreadUpdate(ThreadUpdateInfo<TThread, TPost> threadUpdateInfo, TThread writtenThread);
