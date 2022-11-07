@@ -859,6 +859,8 @@ namespace Hayden
 				})
 				.ConfigureAwait(false);
 
+			response.EnsureSuccessStatusCode();
+
 			var memoryBufferSize = (int)response.Content.Headers.ContentLength.GetValueOrDefault(8 * 1024 * 1024);
 
 			var rentedMemory = MemoryPool<byte>.Shared.Rent(memoryBufferSize);

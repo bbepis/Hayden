@@ -76,6 +76,7 @@ namespace Hayden.Proxy
 
 			httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; rv:68.0) Gecko/20100101 Firefox/68.0");
 			httpClient.DefaultRequestHeaders.AcceptEncoding.ParseAdd("gzip, deflate");
+			httpClient.Timeout = TimeSpan.FromSeconds(10);
 
 			return httpClient;
 		}
