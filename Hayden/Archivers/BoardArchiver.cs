@@ -855,6 +855,13 @@ namespace Hayden
 			using var response = await NetworkPolicies.HttpApiPolicy.ExecuteAsync(() =>
 				{
 					var request = new HttpRequestMessage(HttpMethod.Get, imageUrl);
+
+					if (imageUrl.Host == "8chan.moe")
+					{
+						// dumb bot check
+						request.Headers.Add("Cookie", "splash=1");
+					}
+
 					return httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
 				})
 				.ConfigureAwait(false);
