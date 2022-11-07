@@ -5,8 +5,12 @@ using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using Hayden.Api;
+using Hayden.Config;
+using Hayden.Consumers.HaydenMysql.DB;
 using Hayden.Models;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
+using Thread = Hayden.Models.Thread;
 
 #pragma warning disable CS0649 // Field is never assigned to, and will always have its default value null
 
@@ -20,11 +24,11 @@ namespace Hayden
 
 		public string ImageboardWebsite { get; }
 
-		public MegucaApi(string imageboardWebsite)
+		public MegucaApi(SourceConfig sourceConfig)
 		{
-			ImageboardWebsite = imageboardWebsite;
+			ImageboardWebsite = sourceConfig.ImageboardWebsite;
 
-			if (!imageboardWebsite.EndsWith("/"))
+			if (!ImageboardWebsite.EndsWith("/"))
 				ImageboardWebsite += "/";
 		}
 
@@ -32,7 +36,7 @@ namespace Hayden
 		public override bool SupportsArchive => false;
 
 		/// <inheritdoc />
-		public override async Task<ApiResponse<MegucaThread>> GetThread(string board, ulong threadNumber, HttpClient client, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default)
+		protected override async Task<ApiResponse<MegucaThread>> GetThreadInternal(string board, ulong threadNumber, HttpClient client, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default)
 		{
 			var response = await MakeHtmlCall(new Uri($"{ImageboardWebsite}{board}/{threadNumber}"), client, modifiedSince, cancellationToken);
 
@@ -61,6 +65,22 @@ namespace Hayden
 			return new ApiResponse<MegucaThread>(ResponseType.Ok, thread);
 		}
 
+		protected override Thread ConvertThread(MegucaThread thread, string board)
+		{
+			return new Thread
+			{
+				ThreadId = thread.OriginalPost.PostNumber,
+				Title = thread.Subject,
+				IsArchived = thread.Locked,
+				OriginalObject = thread,
+				Posts = thread.Posts.Select(x => x.ConvertToPost(board, ImageboardWebsite)).ToArray(),
+				AdditionalMetadata = new JObject
+				{
+					["sticky"] = thread.Sticky
+				}
+			};
+		}
+
 		/// <inheritdoc />
 		public override async Task<ApiResponse<PageThread[]>> GetBoard(string board, HttpClient client, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default)
 		{
@@ -86,6 +106,32 @@ namespace Hayden
 		{
 			throw new InvalidOperationException("Does not support archives");
 		}
+
+		// https://github.com/bakape/shamichan/blob/8e47f42785caa99bbbfd2b35221f47822dbec1f3/imager/common/images.go#L11
+		public static Dictionary<uint, string> ExtensionMappings = new()
+		{
+			[0] = ".jpg",
+			[1] = ".png",
+			[2] = ".gif",
+			[3] = ".webm",
+			[4] = ".pdf",
+			[5] = ".svg",
+			[6] = ".mp4",
+			[7] = ".mp3",
+			[8] = ".ogg",
+			[9] = ".zip",
+			[10] = ".7z",
+			[11] = ".tgz",
+			[12] = ".txz",
+			[13] = ".flac",
+			[14] = "",
+			[15] = ".txt",
+			[16] = ".webp",
+			[17] = ".rar",
+			[18] = ".cbz",
+			[19] = ".cbr",
+			[20] = ".mp4", // HEVC
+		};
 
 		private class MegucaCatalog
 		{
@@ -165,5 +211,160 @@ namespace Hayden
 				};
 			}
 		}
+	}
+
+	public class MegucaThread
+	{
+		[JsonProperty("posts")]
+		public List<MegucaPost> Posts { get; set; }
+
+		[JsonIgnore]
+		public MegucaPost OriginalPost => Posts[0];
+
+
+		[JsonProperty("abbrev")]
+		public bool Abbreviated { get; set; }
+
+		[JsonProperty("sticky")]
+		public bool Sticky { get; set; }
+
+		[JsonProperty("locked")]
+		public bool Locked { get; set; }
+
+		[JsonProperty("post_count")]
+		public ulong PostCount { get; set; }
+
+		[JsonProperty("image_count")]
+		public ulong ImageCount { get; set; }
+
+		[JsonProperty("update_time")]
+		public ulong UpdateTime { get; set; }
+
+		[JsonProperty("bump_time")]
+		public ulong BumpTime { get; set; }
+
+		[JsonProperty("subject")]
+		public string Subject { get; set; }
+	}
+
+	public class MegucaPost
+	{
+		[JsonProperty("editing")]
+		public bool Editing { get; set; }
+
+		[JsonProperty("sage")]
+		public bool Sage { get; set; }
+
+		[JsonProperty("auth")]
+		public uint Auth { get; set; }
+
+		[JsonProperty("id")]
+		public ulong PostNumber { get; set; }
+
+		[JsonProperty("time")]
+		public ulong PostTime { get; set; }
+
+		[JsonProperty("body")]
+		public string ContentBody { get; set; }
+
+		[JsonProperty("flag")]
+		public string Flag { get; set; }
+
+		[JsonProperty("name")]
+		public string AuthorName { get; set; }
+
+		[JsonProperty("trip")]
+		public string Tripcode { get; set; }
+
+		[JsonProperty("image")]
+		public MegucaPostImage Image { get; set; }
+
+		private static readonly JsonSerializer jsonSerializer = JsonSerializer.Create(new JsonSerializerSettings { NullValueHandling = NullValueHandling.Ignore });
+
+		public Post ConvertToPost(string board, string imageboardUrlRoot)
+		{
+			Media[] media = Array.Empty<Media>();
+
+			if (Image != null)
+				media = new[]
+				{
+					new Media
+					{
+						FileUrl = $"{imageboardUrlRoot}assets/images/src/{Image.Sha1Hash}{MegucaApi.ExtensionMappings[Image.FileType]}",
+						ThumbnailUrl = $"{imageboardUrlRoot}assets/images/thumb/{Image.Sha1Hash}{MegucaApi.ExtensionMappings[Image.ThumbType]}",
+						Filename = Image.Filename,
+						FileExtension = MegucaApi.ExtensionMappings[Image.FileType],
+						ThumbnailExtension = MegucaApi.ExtensionMappings[Image.ThumbType],
+						Index = 0,
+						FileSize = (uint)Image.FileSize,
+						IsDeleted = false, // I don't know if images can be deleted without deleting the entire post? or even how to check
+						IsSpoiler = Image.IsSpoiler,
+						Md5Hash = Convert.FromBase64String(Image.Md5Hash),
+						Sha1Hash= Convert.FromBase64String(Image.Sha1Hash),
+						OriginalObject = this,
+						AdditionalMetadata = null
+					}
+				};
+
+			return new Post
+			{
+				PostNumber = PostNumber,
+				TimePosted = DateTimeOffset.FromUnixTimeSeconds((long)PostTime),
+				Author = AuthorName,
+				Tripcode = Tripcode,
+				Email = null,
+				ContentRendered = null,
+				ContentRaw = ContentBody,
+				ContentType = ContentType.Meguca,
+				Media = media,
+				OriginalObject = this,
+				AdditionalMetadata = JObject.FromObject(new
+				{
+					flag = Flag
+				}, jsonSerializer)
+			};
+		}
+	}
+
+	public class MegucaPostImage
+	{
+		[JsonProperty("spoiler")]
+		public bool IsSpoiler { get; set; }
+
+		[JsonProperty("audio")]
+		public bool Audio { get; set; }
+
+		[JsonProperty("video")]
+		public bool Video { get; set; }
+
+		[JsonProperty("file_type")]
+		public uint FileType { get; set; }
+
+		[JsonProperty("thumb_type")]
+		public uint ThumbType { get; set; }
+
+		[JsonProperty("length")]
+		public ulong Length { get; set; }
+
+		[JsonProperty("dims")]
+		public uint[] Dimensions { get; set; }
+
+		[JsonProperty("size")]
+		public ulong FileSize { get; set; }
+
+		[JsonProperty("artist")]
+		public string Artist { get; set; }
+
+		[JsonProperty("title")]
+		public string Title { get; set; }
+
+		[JsonProperty("md5")]
+		public string Md5Hash { get; set; }
+
+		[JsonProperty("sha1")]
+		public string Sha1Hash { get; set; }
+
+		[JsonProperty("name")]
+		public string Filename { get; set; }
 	}
 }

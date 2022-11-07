@@ -8,8 +8,8 @@ using Hayden.Cache;
 using Hayden.Config;
 using Hayden.Consumers;
 using Hayden.Contract;
-using Hayden.Models;
 using Hayden.Proxy;
+using Microsoft.Extensions.DependencyInjection;
 using Mono.Unix;
 using Mono.Unix.Native;
 using Newtonsoft.Json.Linq;
@@ -18,11 +18,9 @@ namespace Hayden
 {
 	public class Program
 	{
-		public static HaydenConfigOptions HaydenConfig;
-
 		static async Task Main(string[] args)
 		{
-			Console.WriteLine("Hayden v0.7.0");
+			Console.WriteLine("Hayden v0.8.0");
 			Console.WriteLine("By Bepis");
 
 			if (args.Length != 1)
@@ -50,31 +48,94 @@ namespace Hayden
 
 		private static async Task<Func<Task>> CreateBoardArchiverExecutor(JObject rawConfigFile, CancellationTokenSource tokenSource)
 		{
-			YotsubaConfig config;
-			string downloadLocation = null;
+			var serviceCollection = new ServiceCollection();
 
-			async Task<Func<Task>> GenericInitialize<TThread, TPost>(IFrontendApi<TThread> frontend, IThreadConsumer<TThread, TPost> consumer)
-				where TPost : IPost where TThread : IThread<TPost>
+			var configFile = rawConfigFile.ToObject<ConfigFile>();
+
+			if (configFile == null)
+				throw new Exception("Invalid config file");
+
+			configFile.Hayden ??= new HaydenConfigOptions();
+
+			if (configFile.Source == null)
+				throw new Exception("Source config section must be present.");
+
+			if (configFile.Consumer == null)
+				throw new Exception("Consumer config section must be present.");
+
+			serviceCollection.AddSingleton(configFile);
+			serviceCollection.AddSingleton(configFile.Source);
+			serviceCollection.AddSingleton(configFile.Consumer);
+			serviceCollection.AddSingleton(configFile.Hayden);
+
+			DebugLogging = configFile.Hayden.DebugLogging;
+
+
+			switch (configFile.Source.Type)
 			{
-				await consumer.InitializeAsync();
+				case "4chan":         serviceCollection.AddSingleton<IFrontendApi, YotsubaApi>(); break;
+				case "Vichan":        serviceCollection.AddSingleton<IFrontendApi, VichanApi>(); break;
+				case "LynxChan":      serviceCollection.AddSingleton<IFrontendApi, LynxChanApi>(); break;
+				case "Meguca":        serviceCollection.AddSingleton<IFrontendApi, MegucaApi>(); break;
+				case "InfinityNext":  serviceCollection.AddSingleton<IFrontendApi, InfinityNextApi>(); break;
+				case "FoolFuuka":     serviceCollection.AddSingleton<ISearchableFrontendApi, FoolFuukaApi>(); break;
+				default:              throw new Exception($"Unknown source type: {configFile.Source.Type}");
+			}
+			
+			switch (configFile.Consumer.Type)
+			{
+				case "Hayden":        serviceCollection.AddSingleton<IThreadConsumer, HaydenMysqlThreadConsumer>(); break;
+				case "Filesystem":    serviceCollection.AddSingleton<IThreadConsumer, FilesystemThreadConsumer>(); break;
+				case "Asagi":         serviceCollection.AddSingleton<IThreadConsumer, AsagiThreadConsumer>(); break;
+				case "Null":          serviceCollection.AddSingleton<IThreadConsumer, NullThreadConsumer>(); break;
+				default:              throw new Exception($"Unknown consumer type: {configFile.Consumer.Type}");
+			}
 
-				ProxyProvider proxyProvider = null;
+			if (configFile.Consumer.Type == "Asagi" && configFile.Source.Type != "4chan")
+				throw new Exception("The 'Asagi' backend only supports a source type of '4chan'.");
 
-				if (rawConfigFile["proxies"] != null)
-				{
-					proxyProvider = new ConfigProxyProvider((JArray)rawConfigFile["proxies"], HaydenConfig.ResolveDnsLocally);
-					await proxyProvider.InitializeAsync();
-				}
 
-				Log("Initialized.");
-				Log("Press Q to stop archival.");
+			var haydenDirectory = Path.Combine(configFile.Consumer.DownloadLocation, "hayden");
+			Directory.CreateDirectory(haydenDirectory);
 
-				var haydenDirectory = Path.Combine(downloadLocation, "hayden");
-				Directory.CreateDirectory(haydenDirectory);
+			// TODO: make this & proxy provider configurable
+			var stateStore = new LiteDbStateStore(Path.Combine(haydenDirectory, "imagequeue.db"));
+			serviceCollection.AddSingleton<IStateStore>(stateStore);
 
-				var stateStore = new LiteDbStateStore(Path.Combine(haydenDirectory, "imagequeue.db"));
+			ProxyProvider proxyProvider = null;
 
-				var boardArchiver = new BoardArchiver<TThread, TPost>(config, frontend, consumer, stateStore, proxyProvider);
+			if (rawConfigFile["proxies"] != null)
+			{
+				proxyProvider = new ConfigProxyProvider((JArray)rawConfigFile["proxies"], configFile.Hayden.ResolveDnsLocally);
+				await proxyProvider.InitializeAsync();
+				serviceCollection.AddSingleton<ProxyProvider>(proxyProvider);
+			}
+			
+
+			var serviceProvider = serviceCollection.BuildServiceProvider();
+
+			await serviceProvider.GetRequiredService<IThreadConsumer>().InitializeAsync();
+
+			Log("Initialized.");
+			Log("Press Q to stop archival.");
+
+			if (configFile.Hayden.ScraperType == "Search")
+			{
+				var searchArchiver = ActivatorUtilities.CreateInstance<SearchArchiver>(serviceProvider);
+
+				return () => searchArchiver.Execute(tokenSource.Token)
+					.ContinueWith(task =>
+					{
+						if (task.IsFaulted)
+						{
+							Log("!! FATAL EXCEPTION !!");
+							Log(task.Exception.ToString());
+						}
+					});
+			}
+			else
+			{
+				var boardArchiver = ActivatorUtilities.CreateInstance<BoardArchiver>(serviceProvider);
 
 				return () => boardArchiver.Execute(tokenSource.Token)
 					.ContinueWith(task =>
@@ -86,198 +147,13 @@ namespace Hayden
 						}
 					});
 			}
-
-			// Figure out what backend the user wants to use, and load it
-			// This entire section is more of a stop-gap than actual clean code
-
-			string sourceType = rawConfigFile["source"]["type"].Value<string>();
-			string backendType = rawConfigFile["backend"]["type"].Value<string>();
-			HaydenConfig = rawConfigFile["hayden"]?.ToObject<HaydenConfigOptions>() ?? new HaydenConfigOptions();
-
-			if (HaydenConfig.ScraperType == "Search")
-			{
-				var altchanConfig = rawConfigFile["source"].ToObject<AltchanConfig>();
-				config = altchanConfig;
-
-				var frontend = new FoolFuukaApi(altchanConfig.ImageboardWebsite);
-
-				var filesystemConfig = rawConfigFile["backend"].ToObject<FilesystemConfig>();
-
-				downloadLocation = filesystemConfig.DownloadLocation;
-				var consumer = new FoolFuukaFilesystemThreadConsumer(altchanConfig.ImageboardWebsite, filesystemConfig);
-
-				await consumer.InitializeAsync();
-
-
-				ProxyProvider proxyProvider = null;
-
-				if (rawConfigFile["proxies"] != null)
-				{
-					proxyProvider = new ConfigProxyProvider((JArray)rawConfigFile["proxies"], HaydenConfig.ResolveDnsLocally);
-					await proxyProvider.InitializeAsync();
-				}
-
-				Log("Initialized.");
-				Log("Press Q to stop archival.");
-
-				var haydenDirectory = Path.Combine(downloadLocation, "hayden");
-				Directory.CreateDirectory(haydenDirectory);
-
-				var stateStore = new LiteDbStateStore(Path.Combine(haydenDirectory, "imagequeue.db"));
-
-				var boardArchiver = new SearchArchiver<FoolFuukaThread, FoolFuukaPost>(config, new SearchQuery(), frontend, consumer, stateStore, proxyProvider);
-
-				return () => boardArchiver.Execute(tokenSource.Token)
-					.ContinueWith(task =>
-					{
-						if (task.IsFaulted)
-						{
-							Log("!! FATAL EXCEPTION !!");
-							Log(task.Exception.ToString());
-						}
-					});
-			}
-
-			if (sourceType == "4chan")
-			{
-				config = rawConfigFile["source"].ToObject<YotsubaConfig>();
-				var frontend = new YotsubaApi();
-				IThreadConsumer<YotsubaThread, YotsubaPost> consumer;
-
-				switch (backendType)
-				{
-					case "Asagi":
-						var asagiConfig = rawConfigFile["backend"].ToObject<AsagiConfig>();
-
-						downloadLocation = asagiConfig.DownloadLocation;
-						consumer = new AsagiThreadConsumer(asagiConfig, config.Boards.Keys);
-						break;
-
-					case "Hayden":
-						var haydenConfig = rawConfigFile["backend"].ToObject<HaydenMysqlConfig>();
-
-						downloadLocation = haydenConfig.DownloadLocation;
-						consumer = new HaydenMysqlThreadConsumer(haydenConfig);
-						break;
-
-					case "Filesystem":
-						var filesystemConfig = rawConfigFile["backend"].ToObject<FilesystemConfig>();
-
-						downloadLocation = filesystemConfig.DownloadLocation;
-						consumer = new YotsubaFilesystemThreadConsumer(filesystemConfig);
-						break;
-
-					default:
-						throw new ArgumentException($"Unknown backend type {backendType}");
-				}
-
-				return await GenericInitialize(frontend, consumer);
-			}
-
-			if (sourceType == "LynxChan")
-			{
-				var altchanConfig = rawConfigFile["source"].ToObject<AltchanConfig>();
-				config = altchanConfig;
-
-				var frontend = new LynxChanApi(altchanConfig.ImageboardWebsite);
-				IThreadConsumer<LynxChanThread, LynxChanPost> consumer;
-
-				switch (backendType)
-				{
-					case "Filesystem":
-						var filesystemConfig = rawConfigFile["backend"].ToObject<FilesystemConfig>();
-
-						downloadLocation = filesystemConfig.DownloadLocation;
-						consumer = new LynxChanFilesystemThreadConsumer(altchanConfig.ImageboardWebsite, filesystemConfig);
-						break;
-
-					default:
-						throw new ArgumentException($"Unknown backend type {backendType}");
-				}
-
-				return await GenericInitialize(frontend, consumer);
-			}
-
-			if (sourceType == "Vichan")
-			{
-				var altchanConfig = rawConfigFile["source"].ToObject<AltchanConfig>();
-				config = altchanConfig;
-
-				var frontend = new VichanApi(altchanConfig.ImageboardWebsite);
-				IThreadConsumer<VichanThread, VichanPost> consumer;
-
-				switch (backendType)
-				{
-					case "Filesystem":
-						var filesystemConfig = rawConfigFile["backend"].ToObject<FilesystemConfig>();
-
-						downloadLocation = filesystemConfig.DownloadLocation;
-						consumer = new VichanFilesystemThreadConsumer(altchanConfig.ImageboardWebsite, filesystemConfig);
-						break;
-
-					default:
-						throw new ArgumentException($"Unknown backend type {backendType}");
-				}
-
-				return await GenericInitialize(frontend, consumer);
-			}
-
-			if (sourceType == "InfinityNext")
-			{
-				var altchanConfig = rawConfigFile["source"].ToObject<AltchanConfig>();
-				config = altchanConfig;
-
-				var frontend = new InfinityNextApi(altchanConfig.ImageboardWebsite);
-				IThreadConsumer<InfinityNextThread, InfinityNextPost> consumer;
-
-				switch (backendType)
-				{
-					case "Filesystem":
-						var filesystemConfig = rawConfigFile["backend"].ToObject<FilesystemConfig>();
-
-						downloadLocation = filesystemConfig.DownloadLocation;
-						consumer = new InfinityNextFilesystemThreadConsumer(altchanConfig.ImageboardWebsite, filesystemConfig);
-						break;
-
-					default:
-						throw new ArgumentException($"Unknown backend type {backendType}");
-				}
-
-				return await GenericInitialize(frontend, consumer);
-			}
-
-			if (sourceType == "Meguca")
-			{
-				var altchanConfig = rawConfigFile["source"].ToObject<AltchanConfig>();
-				config = altchanConfig;
-
-				var frontend = new MegucaApi(altchanConfig.ImageboardWebsite);
-				IThreadConsumer<MegucaThread, MegucaPost> consumer;
-
-				switch (backendType)
-				{
-					case "Filesystem":
-						var filesystemConfig = rawConfigFile["backend"].ToObject<FilesystemConfig>();
-
-						downloadLocation = filesystemConfig.DownloadLocation;
-						consumer = new MegucaFilesystemThreadConsumer(altchanConfig.ImageboardWebsite, filesystemConfig);
-						break;
-
-					default:
-						throw new ArgumentException($"Unknown backend type {backendType}");
-				}
-
-				return await GenericInitialize(frontend, consumer);
-			}
-
-			throw new ArgumentException($"Unknown source type {sourceType}");
 		}
 
-
+		private static bool DebugLogging;
 		private static readonly object ConsoleLockObject = new object();
 		public static void Log(string content, bool debug = false)
 		{
-			if (debug && HaydenConfig?.DebugLogging != true)
+			if (debug && DebugLogging != true)
 				return;
 
 			lock (ConsoleLockObject)

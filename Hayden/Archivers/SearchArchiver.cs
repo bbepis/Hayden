@@ -20,15 +20,12 @@ namespace Hayden
 	/// <summary>
 	/// Handles the core archival logic, independent of any API or consumer implementations.
 	/// </summary>
-	public class SearchArchiver<TThread, TPost> where TPost : IPost where TThread : IThread<TPost>
+	public class SearchArchiver
 	{
-		/// <summary>
-		/// Configuration for the Yotsuba API given by the constructor.
-		/// </summary>
-		public YotsubaConfig Config { get; }
+		public SourceConfig SourceConfig { get; }
 
-		protected IThreadConsumer<TThread, TPost> ThreadConsumer { get; }
-		protected ISearchableFrontendApi<TThread> FrontendApi { get; }
+		protected IThreadConsumer ThreadConsumer { get; }
+		protected ISearchableFrontendApi FrontendApi { get; }
 		protected IStateStore StateStore { get; }
 		protected ProxyProvider ProxyProvider { get; }
 		
@@ -42,16 +39,16 @@ namespace Hayden
 		/// </summary>
 		public TimeSpan ApiCooldownTimespan { get; set; }
 
-		public SearchArchiver(YotsubaConfig config, SearchQuery searchQuery, ISearchableFrontendApi<TThread> frontendApi, IThreadConsumer<TThread, TPost> threadConsumer, IStateStore stateStore = null, ProxyProvider proxyProvider = null)
+		public SearchArchiver(SourceConfig sourceConfig, SearchQuery searchQuery, ISearchableFrontendApi frontendApi, IThreadConsumer threadConsumer, IStateStore stateStore = null, ProxyProvider proxyProvider = null)
 		{
-			Config = config;
+			SourceConfig = sourceConfig;
 			FrontendApi = frontendApi;
 			ThreadConsumer = threadConsumer;
 			ProxyProvider = proxyProvider ?? new NullProxyProvider();
 			StateStore = stateStore ?? new NullStateStore();
 
-			ApiCooldownTimespan = TimeSpan.FromSeconds(config.ApiDelay ?? 1);
-			BoardUpdateTimespan = TimeSpan.FromSeconds(config.BoardScrapeDelay ?? 30);
+			ApiCooldownTimespan = TimeSpan.FromSeconds(sourceConfig.ApiDelay ?? 1);
+			BoardUpdateTimespan = TimeSpan.FromSeconds(sourceConfig.BoardScrapeDelay ?? 30);
 		}
 
 		/// <summary>
@@ -318,14 +315,15 @@ namespace Hayden
 
 				workerStatuses[id] = "Finished";
 
-				if (Program.HaydenConfig.DebugLogging)
-				{
-					lock (workerStatuses)
-						foreach (var kv in workerStatuses)
-						{
-							Program.Log($"ID {kv.Key,-2} => {kv.Value}", true);
-						}
-				}
+				// TODO: fix when introducing serilog
+				//if (Program.HaydenConfig.DebugLogging)
+				//{
+				//	lock (workerStatuses)
+				//		foreach (var kv in workerStatuses)
+				//		{
+				//			Program.Log($"ID {kv.Key,-2} => {kv.Value}", true);
+				//		}
+				//}
 			}
 
 			// Spawn each worker task and wait until they've all completed
@@ -416,9 +414,9 @@ namespace Hayden
 						var threadPointer = new ThreadPointer(board, threadNumber);
 
 						if (response.Data == null
-						    || response.Data.Posts.Count == 0
-						    || response.Data.OriginalPost == null
-						    || response.Data.OriginalPost.PostNumber == 0)
+						    || response.Data.Posts.Length == 0
+						    || response.Data.Posts.FirstOrDefault() == null
+						    || response.Data.Posts[0].PostNumber == 0)
 						{
 							// This is a very strange edge case.
 							// The 4chan API can return a malformed thread object if the thread has been (incorrectly?) deleted
@@ -437,18 +435,18 @@ namespace Hayden
 
 						// Process the thread data with its assigned TrackedThread instance, then pass the results to the consumer
 
-						TrackedThread<TThread, TPost> trackedThread;
+						TrackedThread trackedThread;
 
 						bool isNewThread;
 
 						if (existing.Count == 1)
 						{
-							trackedThread = TrackedThread<TThread, TPost>.StartTrackingThread(ThreadConsumer.CalculateHash, existing.First());
+							trackedThread = TrackedThread.StartTrackingThread(ThreadConsumer.CalculateHash, existing.First());
 							isNewThread = false;
 						}
 						else
 						{
-							trackedThread = TrackedThread<TThread, TPost>.StartTrackingThread(ThreadConsumer.CalculateHash);
+							trackedThread = TrackedThread.StartTrackingThread(ThreadConsumer.CalculateHash);
 							isNewThread = true;
 						}
 
@@ -468,7 +466,7 @@ namespace Hayden
 
 						var images = await ThreadConsumer.ConsumeThread(threadUpdateInfo);
 
-						if (response.Data.Archived == true)
+						if (response.Data.IsArchived == true)
 						{
 							Program.Log($"{workerId,-2}: Thread /{board}/{threadNumber} has been archived", true);
 							
@@ -477,7 +475,7 @@ namespace Hayden
 
 						return new ThreadUpdateTaskResult(true,
 							images,
-							response.Data.Archived == true ? ThreadUpdateStatus.Archived : ThreadUpdateStatus.Ok,
+							response.Data.IsArchived == true ? ThreadUpdateStatus.Archived : ThreadUpdateStatus.Ok,
 							threadUpdateInfo.NewPosts.Count - threadUpdateInfo.DeletedPosts.Count);
 
 					case ResponseType.NotModified:

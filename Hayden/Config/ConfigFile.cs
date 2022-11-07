@@ -1,14 +1,12 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
+﻿using Hayden.Config;
 
 namespace Hayden
 {
 	public class ConfigFile
 	{
-		public dynamic Backend { get; set; }
+		public ConsumerConfig Consumer { get; set; }
 
-		public dynamic Source { get; set; }
+		public SourceConfig Source { get; set; }
 
 		public HaydenConfigOptions Hayden { get; set; }
 	}

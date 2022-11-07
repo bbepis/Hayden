@@ -497,18 +497,18 @@ namespace Hayden.WebServer.Controllers
 		{
 			return StartTask(async provider =>
 			{
-				var dbContext = provider.GetRequiredService<HaydenDbContext>();
-				var config = provider.GetRequiredService<IOptions<Config>>();
+				//var dbContext = provider.GetRequiredService<HaydenDbContext>();
+				//var config = provider.GetRequiredService<IOptions<Config>>();
 
-				var importer = new FoolFuukaImporter();
+				//var importer = new FoolFuukaImporter();
 
-				await importer.Import("/mnt/nas3btank/Data/HaydenServer/foolfuuka", dbContext, config, new Progress<(float, FormattedString)>(tuple =>
-				{
-					var (progress, status) = tuple;
+				//await importer.Import("/mnt/nas3btank/Data/HaydenServer/foolfuuka", dbContext, config, new Progress<(float, FormattedString)>(tuple =>
+				//{
+				//	var (progress, status) = tuple;
 
-					Progress = progress;
-					CurrentStatus = status;
-				}));
+				//	Progress = progress;
+				//	CurrentStatus = status;
+				//}));
 
 				//Progress = 0;
 				//CurrentStatus = "Initializing";

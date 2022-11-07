@@ -16,14 +16,14 @@ namespace Hayden.Consumers
 	/// <summary>
 	/// A thread consumer for the HaydenMysql MySQL backend.
 	/// </summary>
-	public class HaydenMysqlThreadConsumer : IThreadConsumer<YotsubaThread, YotsubaPost>
+	public class HaydenMysqlThreadConsumer : IThreadConsumer
 	{
-		private HaydenMysqlConfig Config { get; }
+		private ConsumerConfig Config { get; }
 
 		protected Dictionary<string, ushort> BoardIdMappings { get; } = new();
 
 		/// <param name="config">The object to load configuration values from.</param>
-		public HaydenMysqlThreadConsumer(HaydenMysqlConfig config)
+		public HaydenMysqlThreadConsumer(ConsumerConfig config)
 		{
 			Config = config;
 		}
@@ -59,7 +59,7 @@ namespace Hayden.Consumers
 		}
 
 		/// <inheritdoc/>
-		public async Task<IList<QueuedImageDownload>> ConsumeThread(ThreadUpdateInfo<YotsubaThread, YotsubaPost> threadUpdateInfo)
+		public async Task<IList<QueuedImageDownload>> ConsumeThread(ThreadUpdateInfo threadUpdateInfo)
 		{
 			List<QueuedImageDownload> imageDownloads = new List<QueuedImageDownload>();
 
@@ -68,29 +68,50 @@ namespace Hayden.Consumers
 			string board = threadUpdateInfo.ThreadPointer.Board;
 			ushort boardId = BoardIdMappings[board];
 
-			{ // delete this block when not testing
-				string threadDirectory = Path.Combine(Config.DownloadLocation, board, "thread");
-				string threadFileName = Path.Combine(threadDirectory, $"{threadUpdateInfo.ThreadPointer.ThreadId}.json");
+			//{ // delete this block when not testing
+			//	string threadDirectory = Path.Combine(Config.DownloadLocation, board, "thread");
+			//	string threadFileName = Path.Combine(threadDirectory, $"{threadUpdateInfo.ThreadPointer.ThreadId}.json");
 
-				Directory.CreateDirectory(threadDirectory);
+			//	Directory.CreateDirectory(threadDirectory);
 
-				YotsubaFilesystemThreadConsumer.PerformJsonThreadUpdate(threadUpdateInfo, threadFileName);
-			}
+			//	YotsubaFilesystemThreadConsumer.PerformJsonThreadUpdate(threadUpdateInfo, threadFileName);
+			//}
 
-			async Task ProcessImages(YotsubaPost post)
+			async Task ProcessImages(Post post)
 			{
 				if (!Config.FullImagesEnabled && !Config.ThumbnailsEnabled)
 					return; // skip the DB check since we're not even bothering with images
 
-				if (post.FileMd5 == null)
+				if (post.Media == null)
 					return;
 
-				if (!Config.DoNotUseMd5HashForComparison)
+				foreach (var file in post.Media)
 				{
-					var existingFile = await dbContext.Files.FirstOrDefaultAsync(x =>
-						x.Md5Hash == Convert.FromBase64String(post.FileMd5)
-						&& x.Size == post.FileSize.Value
-						&& x.BoardId == boardId);
+					DBFile existingFile = null;
+
+					if (file.Sha256Hash != null)
+					{
+						existingFile = await dbContext.Files.FirstOrDefaultAsync(x =>
+							x.Sha256Hash == file.Sha256Hash
+							&& x.Size == file.FileSize
+							&& x.BoardId == boardId);
+					}
+					
+					if (existingFile == null && file.Sha1Hash != null && !Config.IgnoreSha1Hash)
+					{
+						existingFile = await dbContext.Files.FirstOrDefaultAsync(x =>
+							x.Sha1Hash == file.Sha1Hash
+							&& x.Size == file.FileSize
+							&& x.BoardId == boardId);
+					}
+					
+					if (existingFile == null && file.Md5Hash != null && !Config.IgnoreMd5Hash)
+					{
+						existingFile = await dbContext.Files.FirstOrDefaultAsync(x =>
+							x.Md5Hash == file.Md5Hash
+							&& x.Size == file.FileSize
+							&& x.BoardId == boardId);
+					}
 
 					if (existingFile != null)
 					{
@@ -101,43 +122,44 @@ namespace Hayden.Consumers
 							BoardId = boardId,
 							PostId = post.PostNumber,
 							FileId = existingFile.Id,
-							Filename = Path.GetFileNameWithoutExtension(post.OriginalFilename),
+							Filename = file.Filename,
 							Index = 0,
-							IsDeleted = post.FileDeleted.GetValueOrDefault(),
-							IsSpoiler = post.SpoilerImage.GetValueOrDefault()
+							IsDeleted = file.IsDeleted,
+							IsSpoiler = file.IsSpoiler.GetValueOrDefault()
 						};
 
 						dbContext.Add(fileMapping);
 
 						return;
 					}
+
+					Uri imageUrl = null;
+					Uri thumbUrl = null;
+
+					if (Config.FullImagesEnabled)
+					{
+						string imageDirectory = Path.Combine(Config.DownloadLocation, board, "image");
+						Directory.CreateDirectory(imageDirectory);
+
+						imageUrl = new Uri(file.FileUrl);
+					}
+
+					if (Config.ThumbnailsEnabled)
+					{
+						string thumbnailDirectory = Path.Combine(Config.DownloadLocation, board, "thumb");
+						Directory.CreateDirectory(thumbnailDirectory);
+
+						thumbUrl = new Uri(file.ThumbnailUrl);
+					}
+
+					imageDownloads.Add(new QueuedImageDownload(imageUrl, thumbUrl, new()
+					{
+						["board"] = board,
+						["boardId"] = boardId,
+						["postNumber"] = post.PostNumber,
+						["media"] = file
+					}));
 				}
-
-				Uri imageUrl = null;
-				Uri thumbUrl = null;
-
-				if (Config.FullImagesEnabled)
-				{
-					string imageDirectory = Path.Combine(Config.DownloadLocation, board, "image");
-					Directory.CreateDirectory(imageDirectory);
-
-					imageUrl = new Uri($"https://i.4cdn.org/{board}/{post.TimestampedFilenameFull}");
-				}
-
-				if (Config.ThumbnailsEnabled)
-				{
-					string thumbnailDirectory = Path.Combine(Config.DownloadLocation, board, "thumb");
-					Directory.CreateDirectory(thumbnailDirectory);
-
-					thumbUrl = new Uri($"https://i.4cdn.org/{board}/{post.TimestampedFilename}s.jpg");
-				}
-
-				imageDownloads.Add(new QueuedImageDownload(imageUrl, thumbUrl, new()
-				{
-					["board"] = board,
-					["boardId"] = boardId,
-					["post"] = post
-				}));
 			}
 
 			if (threadUpdateInfo.IsNewThread)
@@ -149,7 +171,7 @@ namespace Hayden.Consumers
 					IsDeleted = false,
 					IsArchived = false,
 					LastModified = DateTime.MinValue,
-					Title = threadUpdateInfo.Thread.OriginalPost.Subject.TrimAndNullify()
+					Title = threadUpdateInfo.Thread.Title.TrimAndNullify()
 				};
 
 				dbContext.Add(dbThread);
@@ -158,19 +180,19 @@ namespace Hayden.Consumers
 
 			foreach (var post in threadUpdateInfo.NewPosts)
 			{
-				var rawComment = AsagiThreadConsumer.CleanComment(post.Comment);
-
 				dbContext.Add(new DBPost
 				{
 					BoardId = boardId,
 					PostId = post.PostNumber,
-					ThreadId = post.ReplyPostNumber != 0 ? post.ReplyPostNumber : post.PostNumber,
-					ContentHtml = post.Comment,
-					ContentRaw = rawComment.TrimAndNullify(),
-					ContentType = ContentType.Yotsuba,
-					Author = post.Name == "Anonymous" ? null : post.Name,
-					Tripcode = post.Trip,
-					DateTime = Utility.ConvertGMTTimestamp(post.UnixTimestamp).UtcDateTime
+					ThreadId = threadUpdateInfo.ThreadPointer.ThreadId,
+					ContentHtml = post.ContentRendered,
+					ContentRaw = post.ContentRaw,
+					ContentType = post.ContentType,
+					Author = post.Author == "Anonymous" ? null : post.Author,
+					Tripcode = post.Tripcode,
+					Email = post.Email,
+					DateTime = post.TimePosted.UtcDateTime,
+					AdditionalMetadata = post.AdditionalMetadata.Count == 0 ? null : post.AdditionalMetadata.ToString(Formatting.None)
 				});
 			}
 
@@ -189,11 +211,9 @@ namespace Hayden.Consumers
 
 				var dbPost = await dbContext.Posts.FirstAsync(x => x.BoardId == boardId && x.PostId == post.PostNumber);
 				var dbPostMappings = await dbContext.FileMappings.Where(x => x.BoardId == boardId && x.PostId == post.PostNumber).ToArrayAsync();
-
-				var newRawComment = AsagiThreadConsumer.CleanComment(post.Comment).TrimAndNullify();
-
+				
 				//if (post.Comment != dbPost.ContentHtml)
-				if (dbPost.ContentRaw != null && newRawComment != dbPost.ContentRaw)
+				if ((dbPost.ContentRaw != null && post.ContentRaw != dbPost.ContentRaw) || (dbPost.ContentRaw == null && post.ContentRendered != dbPost.ContentHtml))
 				{
 					// this needs to be made more efficient
 					// this also doesn't cooperate well with deadlinks (why the fuck is that passed through the api html render?)
@@ -210,22 +230,28 @@ namespace Hayden.Consumers
 					modificationsArray.Add(JToken.FromObject(new
 					{
 						time = DateTimeOffset.UtcNow,
-						old_content = dbPost.ContentHtml,
-						new_content = post.Comment
+						old_content_raw = dbPost.ContentRaw,
+						old_content_html = dbPost.ContentHtml,
+						new_content_raw = post.ContentRaw,
+						new_content_html = post.ContentRendered
 					}));
 
 					jsonAdditionalMetadata[jsonKey] = modificationsArray;
 					dbPost.AdditionalMetadata = jsonAdditionalMetadata.ToString(Formatting.None);
 					
-					dbPost.ContentHtml = post.Comment;
-					dbPost.ContentRaw = newRawComment;
+					dbPost.ContentHtml = post.ContentRendered;
+					dbPost.ContentRaw = post.ContentRaw;
 				}
 
 				dbPost.IsDeleted = false;
 
 				foreach (var dbPostMapping in dbPostMappings)
 				{
-					dbPostMapping.IsDeleted = post.FileDeleted ?? false;
+					if (post.Media == null
+					    || post.Media.Length == 0
+					    || post.Media.Any(x => x.Filename == dbPostMapping.Filename && x.IsDeleted)
+					    || post.Media.All(x => x.Filename != dbPostMapping.Filename))
+						dbPostMapping.IsDeleted = true;
 				}
 			}
 
@@ -240,7 +266,7 @@ namespace Hayden.Consumers
 
 			await dbContext.SaveChangesAsync();
 
-			await UpdateThread(board, threadUpdateInfo.ThreadPointer.ThreadId, false, threadUpdateInfo.Thread.OriginalPost.Archived == true);
+			await UpdateThread(board, threadUpdateInfo.ThreadPointer.ThreadId, false, threadUpdateInfo.Thread.IsArchived);
 			
 			return imageDownloads;
 		}
@@ -250,7 +276,8 @@ namespace Hayden.Consumers
 		{
 			if (!queuedImageDownload.TryGetProperty("board", out string board)
 				|| !queuedImageDownload.TryGetProperty("boardId", out ushort boardId)
-				|| !queuedImageDownload.TryGetProperty("post", out YotsubaPost post))
+				|| !queuedImageDownload.TryGetProperty("postNumber", out ulong postNumber)
+				|| !queuedImageDownload.TryGetProperty("media", out Media media))
 			{
 				throw new InvalidOperationException("Queued image download did not have the required properties");
 			}
@@ -262,7 +289,7 @@ namespace Hayden.Consumers
 
 			var (md5Hash, sha1Hash, sha256Hash) = Utility.CalculateHashes(stream);
 			
-			var imageFilename = Common.CalculateFilename(Config.DownloadLocation, board, Common.MediaType.Image, sha256Hash, post.FileExtension);
+			var imageFilename = Common.CalculateFilename(Config.DownloadLocation, board, Common.MediaType.Image, sha256Hash, media.FileExtension);
 
 			await Utility.WriteAllBytesAsync(imageFilename + ".tmp", imageData.Value);
 			File.Move(imageFilename + ".tmp", imageFilename, true);
@@ -290,7 +317,7 @@ namespace Hayden.Consumers
 				var dbFile = new DBFile
 				{
 					BoardId = (ushort)boardId,
-					Extension = post.FileExtension.TrimStart('.'),
+					Extension = media.FileExtension.TrimStart('.'),
 					FileExists = true,
 					FileBanned = false,
 					ThumbnailExtension = thumbnailData.HasValue ? "jpg" : null,
@@ -315,12 +342,12 @@ namespace Hayden.Consumers
 			var fileMapping = new DBFileMapping
 			{
 				BoardId = (ushort)boardId,
-				PostId = post.PostNumber,
+				PostId = postNumber,
 				FileId = fileId,
-				Filename = Path.GetFileNameWithoutExtension(post.OriginalFilename),
+				Filename = media.Filename,
 				Index = 0,
-				IsDeleted = post.FileDeleted.GetValueOrDefault(),
-				IsSpoiler = post.SpoilerImage.GetValueOrDefault()
+				IsDeleted = media.IsDeleted,
+				IsSpoiler = media.IsSpoiler.GetValueOrDefault()
 			};
 
 			dbContext.Add(fileMapping);
@@ -390,10 +417,8 @@ namespace Hayden.Consumers
 
 					foreach (var postGroup in postGroupings)
 					{
-						var fileMapping = postGroup.FirstOrDefault();
-
-						var hash = CalculatePostHash(postGroup.Key.ContentHtml, fileMapping?.IsSpoiler,
-							fileMapping?.IsDeleted, fileMapping?.Filename, null, null, null, null, null, null, null);
+						var hash = CalculatePostHash(postGroup.Key.ContentHtml, postGroup.Key.ContentRaw,
+							postGroup.Count(x => x.IsSpoiler), postGroup.Count(), postGroup.Count(x => x.IsDeleted));
 
 						hashes.Add((postGroup.Key.PostId, hash));
 					}
@@ -412,42 +437,26 @@ namespace Hayden.Consumers
 			return items;
 		}
 
-		public static uint CalculatePostHash(string postHtml, bool? spoilerImage, bool? fileDeleted, string originalFilenameNoExt,
-			bool? archived, bool? closed, bool? bumpLimit, bool? imageLimit, uint? replyCount, ushort? imageCount, int? uniqueIpAddresses)
+		public static uint CalculatePostHash(string postHtml, string postRawContent, int spoilerCount, int fileCount, int deletedFileCount)
 		{
-			// Null bool? values should evaluate to false everywhere
-			static int EvaluateNullableBool(bool? value)
-			{
-				return value.HasValue && value.Value
-					? 1
-					: 2;
-			}
-
 			// The HTML content of a post can change due to public warnings and bans.
 			uint hashCode = Utility.FNV1aHash32(postHtml);
+			Utility.FNV1aHash32(postRawContent, ref hashCode);
 
 			// Attached files can be removed, and have their spoiler status changed
-			Utility.FNV1aHash32(EvaluateNullableBool(spoilerImage), ref hashCode);
-			Utility.FNV1aHash32(EvaluateNullableBool(fileDeleted), ref hashCode);
-			Utility.FNV1aHash32(originalFilenameNoExt, ref hashCode);
-
-			// The OP of a thread can have numerous properties change.
-			// As such, these properties are only considered mutable for OPs (because that's the only place they can exist) and immutable for replies.
-			Utility.FNV1aHash32(EvaluateNullableBool(archived), ref hashCode);
-			Utility.FNV1aHash32(EvaluateNullableBool(closed), ref hashCode);
-			Utility.FNV1aHash32(EvaluateNullableBool(bumpLimit), ref hashCode);
-			Utility.FNV1aHash32(EvaluateNullableBool(imageLimit), ref hashCode);
-			Utility.FNV1aHash32((int?)replyCount ?? -1, ref hashCode);
-			Utility.FNV1aHash32(imageCount ?? -1, ref hashCode);
-			Utility.FNV1aHash32(uniqueIpAddresses ?? -1, ref hashCode);
+			Utility.FNV1aHash32(spoilerCount, ref hashCode);
+			Utility.FNV1aHash32(fileCount, ref hashCode);
+			Utility.FNV1aHash32(deletedFileCount, ref hashCode);
 
 			return hashCode;
 		}
 
 		/// <inheritdoc />
-		public uint CalculateHash(YotsubaPost post)
-			=> CalculatePostHash(post.Comment, post.SpoilerImage, post.FileDeleted, post.OriginalFilename,
-				post.Archived, post.Closed, post.BumpLimit, post.ImageLimit, post.TotalReplies, post.TotalImages, post.UniqueIps);
+		public uint CalculateHash(Post post)
+			=> CalculatePostHash(post.ContentRendered, post.ContentRaw,
+				post.Media.Count(x => x.IsSpoiler ?? false),
+				post.Media.Length,
+				post.Media.Count(x => x.IsDeleted));
 
 		/// <summary>
 		/// Disposes the object.

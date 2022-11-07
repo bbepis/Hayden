@@ -1,22 +1,22 @@
 ﻿using System;
-using System.Buffers;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using Hayden.Config;
 using Hayden.Contract;
+using Hayden.Models;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
 namespace Hayden.Consumers
 {
-	public abstract class BaseFilesystemThreadConsumer<TThread, TPost> : IThreadConsumer<TThread, TPost> where TPost : IPost where TThread : IThread<TPost>
+	public class FilesystemThreadConsumer : IThreadConsumer
 	{
 		public string ArchiveDirectory { get; set; }
-		public FilesystemConfig Config { get; set; }
+		public ConsumerConfig Config { get; set; }
 
-		protected BaseFilesystemThreadConsumer(FilesystemConfig config)
+		public FilesystemThreadConsumer(ConsumerConfig config)
 		{
 			Config = config;
 			ArchiveDirectory = config.DownloadLocation;
@@ -28,7 +28,24 @@ namespace Hayden.Consumers
 			Formatting = Formatting.None
 		};
 
-		protected void WriteJson(string filename, TThread thread)
+		protected class WrittenThread
+		{
+			public Thread Thread { get; set; }
+			public bool ThreadDeleted { get; set; }
+			public List<ulong> DeletedPostIds { get; set; }
+
+			public WrittenThread() {}
+
+			public WrittenThread(Thread thread, bool threadDeleted)
+			{
+				Thread = thread;
+				ThreadDeleted = false;
+				DeletedPostIds = new List<ulong>();
+			}
+
+		}
+
+		protected void WriteJson(string filename, WrittenThread thread)
 		{
 			using (var threadFileStream = new FileStream(filename, FileMode.Create))
 			using (var streamWriter = new StreamWriter(threadFileStream))
@@ -38,12 +55,12 @@ namespace Hayden.Consumers
 			}
 		}
 
-		protected TThread ReadJson(string filename)
+		protected WrittenThread ReadJson(string filename)
 		{
 			using StreamReader streamReader = new StreamReader(File.OpenRead(filename));
 			using JsonReader reader = new JsonTextReader(streamReader);
 
-			return JToken.Load(reader).ToObject<TThread>();
+			return JToken.Load(reader).ToObject<WrittenThread>();
 		}
 
 		/// <summary>
@@ -51,7 +68,7 @@ namespace Hayden.Consumers
 		/// </summary>
 		public virtual Task InitializeAsync() => Task.CompletedTask;
 
-		public Task<IList<QueuedImageDownload>> ConsumeThread(ThreadUpdateInfo<TThread, TPost> threadUpdateInfo)
+		public Task<IList<QueuedImageDownload>> ConsumeThread(ThreadUpdateInfo threadUpdateInfo)
 		{
 			var pointer = threadUpdateInfo.ThreadPointer;
 
@@ -78,8 +95,8 @@ namespace Hayden.Consumers
 			return Task.FromResult(CalculateImageDownloads(threadUpdateInfo, threadDirectory, pointer, threadThumbsDirectory));
 		}
 
-		protected virtual IList<QueuedImageDownload> CalculateImageDownloads(
-			ThreadUpdateInfo<TThread, TPost> threadUpdateInfo,
+		protected IList<QueuedImageDownload> CalculateImageDownloads(
+			ThreadUpdateInfo threadUpdateInfo,
 			string threadImageDirectory,
 			ThreadPointer pointer,
 			string threadThumbsDirectory)
@@ -114,12 +131,34 @@ namespace Hayden.Consumers
 			return imageDownloads;
 		}
 
-		protected virtual IEnumerable<(QueuedImageDownload download, string imageFilename, string thumbFilename)> GetImageDownloadPaths(TPost post,
+		protected IEnumerable<(QueuedImageDownload download, string imageFilename, string thumbFilename)> GetImageDownloadPaths(Post post,
 			string threadImageDirectory,
 			ThreadPointer pointer,
 			string threadThumbsDirectory)
 		{
-			throw new InvalidOperationException($"Either {nameof(GetImageDownloadPaths)} or {nameof(CalculateImageDownloads)} must be overridden");
+			if (post.Media == null || post.Media.Length == 0)
+				yield break;
+
+
+			foreach (var media in post.Media)
+			{
+				string fullImageFilename = null, thumbFilename = null;
+				Uri imageUrl = null, thumbUrl = null;
+
+				if (Config.FullImagesEnabled)
+				{
+					fullImageFilename = Path.Combine(threadImageDirectory, Path.ChangeExtension($"{post.PostNumber}-{media.Index}", media.FileExtension));
+					imageUrl = new Uri(media.FileUrl);
+				}
+
+				if (Config.ThumbnailsEnabled)
+				{
+					thumbFilename = Path.Combine(threadThumbsDirectory, Path.ChangeExtension($"{post.PostNumber}-{media.Index}-thumb", media.ThumbnailExtension));
+					thumbUrl = new Uri(media.ThumbnailUrl);
+				}
+
+				yield return (new QueuedImageDownload(imageUrl, thumbUrl), fullImageFilename, thumbFilename);
+			}
 		}
 
 		public virtual async Task ProcessFileDownload(QueuedImageDownload queuedImageDownload, Memory<byte>? imageData, Memory<byte>? thumbnailData)
@@ -137,9 +176,9 @@ namespace Hayden.Consumers
 				await Utility.WriteAllBytesAsync(thumbFilename, thumbnailData.Value);
 		}
 
-		public void PerformJsonThreadUpdate(ThreadUpdateInfo<TThread, TPost> threadUpdateInfo, string threadFileName)
+		public void PerformJsonThreadUpdate(ThreadUpdateInfo threadUpdateInfo, string threadFileName)
 		{
-			TThread writtenThread;
+			WrittenThread writtenThread;
 
 			try
 			{
@@ -149,7 +188,7 @@ namespace Hayden.Consumers
 			{
 				// thread either doesn't exist, or is corrupt. treat it as a never seen before thread by writing it as-is
 
-				WriteJson(threadFileName, threadUpdateInfo.Thread);
+				WriteJson(threadFileName, new WrittenThread(threadUpdateInfo.Thread, false));
 				return;
 			}
 
@@ -163,31 +202,46 @@ namespace Hayden.Consumers
 
 			foreach (var deletedPostId in threadUpdateInfo.DeletedPosts)
 			{
-				var deletedPost = writtenThread.Posts.FirstOrDefault(x => x.PostNumber == deletedPostId);
-
-				if (deletedPost != null)
-				{
-					deletedPost.ExtensionIsDeleted = true;
-				}
-				else
-				{
-					// not good
-				}
+				if (!writtenThread.DeletedPostIds.Contains(deletedPostId))
+					writtenThread.DeletedPostIds.Add(deletedPostId);
 			}
 
 			// add any new posts
 
-			foreach (var newPost in threadUpdateInfo.NewPosts)
-			{
-				writtenThread.Posts.Add(newPost);
-			}
+			if (threadUpdateInfo.NewPosts.Count > 0)
+				writtenThread.Thread.Posts = writtenThread.Thread.Posts.Concat(threadUpdateInfo.NewPosts).ToArray();
 
 			// write the modified thread back to disk
 
 			WriteJson(threadFileName, writtenThread);
 		}
 
-		protected abstract void PerformThreadUpdate(ThreadUpdateInfo<TThread, TPost> threadUpdateInfo, TThread writtenThread);
+		protected void PerformThreadUpdate(ThreadUpdateInfo threadUpdateInfo, WrittenThread writtenThread)
+		{
+			foreach (var modifiedPost in threadUpdateInfo.UpdatedPosts)
+			{
+				var existingPost = writtenThread.Thread.Posts.First(x => x.PostNumber == modifiedPost.PostNumber);
+
+				// We can't just overwrite the post because we might mangle some properties we want to preserve (i.e. file info)
+
+				// So copy over the mutable properties
+
+				existingPost.ContentRaw = modifiedPost.ContentRaw;
+				existingPost.ContentRendered = modifiedPost.ContentRendered;
+
+				if (existingPost.Media != null)
+					foreach (var media in existingPost.Media)
+					{
+						if (modifiedPost.Media == null
+						    || modifiedPost.Media.Length == 0
+						    || modifiedPost.Media.Any(x => x.Filename == media.Filename && x.IsDeleted)
+						    || modifiedPost.Media.All(x => x.Filename != media.Filename))
+							media.IsDeleted = true;
+					}
+
+				existingPost.AdditionalMetadata = modifiedPost.AdditionalMetadata;
+			}
+		}
 
 		public Task ThreadUntracked(ulong threadId, string board, bool deleted)
 		{
@@ -198,8 +252,8 @@ namespace Hayden.Consumers
 				if (File.Exists(threadFileName))
 				{
 					var thread = ReadJson(threadFileName);
-
-					thread.IsDeleted = true;
+					
+					thread.ThreadDeleted = true;
 
 					WriteJson(threadFileName, thread);
 				}
@@ -240,13 +294,13 @@ namespace Hayden.Consumers
 
 				var writtenThread = ReadJson(jsonFilePath);
 
-				if (writtenThread == null || writtenThread.Posts.Count == 0)
+				if (writtenThread?.Thread == null || writtenThread.Thread.Posts.Length == 0)
 				{
 					// this thread might as well not be archived if there's nothing in it
 					continue;
 				}
 
-				if (archivedOnly && writtenThread.Archived != true)
+				if (archivedOnly && writtenThread.Thread.IsArchived != true)
 					continue;
 
 				if (!getMetadata)
@@ -257,9 +311,9 @@ namespace Hayden.Consumers
 
 				List<(ulong, uint)> threadHashList = new();
 
-				foreach (var post in writtenThread.Posts)
+				foreach (var post in writtenThread.Thread.Posts)
 				{
-					if (post.ExtensionIsDeleted == true)
+					if (writtenThread.DeletedPostIds.Contains(post.PostNumber))
 						// We don't return deleted posts, otherwise Hayden will think the post still exists
 						continue;
 
@@ -267,15 +321,19 @@ namespace Hayden.Consumers
 				}
 
 				existingThreads.Add(new ExistingThreadInfo(threadId,
-					writtenThread.Archived,
-					Utility.ConvertGMTTimestamp(writtenThread.Posts.Max(x => x.UnixTimestamp)),
+					writtenThread.Thread.IsArchived,
+					writtenThread.Thread.Posts.Max(x => x.TimePosted),
 					threadHashList));
 			}
 
 			return Task.FromResult<ICollection<ExistingThreadInfo>>(existingThreads);
 		}
 
-		public abstract uint CalculateHash(TPost post);
+		public uint CalculateHash(Post post)
+			=> HaydenMysqlThreadConsumer.CalculatePostHash(post.ContentRendered, post.ContentRaw,
+				post.Media.Count(x => x.IsSpoiler ?? false),
+				post.Media.Length,
+				post.Media.Count(x => x.IsDeleted));
 
 		public void Dispose() { }
 	}

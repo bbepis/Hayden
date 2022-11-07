@@ -17,21 +17,19 @@ namespace Hayden.Consumers
 	/// <summary>
 	/// A thread consumer for the Asagi MySQL backend.
 	/// </summary>
-	public class AsagiThreadConsumer : IThreadConsumer<YotsubaThread, YotsubaPost>
+	public class AsagiThreadConsumer : IThreadConsumer
 	{
-		private AsagiConfig Config { get; }
+		private ConsumerConfig ConsumerConfig { get; }
 
 		private MySqlConnectionPool ConnectionPool { get; }
 
 		private ICollection<string> Boards { get; }
-
-		/// <param name="config">The object to load configuration values from.</param>
-		/// <param name="boards">The boards that will be archived.</param>
-		public AsagiThreadConsumer(AsagiConfig config, ICollection<string> boards)
+		
+		public AsagiThreadConsumer(ConsumerConfig consumerConfig, SourceConfig sourceConfig)
 		{
-			Config = config;
-			ConnectionPool = new MySqlConnectionPool(config.ConnectionString, config.SqlConnectionPoolSize);
-			Boards = boards;
+			ConsumerConfig = consumerConfig;
+			ConnectionPool = new MySqlConnectionPool(consumerConfig.ConnectionString, consumerConfig.SqlConnectionPoolSize);
+			Boards = sourceConfig.Boards.Keys;
 		}
 
 		public async Task InitializeAsync()
@@ -43,14 +41,18 @@ namespace Hayden.Consumers
 		}
 
 		/// <inheritdoc/>
-		public async Task<IList<QueuedImageDownload>> ConsumeThread(ThreadUpdateInfo<YotsubaThread, YotsubaPost> threadUpdateInfo)
+		public async Task<IList<QueuedImageDownload>> ConsumeThread(ThreadUpdateInfo threadUpdateInfo)
 		{
+			if (!(threadUpdateInfo.Thread.OriginalObject is YotsubaThread))
+				throw new InvalidOperationException(
+					"AsagiThreadConsumer can only accept threads of type YotsubaThread");
+
 			List<QueuedImageDownload> imageDownloads = new List<QueuedImageDownload>();
 			string board = threadUpdateInfo.ThreadPointer.Board;
 
 			async Task ProcessImages(YotsubaPost post)
 			{
-				if (!Config.FullImagesEnabled && !Config.ThumbnailsEnabled)
+				if (!ConsumerConfig.FullImagesEnabled && !ConsumerConfig.ThumbnailsEnabled)
 					return; // skip the DB check since we're not even bothering with images
 
 				if (post.FileMd5 != null)
@@ -66,19 +68,19 @@ namespace Hayden.Consumers
 					string fullImageFilename = null, thumbFilename = null;
 					Uri imageUrl = null, thumbUrl = null;
 
-					if (Config.FullImagesEnabled)
+					if (ConsumerConfig.FullImagesEnabled)
 					{
 						string fullImageName = mediaInfo?.MediaFilename ?? post.TimestampedFilenameFull;
 
 						string radixString = Path.Combine(fullImageName.Substring(0, 4), fullImageName.Substring(4, 2));
-						string radixDirectory = Path.Combine(Config.DownloadLocation, board, "image", radixString);
+						string radixDirectory = Path.Combine(ConsumerConfig.DownloadLocation, board, "image", radixString);
 						Directory.CreateDirectory(radixDirectory);
 
 						fullImageFilename = Path.Combine(radixDirectory, fullImageName);
 						imageUrl = new Uri($"https://i.4cdn.org/{board}/{post.TimestampedFilenameFull}");
 					}
 
-					if (Config.ThumbnailsEnabled)
+					if (ConsumerConfig.ThumbnailsEnabled)
 					{
 						string thumbImageName;
 
@@ -88,7 +90,7 @@ namespace Hayden.Consumers
 							thumbImageName = mediaInfo?.PreviewReplyFilename ?? $"{post.TimestampedFilename}s.jpg";
 
 						string radixString = Path.Combine(thumbImageName.Substring(0, 4), thumbImageName.Substring(4, 2));
-						string radixDirectory = Path.Combine(Config.DownloadLocation, board, "thumb", radixString);
+						string radixDirectory = Path.Combine(ConsumerConfig.DownloadLocation, board, "thumb", radixString);
 						Directory.CreateDirectory(radixDirectory);
 
 						thumbFilename = Path.Combine(radixDirectory, thumbImageName);
@@ -102,21 +104,25 @@ namespace Hayden.Consumers
 					}));
 				}
 			}
-			
-			await UpdatePostExif(threadUpdateInfo.Thread.OriginalPost, board);
 
-			foreach (var post in threadUpdateInfo.NewPosts)
+			var yotsubaThread = (YotsubaThread)threadUpdateInfo.Thread.OriginalObject;
+
+			await UpdatePostExif(yotsubaThread.OriginalPost, board);
+
+			var newPosts = threadUpdateInfo.NewPosts.Select(x => (YotsubaPost)x.OriginalObject).ToArray();
+
+			foreach (var post in newPosts)
 			{
 				await ProcessImages(post);
 			}
 			
-			await InsertPosts(threadUpdateInfo.NewPosts, board);
+			await InsertPosts(newPosts, board);
 
 			foreach (var post in threadUpdateInfo.UpdatedPosts)
 			{
 				Program.Log($"[Asagi] Post /{board}/{post.PostNumber} has been modified", true);
 
-				await UpdatePost(post, board, false);
+				await UpdatePost((YotsubaPost)post.OriginalObject, board, false);
 			}
 
 			foreach (var postNumber in threadUpdateInfo.DeletedPosts)
@@ -386,8 +392,8 @@ namespace Hayden.Consumers
 			if (post.Since4Pass.HasValue)
 				exifJson["since4pass"] = post.Since4Pass.Value;
 
-			if (post.TrollCountry != null)
-				exifJson["trollCountry"] = post.TrollCountry;
+			if (post.BoardFlagName != null)
+				exifJson["trollCountry"] = post.BoardFlagName;
 
 			if (exifJson.Count == 0)
 				return null;
@@ -598,8 +604,15 @@ namespace Hayden.Consumers
 		}
 
 		/// <inheritdoc />
-		public uint CalculateHash(YotsubaPost post)
-			=> CalculatePostHash(CleanComment(post.Comment), post.SpoilerImage, post.OriginalFilename, post.Closed);
+		public uint CalculateHash(Post post)
+		{
+			if (!(post.OriginalObject is YotsubaPost))
+				throw new InvalidOperationException("AsagiThreadConsumer can only accept posts of type YotsubaPost");
+
+			var yotsubaPost = (YotsubaPost)post.OriginalObject;
+
+			return CalculatePostHash(CleanComment(yotsubaPost.Comment), yotsubaPost.SpoilerImage, yotsubaPost.OriginalFilename, yotsubaPost.Closed);
+		}
 
 		/// <summary>
 		/// Disposes the object.

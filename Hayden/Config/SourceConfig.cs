@@ -1,12 +1,23 @@
 ﻿using System.Collections.Generic;
+using Hayden.Contract;
 
 namespace Hayden.Config
 {
 	/// <summary>
 	/// Configuration object for the 4chan API
 	/// </summary>
-	public class YotsubaConfig
+	public class SourceConfig
 	{
+		/// <summary>
+		/// The name of the <see cref="IFrontendApi"/> to use when starting up Hayden.
+		/// </summary>
+		public string Type { get; set; }
+
+		/// <summary>
+		/// The website of the imageboard. Only applicable for some sources
+		/// </summary>
+		public string ImageboardWebsite { get; set; }
+
 		/// <summary>
 		/// An array of boards to be archived.
 		/// </summary>

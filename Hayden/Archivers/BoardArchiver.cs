@@ -19,20 +19,20 @@ namespace Hayden
 	/// <summary>
 	/// Handles the core archival logic, independent of any API or consumer implementations.
 	/// </summary>
-	public class BoardArchiver<TThread, TPost> where TPost : IPost where TThread : IThread<TPost>
+	public class BoardArchiver
 	{
 		/// <summary>
 		/// Configuration for the Yotsuba API given by the constructor.
 		/// </summary>
-		public YotsubaConfig Config { get; }
+		public SourceConfig SourceConfig { get; }
 
-		protected IThreadConsumer<TThread, TPost> ThreadConsumer { get; }
-		protected IFrontendApi<TThread> FrontendApi { get; }
+		protected IThreadConsumer ThreadConsumer { get; }
+		protected IFrontendApi FrontendApi { get; }
 		protected IStateStore StateStore { get; }
 		protected ProxyProvider ProxyProvider { get; }
 
 		protected List<ThreadPointer> ThreadIdBlacklist { get; } = new();
-		protected SortedList<ThreadPointer, TrackedThread<TThread, TPost>> TrackedThreads { get; } = new();
+		protected SortedList<ThreadPointer, TrackedThread> TrackedThreads { get; } = new();
 
 		protected Dictionary<string, BoardRules> BoardRules { get; } = new();
 
@@ -46,18 +46,18 @@ namespace Hayden
 		/// </summary>
 		public TimeSpan ApiCooldownTimespan { get; set; }
 
-		public BoardArchiver(YotsubaConfig config, IFrontendApi<TThread> frontendApi, IThreadConsumer<TThread, TPost> threadConsumer, IStateStore stateStore = null, ProxyProvider proxyProvider = null)
+		public BoardArchiver(SourceConfig sourceConfig, IFrontendApi frontendApi, IThreadConsumer threadConsumer, IStateStore stateStore = null, ProxyProvider proxyProvider = null)
 		{
-			Config = config;
+			SourceConfig = sourceConfig;
 			FrontendApi = frontendApi;
 			ThreadConsumer = threadConsumer;
 			ProxyProvider = proxyProvider ?? new NullProxyProvider();
 			StateStore = stateStore ?? new NullStateStore();
 
-			ApiCooldownTimespan = TimeSpan.FromSeconds(config.ApiDelay ?? 1);
-			BoardUpdateTimespan = TimeSpan.FromSeconds(config.BoardScrapeDelay ?? 30);
+			ApiCooldownTimespan = TimeSpan.FromSeconds(sourceConfig.ApiDelay ?? 1);
+			BoardUpdateTimespan = TimeSpan.FromSeconds(sourceConfig.BoardScrapeDelay ?? 30);
 
-			foreach (var (board, boardConfig) in config.Boards)
+			foreach (var (board, boardConfig) in sourceConfig.Boards)
 			{
 				BoardRules[board] = new BoardRules(boardConfig);
 			}
@@ -79,7 +79,7 @@ namespace Hayden
 			List<QueuedImageDownload> requeuedImages = new List<QueuedImageDownload>();
 			
 			// These keep track of the last time we scraped a board, and therefore determines which threads we should scrape
-			SortedList<string, DateTimeOffset> lastBoardCheckTimes = new SortedList<string, DateTimeOffset>(Config.Boards.Count);
+			SortedList<string, DateTimeOffset> lastBoardCheckTimes = new SortedList<string, DateTimeOffset>(SourceConfig.Boards.Count);
 
 			// We only loop if cancellation has not been requested (i.e. "Q" has not been pressed)
 			// Every time you see "token" mentioned, its performing a check
@@ -89,7 +89,7 @@ namespace Hayden
 				int currentBoardCount = 0;
 
 				// For each board (maximum of 8 concurrently), retrieve a list of threads that need to be scraped
-				await Config.Boards.Keys.ForEachAsync(8, async board =>
+				await SourceConfig.Boards.Keys.ForEachAsync(8, async board =>
 				{
 					token.ThrowIfCancellationRequested();
 
@@ -133,7 +133,7 @@ namespace Hayden
 						}
 					}
 
-					if (firstRun && Config.ReadArchive && FrontendApi.SupportsArchive)
+					if (firstRun && SourceConfig.ReadArchive && FrontendApi.SupportsArchive)
 					{
 						// Get a list of archived threads to include to be scraped.
 						var archivedThreads = await GetArchivedBoardThreads(token, board, lastDateTimeCheck);
@@ -146,9 +146,9 @@ namespace Hayden
 					{
 						lastBoardCheckTimes[board] = beforeCheckTime;
 
-						if (++currentBoardCount % 5 == 0 || currentBoardCount == Config.Boards.Count)
+						if (++currentBoardCount % 5 == 0 || currentBoardCount == SourceConfig.Boards.Count)
 						{
-							Program.Log($"{currentBoardCount} / {Config.Boards.Count} boards polled");
+							Program.Log($"{currentBoardCount} / {SourceConfig.Boards.Count} boards polled");
 						}
 					}
 				});
@@ -397,14 +397,15 @@ namespace Hayden
 
 					workerStatuses[id] = "Finished";
 
-					if (Program.HaydenConfig.DebugLogging)
-					{
-						lock (workerStatuses)
-							foreach (var kv in workerStatuses)
-							{
-								Program.Log($"ID {kv.Key,-2} => {kv.Value}", true);
-							}
-					}
+					// TODO: fix when introducing serilog
+					//if (Program.HaydenConfig.DebugLogging)
+					//{
+					//	lock (workerStatuses)
+					//		foreach (var kv in workerStatuses)
+					//		{
+					//			Program.Log($"ID {kv.Key,-2} => {kv.Value}", true);
+					//		}
+					//}
 				}
 
 				// Spawn each worker task and wait until they've all completed
@@ -585,7 +586,7 @@ namespace Hayden
 						threadQueue.Add(pointer);
 
 						lock (TrackedThreads)
-							TrackedThreads[pointer] = TrackedThread<TThread, TPost>.StartTrackingThread(ThreadConsumer.CalculateHash, maybeLiveThreadInfo);
+							TrackedThreads[pointer] = TrackedThread.StartTrackingThread(ThreadConsumer.CalculateHash, maybeLiveThreadInfo);
 					}
 
 					Program.Log($"Enqueued {threadQueue.Count} threads from board archive /{board}/");
@@ -665,7 +666,7 @@ namespace Hayden
 
 							lock (TrackedThreads)
 								TrackedThreads[new ThreadPointer(board, existingThread.ThreadId)] = 
-									TrackedThread<TThread, TPost>.StartTrackingThread(ThreadConsumer.CalculateHash, existingThread);
+									TrackedThread.StartTrackingThread(ThreadConsumer.CalculateHash, existingThread);
 						}
 					}
 
@@ -734,7 +735,9 @@ namespace Hayden
 
 						var threadPointer = new ThreadPointer(board, threadNumber);
 
-						if (response.Data != null && !ThreadFilter(response.Data.Title, response.Data.OriginalPost?.Content, board))
+						var opPost = response.Data.Posts.FirstOrDefault();
+
+						if (response.Data != null && !ThreadFilter(response.Data.Title, opPost?.ContentRendered ?? opPost?.ContentRaw, board))
 						{
 							Program.Log($"{workerId,-2}: Blacklisting thread /{board}/{threadNumber} due to title filter", true);
 							
@@ -749,9 +752,9 @@ namespace Hayden
 
 
 						if (response.Data == null
-						    || response.Data.Posts.Count == 0
-						    || response.Data.OriginalPost == null
-						    || response.Data.OriginalPost.PostNumber == 0)
+						    || response.Data.Posts.Length == 0
+						    || response.Data.Posts.FirstOrDefault() == null
+						    || response.Data.Posts[0].PostNumber == 0)
 						{
 							// This is a very strange edge case.
 							// The 4chan API can return a malformed thread object if the thread has been (incorrectly?) deleted
@@ -771,7 +774,7 @@ namespace Hayden
 
 						// Process the thread data with its assigned TrackedThread instance, then pass the results to the consumer
 
-						TrackedThread<TThread, TPost> trackedThread;
+						TrackedThread trackedThread;
 
 						bool isNewThread = false;
 
@@ -779,7 +782,7 @@ namespace Hayden
 							if (!TrackedThreads.TryGetValue(threadPointer, out trackedThread))
 							{
 								// this is a brand new thread that hasn't been tracked yet
-								trackedThread = TrackedThread<TThread, TPost>.StartTrackingThread(ThreadConsumer.CalculateHash);
+								trackedThread = TrackedThread.StartTrackingThread(ThreadConsumer.CalculateHash);
 								TrackedThreads[threadPointer] = trackedThread;
 								isNewThread = true;
 							}
@@ -800,7 +803,7 @@ namespace Hayden
 
 						var images = await ThreadConsumer.ConsumeThread(threadUpdateInfo);
 
-						if (response.Data.Archived == true)
+						if (response.Data.IsArchived)
 						{
 							Program.Log($"{workerId,-2}: Thread /{board}/{threadNumber} has been archived", true);
 
@@ -810,7 +813,7 @@ namespace Hayden
 
 						return new ThreadUpdateTaskResult(true,
 							images,
-							response.Data.Archived == true ? ThreadUpdateStatus.Archived : ThreadUpdateStatus.Ok,
+							response.Data.IsArchived ? ThreadUpdateStatus.Archived : ThreadUpdateStatus.Ok,
 							threadUpdateInfo.NewPosts.Count - threadUpdateInfo.DeletedPosts.Count);
 
 					case ResponseType.NotModified:

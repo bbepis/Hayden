@@ -104,13 +104,13 @@ namespace Hayden.Tests.Api
 			Assert.AreEqual(ResponseType.Ok, result.ResponseType);
 			Assert.IsNotNull(result.Data);
 
-			Assert.AreEqual(1, result.Data.Posts.Count);
+			Assert.AreEqual(1, result.Data.Posts.Length);
 
 			var opPost = result.Data.Posts[0];
 
 			Assert.AreEqual(51971506UL, opPost.PostNumber);
-			Assert.IsTrue(opPost.Sticky);
-			Assert.IsTrue(opPost.Closed);
+			Assert.IsTrue(result.Data.AdditionalMetadata.Value<bool>("sticky"));
+			Assert.IsTrue(result.Data.IsArchived);
 
 			// put more here. i'm lazy
 		}

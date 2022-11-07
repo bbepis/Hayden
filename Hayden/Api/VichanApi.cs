@@ -1,10 +1,16 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using Hayden.Api;
+using Hayden.Config;
+using Hayden.Consumers.HaydenMysql.DB;
 using Hayden.Models;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
+using Thread = Hayden.Models.Thread;
 
 namespace Hayden
 {
@@ -15,11 +21,11 @@ namespace Hayden
 	{
 		public string ImageboardWebsite { get; }
 
-		public VichanApi(string imageboardWebsite)
+		public VichanApi(SourceConfig sourceConfig)
 		{
-			ImageboardWebsite = imageboardWebsite;
+			ImageboardWebsite = sourceConfig.ImageboardWebsite;
 
-			if (!imageboardWebsite.EndsWith("/"))
+			if (!ImageboardWebsite.EndsWith("/"))
 				ImageboardWebsite += "/";
 		}
 
@@ -27,9 +33,25 @@ namespace Hayden
 		public override bool SupportsArchive => false;
 
 		/// <inheritdoc />
-		public override Task<ApiResponse<VichanThread>> GetThread(string board, ulong threadNumber, HttpClient client, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default)
+		protected override Task<ApiResponse<VichanThread>> GetThreadInternal(string board, ulong threadNumber, HttpClient client, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default)
 		{
 			return MakeJsonApiCall<VichanThread>(new Uri($"{ImageboardWebsite}{board}/res/{threadNumber}.json"), client, modifiedSince, cancellationToken);
+		}
+
+		protected override Thread ConvertThread(VichanThread thread, string board)
+		{
+			return new Thread
+			{
+				ThreadId = thread.OriginalPost.PostNumber,
+				Title = thread.OriginalPost.Subject,
+				IsArchived = thread.Archived,
+				OriginalObject = thread,
+				Posts = thread.Posts.Select(x => x.ConvertToPost(board, ImageboardWebsite)).ToArray(),
+				AdditionalMetadata = new JObject
+				{
+					["sticky"] = thread.OriginalPost.Sticky
+				}
+			};
 		}
 
 		/// <inheritdoc />
@@ -48,5 +70,207 @@ namespace Hayden
 		{
 			throw new InvalidOperationException("Does not support archives");
 		}
+	}
+
+	public class VichanThread
+	{
+		[JsonProperty("posts")]
+		public List<VichanPost> Posts { get; set; }
+
+		[JsonIgnore]
+		public VichanPost OriginalPost => Posts[0];
+
+		[JsonProperty]
+		public bool Archived { get; set; }
+	}
+
+	public class VichanPost
+	{
+		[JsonProperty("no")]
+		public ulong PostNumber { get; set; }
+
+		[JsonProperty("resto")]
+		public ulong ReplyPostNumber { get; set; }
+
+		[JsonConverter(typeof(BoolIntConverter))]
+		[JsonProperty("sticky")]
+		public bool? Sticky { get; set; }
+
+		[JsonConverter(typeof(BoolIntConverter))]
+		[JsonProperty("closed")]
+		public bool? Closed { get; set; }
+
+		[JsonProperty("cyclical")]
+		public string Cyclical { get; set; }
+
+		[JsonProperty("time")]
+		public uint UnixTimestamp { get; set; }
+
+		[JsonProperty("name")]
+		public string Name { get; set; }
+
+		[JsonProperty("trip")]
+		public string Trip { get; set; }
+
+		[JsonProperty("capcode")]
+		public string Capcode { get; set; }
+
+		[JsonProperty("country")]
+		public string CountryCode { get; set; }
+
+		[JsonProperty("sub")]
+		public string Subject { get; set; }
+
+		[JsonProperty("com")]
+		public string Comment { get; set; }
+
+		[JsonProperty("tim")]
+		public string TimestampedFilename { get; set; }
+
+		[JsonProperty("filename")]
+		public string OriginalFilename { get; set; }
+
+		[JsonProperty("ext")]
+		public string FileExtension { get; set; }
+
+		[JsonProperty("fsize")]
+		public uint? FileSize { get; set; }
+
+		[JsonProperty("md5")]
+		public string FileMd5 { get; set; }
+
+		[JsonProperty("w")]
+		public ushort? ImageWidth { get; set; }
+
+		[JsonProperty("h")]
+		public ushort? ImageHeight { get; set; }
+
+		[JsonProperty("tn_w")]
+		public ushort? ThumbnailWidth { get; set; }
+
+		[JsonProperty("tn_h")]
+		public ushort? ThumbnailHeight { get; set; }
+
+		[JsonProperty("country_name")]
+		public string CountryName { get; set; }
+
+		[JsonProperty("custom_spoiler")]
+		public byte? CustomSpoiler { get; set; }
+
+		[JsonProperty("replies")]
+		public uint? TotalReplies { get; set; }
+
+		[JsonProperty("images")]
+		public ushort? TotalImages { get; set; }
+
+		[JsonProperty("extra_files")]
+		public List<VichanExtraFile> ExtraFiles { get; set; }
+
+		private static readonly JsonSerializer jsonSerializer = JsonSerializer.Create(new JsonSerializerSettings { NullValueHandling = NullValueHandling.Ignore });
+
+		public Post ConvertToPost(string board, string imageboardUrlRoot)
+		{
+			Media[] media = Array.Empty<Media>();
+
+			if (FileMd5 != null)
+			{
+				var mediaList = new List<Media>
+				{
+					new Media
+					{
+						FileUrl = $"{imageboardUrlRoot}{board}/src/{TimestampedFilename}{FileExtension}",
+						// Thumbnails on Vichan are FUCKED. They're typically .jpg, but can be
+						// other formats such as .webp depending on the full file extension, Vichan version & fork
+						// It's not possible to determine this through the API
+						ThumbnailUrl = $"{imageboardUrlRoot}{board}/thumb/{TimestampedFilename}.jpg",
+						Filename = OriginalFilename,
+						FileExtension = FileExtension,
+						ThumbnailExtension = "jpg",
+						Index = 0,
+						FileSize = FileSize.Value,
+						IsDeleted = false, // Vichan API does not expose this
+						IsSpoiler = null, // Vichan API does not expose this
+						Md5Hash = Convert.FromBase64String(FileMd5),
+						OriginalObject = this,
+						AdditionalMetadata = null
+					}
+				};
+
+				if (ExtraFiles != null)
+				{
+					mediaList.AddRange(ExtraFiles.Select((file, i) => new Media
+					{
+						FileUrl = $"{imageboardUrlRoot}{board}/src/{file.TimestampedFilename}{file.FileExtension}",
+						// Thumbnails on Vichan are FUCKED. They're typically .jpg, but can be
+						// other formats such as .webp depending on the full file extension, Vichan version & fork
+						// It's not possible to determine this through the API
+						ThumbnailUrl = $"{imageboardUrlRoot}{board}/thumb/{file.TimestampedFilename}.jpg",
+						Filename = file.OriginalFilename,
+						FileExtension = file.FileExtension,
+						ThumbnailExtension = "jpg",
+						Index = (byte)(i + 1),
+						FileSize = file.FileSize.Value,
+						IsDeleted = false, // Vichan API does not expose this
+						IsSpoiler = null, // Vichan API does not expose this
+						Md5Hash = Convert.FromBase64String(file.FileMd5),
+						OriginalObject = this,
+						AdditionalMetadata = null
+					}));
+				}
+
+				media = mediaList.ToArray();
+			}
+
+			return new Post
+			{
+				PostNumber = PostNumber,
+				TimePosted = DateTimeOffset.FromUnixTimeSeconds(UnixTimestamp),
+				Author = Name,
+				Tripcode = Trip,
+				Email = null,
+				ContentRendered = Comment,
+				ContentRaw = null,
+				ContentType = ContentType.Vichan,
+				Media = media,
+				OriginalObject = this,
+				AdditionalMetadata = JObject.FromObject(new
+				{
+					capcode = Capcode,
+					countryCode = CountryCode,
+					countryName = CountryName,
+					customSpoiler = CustomSpoiler
+				}, jsonSerializer)
+			};
+		}
+	}
+
+	public class VichanExtraFile
+	{
+		[JsonProperty("tim")]
+		public string TimestampedFilename { get; set; }
+
+		[JsonProperty("filename")]
+		public string OriginalFilename { get; set; }
+
+		[JsonProperty("ext")]
+		public string FileExtension { get; set; }
+
+		[JsonProperty("fsize")]
+		public uint? FileSize { get; set; }
+
+		[JsonProperty("md5")]
+		public string FileMd5 { get; set; }
+
+		[JsonProperty("w")]
+		public ushort? ImageWidth { get; set; }
+
+		[JsonProperty("h")]
+		public ushort? ImageHeight { get; set; }
+
+		[JsonProperty("tn_w")]
+		public ushort? ThumbnailWidth { get; set; }
+
+		[JsonProperty("tn_h")]
+		public ushort? ThumbnailHeight { get; set; }
 	}
 }

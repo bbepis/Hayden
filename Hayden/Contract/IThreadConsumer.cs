@@ -1,13 +1,14 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using Hayden.Models;
 
 namespace Hayden.Contract
 {
 	/// <summary>
 	/// An interface for consuming and storing threads from the archiver process.
 	/// </summary>
-	public interface IThreadConsumer<TThread, TPost> : IDisposable where TPost : IPost where TThread : IThread<TPost>
+	public interface IThreadConsumer : IDisposable
 	{
 		/// <summary>
 		/// Initializes the thread consumer.
@@ -20,7 +21,7 @@ namespace Hayden.Contract
 		/// </summary>
 		/// <param name="threadUpdateInfo">Data object containing information about the thread's updates.</param>
 		/// <returns>A list of images to be downloaded</returns>
-		Task<IList<QueuedImageDownload>> ConsumeThread(ThreadUpdateInfo<TThread, TPost> threadUpdateInfo);
+		Task<IList<QueuedImageDownload>> ConsumeThread(ThreadUpdateInfo threadUpdateInfo);
 
 		/// <summary>
 		/// Executed when the Engine module has downloaded an image & thumbnail, to store the image somewhere and mark it in a possible database.
@@ -53,7 +54,7 @@ namespace Hayden.Contract
 		/// </summary>
 		/// <param name="post">The post to calculate a hash for</param>
 		/// <returns>The hash of the post</returns>
-		uint CalculateHash(TPost post);
+		uint CalculateHash(Post post);
 	}
 
 	public struct ExistingThreadInfo
@@ -80,10 +81,10 @@ namespace Hayden.Contract
 		}
 	}
 
-	public struct ThreadUpdateInfo<TThread, TPost>
+	public struct ThreadUpdateInfo
 	{
 		public ThreadPointer ThreadPointer;
-		public TThread Thread;
+		public Thread Thread;
 
 		/// <summary>
 		/// True if this thread is the first time Hayden has encountered it (and it does not exist in the backend), otherwise false.
@@ -93,12 +94,12 @@ namespace Hayden.Contract
 		/// <summary>
 		/// A collection of posts that have not been added to the database yet.
 		/// </summary>
-		public ICollection<TPost> NewPosts;
+		public ICollection<Post> NewPosts;
 
 		/// <summary>
 		/// A collection of posts that have been modified since the last time they were committed to the backend.
 		/// </summary>
-		public ICollection<TPost> UpdatedPosts;
+		public ICollection<Post> UpdatedPosts;
 
 		/// <summary>
 		/// A collection of post numbers that exist in the backend, but are no longer present in the thread (i.e. they have been deleted).
@@ -110,17 +111,17 @@ namespace Hayden.Contract
 		/// </summary>
 		public bool HasChanges => NewPosts.Count + UpdatedPosts.Count + DeletedPosts.Count > 0;
 
-		public ThreadUpdateInfo(in ThreadPointer threadPointer, TThread thread, bool isNewThread)
+		public ThreadUpdateInfo(in ThreadPointer threadPointer, Thread thread, bool isNewThread)
 		{
 			ThreadPointer = threadPointer;
 			Thread = thread;
 			IsNewThread = isNewThread;
-			NewPosts = new List<TPost>();
-			UpdatedPosts = new List<TPost>();
+			NewPosts = new List<Post>();
+			UpdatedPosts = new List<Post>();
 			DeletedPosts = new List<ulong>();
 		}
 
-		public ThreadUpdateInfo(in ThreadPointer threadPointer, TThread thread, bool isNewThread, ICollection<TPost> newPosts, ICollection<TPost> updatedPosts, ICollection<ulong> deletedPosts)
+		public ThreadUpdateInfo(in ThreadPointer threadPointer, Thread thread, bool isNewThread, ICollection<Post> newPosts, ICollection<Post> updatedPosts, ICollection<ulong> deletedPosts)
 		{
 			ThreadPointer = threadPointer;
 			Thread = thread;

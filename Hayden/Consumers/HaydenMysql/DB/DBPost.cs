@@ -39,6 +39,10 @@ namespace Hayden.Consumers.HaydenMysql.DB
 	public enum ContentType
 	{
 		Hayden,
-		Yotsuba
+		Yotsuba,
+		Vichan,
+		Meguca,
+		InfinityNext,
+		LynxChan
 	}
 }

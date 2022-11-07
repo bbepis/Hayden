@@ -11,10 +11,11 @@ using Hayden.Models;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using Polly;
+using Thread = Hayden.Models.Thread;
 
 namespace Hayden.Api
 {
-	public abstract class BaseApi<TThread> : IFrontendApi<TThread>
+	public abstract class BaseApi<TThread> : IFrontendApi
 	{
 		/// <summary>
 		/// Creates the base HTTP request used by the frontend's API calls.
@@ -102,8 +103,23 @@ namespace Hayden.Api
 		}
 
 		public abstract bool SupportsArchive { get; }
-		public abstract Task<ApiResponse<TThread>> GetThread(string board, ulong threadNumber, HttpClient client, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default);
+
+		public virtual async Task<ApiResponse<Thread>> GetThread(string board, ulong threadNumber, HttpClient client,
+			DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default)
+		{
+			var response = await GetThreadInternal(board, threadNumber, client, modifiedSince, cancellationToken);
+
+			if (response.ResponseType != ResponseType.Ok)
+				return new ApiResponse<Thread>(response.ResponseType, null);
+
+			return new ApiResponse<Thread>(response.ResponseType, ConvertThread(response.Data, board));
+		}
+
 		public abstract Task<ApiResponse<PageThread[]>> GetBoard(string board, HttpClient client, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default);
 		public abstract Task<ApiResponse<ulong[]>> GetArchive(string board, HttpClient client, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default);
+
+		protected abstract Task<ApiResponse<TThread>> GetThreadInternal(string board, ulong threadNumber, HttpClient client, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default);
+
+		protected abstract Thread ConvertThread(TThread thread, string board);
 	}
 }

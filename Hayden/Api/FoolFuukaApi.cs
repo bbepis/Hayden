@@ -1,21 +1,25 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Web;
 using Hayden.Api;
+using Hayden.Consumers.HaydenMysql.DB;
 using Hayden.Contract;
 using Hayden.Models;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
+using Thread = Hayden.Models.Thread;
 
 #pragma warning disable CS0649 // Field is never assigned to, and will always have its default value null
 
 
 namespace Hayden
 {
-	public class FoolFuukaApi : BaseApi<FoolFuukaThread>, ISearchableFrontendApi<FoolFuukaThread>
+	public class FoolFuukaApi : BaseApi<FoolFuukaThread>, ISearchableFrontendApi
 	{
 		public string ImageboardWebsite { get; }
 
@@ -31,7 +35,7 @@ namespace Hayden
 		public override bool SupportsArchive => false;
 
 		/// <inheritdoc />
-		public override async Task<ApiResponse<FoolFuukaThread>> GetThread(string board, ulong threadNumber, HttpClient client, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default)
+		protected override async Task<ApiResponse<FoolFuukaThread>> GetThreadInternal(string board, ulong threadNumber, HttpClient client, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default)
 		{
 			var rawThreadResponse = await MakeJsonApiCall<Dictionary<ulong, FoolFuukaRawThread>>(new Uri($"{ImageboardWebsite}_/api/chan/thread/?board={board}&num={threadNumber}"), client, modifiedSince, cancellationToken);
 			
@@ -49,6 +53,18 @@ namespace Hayden
 				thread.Posts.AddRange(post.posts.Values.Where(x => x.SubPostNumber == 0).OrderBy(x => x.PostNumber));
 
 			return new ApiResponse<FoolFuukaThread>(ResponseType.Ok, thread);
+		}
+
+		protected override Thread ConvertThread(FoolFuukaThread thread, string board)
+		{
+			return new Thread
+			{
+				ThreadId = thread.OriginalPost.PostNumber,
+				Title = thread.OriginalPost.Title,
+				IsArchived = thread.Archived,
+				OriginalObject = thread,
+				Posts = thread.Posts.Select(x => x.ConvertToPost()).ToArray()
+			};
 		}
 
 		/// <inheritdoc />
@@ -157,5 +173,170 @@ namespace Hayden
 				public string shortname { get; set; }
 			}
 		}
+	}
+
+	public class FoolFuukaThread
+	{
+		[JsonProperty("posts")]
+		public List<FoolFuukaPost> Posts { get; set; }
+
+		[JsonIgnore]
+		public FoolFuukaPost OriginalPost => Posts[0];
+
+		[JsonIgnore]
+		public bool Archived => OriginalPost.Locked ?? false;
+	}
+
+	public class FoolFuukaPost
+	{
+		[JsonProperty("doc_id")]
+		public ulong DocumentId { get; set; }
+
+		[JsonProperty("num")]
+		public ulong PostNumber { get; set; }
+
+		[JsonProperty("subnum")]
+		public ulong SubPostNumber { get; set; }
+
+		[JsonProperty("thread_num")]
+		public ulong ThreadPostNumber { get; set; }
+
+		[JsonProperty("timestamp")]
+		public uint UnixTimestamp { get; set; }
+
+		[JsonProperty("email")]
+		public string Email { get; set; }
+
+		[JsonProperty("title")]
+		public string Title { get; set; }
+
+		[JsonProperty("name")]
+		public string Author { get; set; }
+
+		[JsonProperty("trip")]
+		public string Tripcode { get; set; }
+
+		[JsonProperty("poster_hash")]
+		public string PosterHash { get; set; }
+
+		[JsonProperty("comment_sanitized")]
+		public string SanitizedComment { get; set; }
+
+		[JsonProperty("poster_country")]
+		public string CountryCode { get; set; }
+
+		[JsonProperty("poster_country_name")]
+		public string CountryName { get; set; }
+
+		[JsonProperty("troll_country_code")]
+		public string TrollCountryCode { get; set; }
+
+		[JsonProperty("troll_country_name")]
+		public string TrollCountryName { get; set; }
+
+		[JsonConverter(typeof(BoolIntConverter))]
+		[JsonProperty("sticky")]
+		public bool? Sticky { get; set; }
+
+		[JsonConverter(typeof(BoolIntConverter))]
+		[JsonProperty("locked")]
+		public bool? Locked { get; set; }
+
+		[JsonConverter(typeof(BoolIntConverter))]
+		[JsonProperty("deleted")]
+		public bool? Deleted { get; set; }
+
+		[JsonProperty("media")]
+		public FoolFuukaPostMedia Media { get; set; }
+
+		#region Hayden-specific and non-standard
+
+		[JsonProperty("extension_isdeleted")]
+		public bool? ExtensionIsDeleted { get; set; }
+
+		#endregion
+
+		private static readonly JsonSerializer jsonSerializer = JsonSerializer.Create(new JsonSerializerSettings { NullValueHandling = NullValueHandling.Ignore });
+
+		public Post ConvertToPost()
+		{
+			Media[] media = Array.Empty<Media>();
+
+			if (Media != null)
+				media = new[]
+				{
+					new Media
+					{
+						FileUrl = Media.FileUrl,
+						ThumbnailUrl = Media.ThumbnailUrl,
+						Filename = Path.GetFileNameWithoutExtension(Media.OriginalFilename),
+						FileExtension = Path.GetExtension(Media.OriginalFilename),
+						ThumbnailExtension = Path.GetExtension(Media.OriginalFilename),
+						Index = 0,
+						FileSize = Media.FileSize,
+						IsDeleted = false, // asagi schema doesn't store this info
+						IsSpoiler = Media.IsSpoiler,
+						Md5Hash = Convert.FromBase64String(Media.Md5HashString),
+						OriginalObject = Media,
+						AdditionalMetadata = new JObject
+						{
+							["timestampedFilename"] = Media.TimestampedFilename
+						}
+					}
+				};
+
+			return new Post
+			{
+				PostNumber = PostNumber,
+				TimePosted = DateTimeOffset.FromUnixTimeSeconds(UnixTimestamp),
+				Author = Author,
+				Tripcode = Tripcode,
+				Email = Email,
+				IsDeleted = Deleted ?? false,
+				ContentRendered = null,
+				ContentRaw = SanitizedComment.TrimAndNullify(),
+				ContentType = ContentType.Yotsuba,
+				Media = media,
+				OriginalObject = this,
+				AdditionalMetadata = JObject.FromObject(new
+				{
+					// capcode = 
+					countryCode = CountryCode,
+					countryName = CountryName,
+					boardCountryCode = TrollCountryCode,
+					boardCountryName = TrollCountryName,
+					posterID = PosterHash,
+					sticky = Sticky
+				}, jsonSerializer)
+			};
+		}
+	}
+
+	public class FoolFuukaPostMedia
+	{
+		[JsonConverter(typeof(BoolIntConverter))]
+		[JsonProperty("spoiler")]
+		public bool IsSpoiler { get; set; }
+
+		[JsonProperty("media")]
+		public string TimestampedFilename { get; set; }
+
+		[JsonProperty("preview_reply")]
+		public string TimestampedThumbFilename { get; set; }
+
+		[JsonProperty("media_filename")]
+		public string OriginalFilename { get; set; }
+
+		[JsonProperty("media_hash")]
+		public string Md5HashString { get; set; }
+
+		[JsonProperty("media_link")]
+		public string FileUrl { get; set; }
+
+		[JsonProperty("thumb_link")]
+		public string ThumbnailUrl { get; set; }
+
+		[JsonProperty("media_size")]
+		public uint FileSize { get; set; }
 	}
 }

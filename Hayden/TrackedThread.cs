@@ -2,13 +2,14 @@
 using System.Collections.Generic;
 using System.Linq;
 using Hayden.Contract;
+using Hayden.Models;
 
 namespace Hayden
 {
 	/// <summary>
 	/// Contains thread information used to determine which posts have been changed when polling.
 	/// </summary>
-	public class TrackedThread<TThread, TPost> where TPost : IPost where TThread : IThread<TPost>
+	public class TrackedThread
 	{
 		/// <summary>
 		/// The amount of posts in the thread the last time it was updated.
@@ -23,7 +24,7 @@ namespace Hayden
 		/// <summary>
 		/// A function that performs the hashing of a post.
 		/// </summary>
-		protected Func<TPost, uint> HashFunction { get; set; }
+		protected Func<Post, uint> HashFunction { get; set; }
 
 		protected TrackedThread() { }
 
@@ -33,9 +34,9 @@ namespace Hayden
 		/// <param name="threadPointer">The thread pointer referring to the polled thread.</param>
 		/// <param name="updatedThread">The new thread to calculate change information from.</param>
 		/// <returns>A <see cref="ThreadUpdateInfo{,}"/> object calculated from <param name="updatedThread">updatedThread</param>.</returns>
-		public virtual ThreadUpdateInfo<TThread, TPost> ProcessThreadUpdates(in ThreadPointer threadPointer, TThread updatedThread)
+		public virtual ThreadUpdateInfo ProcessThreadUpdates(in ThreadPointer threadPointer, Thread updatedThread)
 		{
-			var updateInfo = new ThreadUpdateInfo<TThread, TPost>(threadPointer, updatedThread, false);
+			var updateInfo = new ThreadUpdateInfo(threadPointer, updatedThread, false);
 
 			foreach (var post in updatedThread.Posts)
 			{
@@ -70,7 +71,7 @@ namespace Hayden
 				}
 			}
 
-			PostCount = updatedThread.Posts.Count;
+			PostCount = updatedThread.Posts.Length;
 
 			return updateInfo;
 		}
@@ -80,9 +81,9 @@ namespace Hayden
 		/// </summary>
 		/// <param name="existingThreadInfo">The thread information to initialize with.</param>
 		/// <returns>An initialized <see cref="TrackedThread{,}"/> instance.</returns>
-		public static TrackedThread<TThread, TPost> StartTrackingThread(Func<TPost, uint> hashFunction, ExistingThreadInfo existingThreadInfo)
+		public static TrackedThread StartTrackingThread(Func<Post, uint> hashFunction, ExistingThreadInfo existingThreadInfo)
 		{
-			var trackedThread = new TrackedThread<TThread, TPost>();
+			var trackedThread = new TrackedThread();
 
 			trackedThread.HashFunction = hashFunction;
 			trackedThread.PostHashes = new();
@@ -106,9 +107,9 @@ namespace Hayden
 		/// Creates a blank <see cref="TrackedThread{,}"/> instance. Intended for completely new threads, or threads that the backend hasn't encountered before.
 		/// </summary>
 		/// <returns>A blank <see cref="TrackedThread{,}"/> instance.</returns>
-		public static TrackedThread<TThread, TPost> StartTrackingThread(Func<TPost, uint> hashFunction)
+		public static TrackedThread StartTrackingThread(Func<Post, uint> hashFunction)
 		{
-			var trackedThread = new TrackedThread<TThread, TPost>();
+			var trackedThread = new TrackedThread();
 
 			trackedThread.HashFunction = hashFunction;
 			trackedThread.PostHashes = new();
