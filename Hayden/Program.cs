@@ -30,6 +30,10 @@ namespace Hayden
 				return;
 			}
 
+			// restrict threadpool size to prevent excessive amounts of unmanaged memory usage
+			ThreadPool.SetMinThreads(Environment.ProcessorCount, Environment.ProcessorCount);
+			ThreadPool.SetMaxThreads(Environment.ProcessorCount * 2, Environment.ProcessorCount * 4);
+
 			var rawConfigFile = JObject.Parse(File.ReadAllText(args[0]));
 
 			var tokenSource = new CancellationTokenSource();
