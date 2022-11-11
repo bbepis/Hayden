@@ -44,6 +44,7 @@ namespace Hayden.Consumers.HaydenMysql.DB
 		Meguca,
 		InfinityNext,
 		LynxChan,
-		Ponychan
+		Ponychan,
+		ASPNetChan
 	}
 }

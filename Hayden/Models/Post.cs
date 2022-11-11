@@ -8,6 +8,8 @@ public class Post
 {
 	public string Author { get; set; }
 	public string Tripcode { get; set; }
+	// TODO: add this to the schema
+	public string Subject { get; set; }
 	public string Email { get; set; }
 
 	public DateTimeOffset TimePosted { get; set; }

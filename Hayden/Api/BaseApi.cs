@@ -4,6 +4,7 @@ using System.Net;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
+using AngleSharp;
 using AngleSharp.Html.Dom;
 using AngleSharp.Html.Parser;
 using Hayden.Contract;
@@ -90,16 +91,15 @@ namespace Hayden.Api
 				return new ApiResponse<IHtmlDocument>(responseType, null);
 			}
 
-			// maybe this can be a static property?
-			var parser = new HtmlParser();
-
 			await using var responseStream = await message.Content.ReadAsStreamAsync(cancellationToken);
-			
-			var document = await parser.ParseDocumentAsync(responseStream);
+
+			var document = await new BrowsingContext().OpenAsync(e => e
+				.Address(uri)
+				.Content(responseStream, true));
 
 			message.Dispose();
 
-			return new ApiResponse<IHtmlDocument>(ResponseType.Ok, document);
+			return new ApiResponse<IHtmlDocument>(ResponseType.Ok, (IHtmlDocument)document);
 		}
 
 		public abstract bool SupportsArchive { get; }
