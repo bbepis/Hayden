@@ -178,6 +178,7 @@ namespace Hayden.Consumers
 					ContentHtml = post.ContentRendered.TrimAndNullify(),
 					ContentRaw = post.ContentRaw.TrimAndNullify(),
 					ContentType = post.ContentType,
+					IsDeleted = post.IsDeleted ?? false,
 					Author = post.Author == "Anonymous" ? null : post.Author.TrimAndNullify(),
 					Tripcode = post.Tripcode.TrimAndNullify(),
 					Email = post.Email.TrimAndNullify(),
