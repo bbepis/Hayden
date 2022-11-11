@@ -193,7 +193,7 @@ namespace Hayden.WebServer.Controllers
 
 				var fileMappings = await context.FileMappings.AsNoTracking()
 					.GroupJoin(context.Files.AsNoTracking(),
-						fileMapping => new { fileMapping.BoardId, fileMapping.FileId },
+						fileMapping => new { fileMapping.BoardId, FileId = fileMapping.FileId ?? 0 },
 						file => new { file.BoardId, FileId = file.Id },
 						(mapping, enumerable) => new { mapping, enumerable })
 					.SelectMany(x => x.enumerable.DefaultIfEmpty(), (x, file) => new { x.mapping, file })
