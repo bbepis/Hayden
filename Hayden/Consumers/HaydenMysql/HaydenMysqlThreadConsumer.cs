@@ -95,7 +95,6 @@ namespace Hayden.Consumers
 					{
 						existingFile = await dbContext.Files.FirstOrDefaultAsync(x =>
 							x.Sha256Hash == file.Sha256Hash
-							&& x.Size == file.FileSize
 							&& x.BoardId == boardId);
 					}
 					
@@ -103,7 +102,6 @@ namespace Hayden.Consumers
 					{
 						existingFile = await dbContext.Files.FirstOrDefaultAsync(x =>
 							x.Sha1Hash == file.Sha1Hash
-							&& x.Size == file.FileSize
 							&& x.BoardId == boardId);
 					}
 					
@@ -111,7 +109,6 @@ namespace Hayden.Consumers
 					{
 						existingFile = await dbContext.Files.FirstOrDefaultAsync(x =>
 							x.Md5Hash == file.Md5Hash
-							&& x.Size == file.FileSize
 							&& x.BoardId == boardId);
 					}
 

@@ -16,7 +16,7 @@ public class Media
 	public string ThumbnailExtension { get; set; }
 
 	public byte Index { get; set; }
-	public uint FileSize { get; set; }
+	public uint? FileSize { get; set; }
 
 	public byte[] Md5Hash { get; set; }
 	public byte[] Sha1Hash { get; set; }
