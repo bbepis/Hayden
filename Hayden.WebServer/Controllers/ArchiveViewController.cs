@@ -65,6 +65,13 @@ namespace Hayden.WebServer.Controllers
 		}
 
 		[HttpGet]
+		[Route("board/{board}/page/{pageNumber}")]
+		public IActionResult BoardIndexPaged(string board)
+		{
+			return NotFound();
+		}
+
+		[HttpGet]
 		[Route("search")]
 		public IActionResult Search()
 		{
