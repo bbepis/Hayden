@@ -135,7 +135,7 @@ namespace Hayden.Consumers
 			return imageDownloads;
 		}
 
-		public async Task ProcessFileDownload(QueuedImageDownload queuedImageDownload, Memory<byte>? imageData, Memory<byte>? thumbnailData)
+		public async Task ProcessFileDownload(QueuedImageDownload queuedImageDownload, string imageTempFilename, string thumbTempFilename)
 		{
 			if (!queuedImageDownload.TryGetProperty("imageFilename", out string imageFilename)
 			    || !queuedImageDownload.TryGetProperty("thumbFilename", out string thumbFilename))
@@ -143,11 +143,11 @@ namespace Hayden.Consumers
 				throw new InvalidOperationException("Queued image download did not have the required properties");
 			}
 
-			if (imageData.HasValue)
-				await Utility.WriteAllBytesAsync(imageFilename, imageData.Value);
+			if (imageTempFilename != null)
+				File.Move(imageTempFilename, imageFilename);
 
-			if (thumbnailData.HasValue)
-				await Utility.WriteAllBytesAsync(thumbFilename, thumbnailData.Value);
+			if (thumbTempFilename != null)
+				File.Move(thumbTempFilename, thumbFilename);
 		}
 
 		/// <inheritdoc/>

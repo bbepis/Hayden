@@ -12,7 +12,6 @@ using Hayden.Api;
 using Hayden.Cache;
 using Hayden.Config;
 using Hayden.Contract;
-using Hayden.Models;
 using Hayden.Proxy;
 
 namespace Hayden
@@ -23,6 +22,7 @@ namespace Hayden
 	public class SearchArchiver
 	{
 		public SourceConfig SourceConfig { get; }
+		public ConsumerConfig ConsumerConfig { get; }
 
 		protected IThreadConsumer ThreadConsumer { get; }
 		protected ISearchableFrontendApi FrontendApi { get; }
@@ -39,9 +39,13 @@ namespace Hayden
 		/// </summary>
 		public TimeSpan ApiCooldownTimespan { get; set; }
 
-		public SearchArchiver(SourceConfig sourceConfig, SearchQuery searchQuery, ISearchableFrontendApi frontendApi, IThreadConsumer threadConsumer, IStateStore stateStore = null, ProxyProvider proxyProvider = null)
+		public SearchArchiver(SourceConfig sourceConfig, ConsumerConfig consumerConfig, SearchQuery searchQuery, 
+			ISearchableFrontendApi frontendApi, IThreadConsumer threadConsumer,
+			IStateStore stateStore = null, ProxyProvider proxyProvider = null)
 		{
 			SourceConfig = sourceConfig;
+			ConsumerConfig = consumerConfig;
+
 			FrontendApi = frontendApi;
 			ThreadConsumer = threadConsumer;
 			ProxyProvider = proxyProvider ?? new NullProxyProvider();
@@ -114,8 +118,7 @@ namespace Hayden
 				// We don't want to download images too fast
 				var waitTask = Task.Delay(100, token);
 
-				IMemoryOwner<byte> imageBuffer = null, thumbBuffer = null;
-				int imageLength = 0, thumbLength = 0;
+				string tempFilePath = null, tempThumbPath = null;
 
 				try
 				{
@@ -123,23 +126,15 @@ namespace Hayden
 
 					if (queuedDownload.FullImageUri != null)
 					{
-						var imageData = await DownloadFileTask(queuedDownload.FullImageUri, client.Client);
-
-						imageBuffer = imageData.buffer;
-						imageLength = imageData.length;
+						tempFilePath = await DownloadFileTask(queuedDownload.FullImageUri, client.Client);
 					}
 
 					if (queuedDownload.ThumbnailImageUri != null)
 					{
-						var thumbData = await DownloadFileTask(queuedDownload.ThumbnailImageUri, client.Client);
-
-						thumbBuffer = thumbData.buffer;
-						thumbLength = thumbData.length;
+						tempThumbPath = await DownloadFileTask(queuedDownload.ThumbnailImageUri, client.Client);
 					}
 
-					await ThreadConsumer.ProcessFileDownload(queuedDownload,
-						imageBuffer?.Memory.Slice(0, imageLength),
-						thumbBuffer?.Memory.Slice(0, thumbLength));
+					await ThreadConsumer.ProcessFileDownload(queuedDownload, tempFilePath, tempThumbPath);
 				}
 				catch (Exception ex)
 				{
@@ -151,8 +146,11 @@ namespace Hayden
 				}
 				finally
 				{
-					imageBuffer?.Dispose();
-					thumbBuffer?.Dispose();
+					if (tempFilePath != null && File.Exists(tempFilePath))
+						File.Delete(tempFilePath);
+
+					if (tempThumbPath != null && File.Exists(tempThumbPath))
+						File.Delete(tempThumbPath);
 				}
 
 				await waitTask;
@@ -507,9 +505,8 @@ namespace Hayden
 		/// Creates a task to download an image to a specified path, using a specific HttpClient. Skips if the file already exists.
 		/// </summary>
 		/// <param name="imageUrl">The <see cref="Uri"/> of the image.</param>
-		/// <param name="downloadPath">The filepath to download the image to.</param>
 		/// <param name="httpClient">The client to use for the request.</param>
-		private async Task<(IMemoryOwner<byte> buffer, int length)> DownloadFileTask(Uri imageUrl, HttpClient httpClient)
+		private async Task<string> DownloadFileTask(Uri imageUrl, HttpClient httpClient)
 		{
 			Program.Log($"Downloading image {imageUrl.Segments.Last()}", true);
 
@@ -520,21 +517,17 @@ namespace Hayden
 				})
 				.ConfigureAwait(false);
 
-			var memoryBufferSize = (int)response.Content.Headers.ContentLength.GetValueOrDefault(8 * 1024 * 1024);
+			response.EnsureSuccessStatusCode();
 
-			var rentedMemory = MemoryPool<byte>.Shared.Rent(memoryBufferSize);
-
-			int length;
+			var tempFilePath = Path.Combine(ConsumerConfig.DownloadLocation, "hayden", Guid.NewGuid().ToString("N") + ".temp");
 
 			await using (var webStream = await response.Content.ReadAsStreamAsync())
-			await using (var memoryStream = new MemorySpanStream(rentedMemory.Memory, false))
+			await using (var tempFileStream = new FileStream(tempFilePath, FileMode.CreateNew))
 			{
-				await webStream.CopyToAsync(memoryStream);
-
-				length = (int)memoryStream.Position;
+				await webStream.CopyToAsync(tempFileStream);
 			}
 
-			return (rentedMemory, length);
+			return tempFilePath;
 		}
 
 		#endregion

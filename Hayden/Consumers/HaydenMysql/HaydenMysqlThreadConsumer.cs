@@ -1,6 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.IO;
+using System.IO.Abstractions;
 using System.Linq;
 using System.Threading.Tasks;
 using Hayden.Config;
@@ -19,13 +19,15 @@ namespace Hayden.Consumers
 	public class HaydenMysqlThreadConsumer : IThreadConsumer
 	{
 		private ConsumerConfig Config { get; }
+		private IFileSystem FileSystem { get; set; }
 
 		protected Dictionary<string, ushort> BoardIdMappings { get; } = new();
 
 		/// <param name="config">The object to load configuration values from.</param>
-		public HaydenMysqlThreadConsumer(ConsumerConfig config)
+		public HaydenMysqlThreadConsumer(ConsumerConfig config, IFileSystem fileSystem)
 		{
 			Config = config;
+			FileSystem = fileSystem;
 		}
 
 		public async Task InitializeAsync()
@@ -46,7 +48,7 @@ namespace Hayden.Consumers
 			}
 		}
 
-		private HaydenDbContext GetDBContext()
+		protected virtual HaydenDbContext GetDBContext()
 		{
 			var contextBuilder = new DbContextOptionsBuilder();
 
@@ -113,44 +115,35 @@ namespace Hayden.Consumers
 							&& x.BoardId == boardId);
 					}
 
+					var fileMapping = new DBFileMapping
+					{
+						BoardId = boardId,
+						PostId = post.PostNumber,
+						FileId = null,
+						Filename = file.Filename,
+						Index = file.Index,
+						IsDeleted = file.IsDeleted,
+						IsSpoiler = file.IsSpoiler.GetValueOrDefault()
+					};
+
+					dbContext.Add(fileMapping);
+
 					if (existingFile != null)
 					{
 						// We know we have the file. Just attach it
-
-						var fileMapping = new DBFileMapping
-						{
-							BoardId = boardId,
-							PostId = post.PostNumber,
-							FileId = existingFile.Id,
-							Filename = file.Filename,
-							Index = 0,
-							IsDeleted = file.IsDeleted,
-							IsSpoiler = file.IsSpoiler.GetValueOrDefault()
-						};
-
-						dbContext.Add(fileMapping);
+						fileMapping.FileId = existingFile.Id;
 
 						return;
 					}
 
-					Uri imageUrl = null;
-					Uri thumbUrl = null;
 
-					if (Config.FullImagesEnabled)
-					{
-						string imageDirectory = Path.Combine(Config.DownloadLocation, board, "image");
-						Directory.CreateDirectory(imageDirectory);
+					Uri imageUrl = null, thumbUrl = null;
 
+					if (Config.FullImagesEnabled && file.FileUrl != null)
 						imageUrl = new Uri(file.FileUrl);
-					}
 
-					if (Config.ThumbnailsEnabled)
-					{
-						string thumbnailDirectory = Path.Combine(Config.DownloadLocation, board, "thumb");
-						Directory.CreateDirectory(thumbnailDirectory);
-
+					if (Config.ThumbnailsEnabled && file.ThumbnailUrl != null)
 						thumbUrl = new Uri(file.ThumbnailUrl);
-					}
 
 					imageDownloads.Add(new QueuedImageDownload(imageUrl, thumbUrl, new()
 					{
@@ -185,14 +178,14 @@ namespace Hayden.Consumers
 					BoardId = boardId,
 					PostId = post.PostNumber,
 					ThreadId = threadUpdateInfo.ThreadPointer.ThreadId,
-					ContentHtml = post.ContentRendered,
-					ContentRaw = post.ContentRaw,
+					ContentHtml = post.ContentRendered.TrimAndNullify(),
+					ContentRaw = post.ContentRaw.TrimAndNullify(),
 					ContentType = post.ContentType,
-					Author = post.Author == "Anonymous" ? null : post.Author,
-					Tripcode = post.Tripcode,
-					Email = post.Email,
+					Author = post.Author == "Anonymous" ? null : post.Author.TrimAndNullify(),
+					Tripcode = post.Tripcode.TrimAndNullify(),
+					Email = post.Email.TrimAndNullify(),
 					DateTime = post.TimePosted.UtcDateTime,
-					AdditionalMetadata = post.AdditionalMetadata.Count == 0 ? null : post.AdditionalMetadata.ToString(Formatting.None)
+					AdditionalMetadata = (post.AdditionalMetadata?.Count ?? 0) == 0 ? null : post.AdditionalMetadata.ToString(Formatting.None)
 				});
 			}
 
@@ -239,8 +232,8 @@ namespace Hayden.Consumers
 					jsonAdditionalMetadata[jsonKey] = modificationsArray;
 					dbPost.AdditionalMetadata = jsonAdditionalMetadata.ToString(Formatting.None);
 					
-					dbPost.ContentHtml = post.ContentRendered;
-					dbPost.ContentRaw = post.ContentRaw;
+					dbPost.ContentHtml = post.ContentRendered.TrimAndNullify();
+					dbPost.ContentRaw = post.ContentRaw.TrimAndNullify();
 				}
 
 				dbPost.IsDeleted = false;
@@ -272,7 +265,7 @@ namespace Hayden.Consumers
 		}
 
 		/// <inheritdoc/>
-		public async Task ProcessFileDownload(QueuedImageDownload queuedImageDownload, Memory<byte>? imageData, Memory<byte>? thumbnailData)
+		public async Task ProcessFileDownload(QueuedImageDownload queuedImageDownload, string imageTempFilename, string thumbTempFilename)
 		{
 			if (!queuedImageDownload.TryGetProperty("board", out string board)
 				|| !queuedImageDownload.TryGetProperty("boardId", out ushort boardId)
@@ -281,27 +274,17 @@ namespace Hayden.Consumers
 			{
 				throw new InvalidOperationException("Queued image download did not have the required properties");
 			}
-
-			if (imageData == null)
+			
+			if (imageTempFilename == null)
 				throw new InvalidOperationException("Full image required for hash calculation");
 
-			using var stream = new MemorySpanStream(imageData.Value, true);
+			await using var stream = FileSystem.File.OpenRead(imageTempFilename);
 
+			var fileSize = stream.Length;
 			var (md5Hash, sha1Hash, sha256Hash) = Utility.CalculateHashes(stream);
+
+			stream.Close();
 			
-			var imageFilename = Common.CalculateFilename(Config.DownloadLocation, board, Common.MediaType.Image, sha256Hash, media.FileExtension);
-
-			await Utility.WriteAllBytesAsync(imageFilename + ".tmp", imageData.Value);
-			File.Move(imageFilename + ".tmp", imageFilename, true);
-
-			if (thumbnailData.HasValue)
-			{
-				var thumbFilename = Common.CalculateFilename(Config.DownloadLocation, board, Common.MediaType.Thumbnail, sha256Hash, "jpg");
-				
-				await Utility.WriteAllBytesAsync(thumbFilename + ".tmp", thumbnailData.Value);
-				File.Move(thumbFilename + ".tmp", thumbFilename, true);
-			}
-
 			await using var dbContext = GetDBContext();
 
 			uint fileId;
@@ -312,19 +295,36 @@ namespace Hayden.Consumers
 				.Select(x => new { x.Id })
 				.FirstOrDefaultAsync();
 
+			var imageFilename = Common.CalculateFilename(Config.DownloadLocation, board, Common.MediaType.Image, sha256Hash, media.FileExtension);
+
+			FileSystem.Directory.CreateDirectory(FileSystem.Path.GetDirectoryName(imageFilename));
+
+			if (!FileSystem.File.Exists(imageFilename))
+				FileSystem.File.Move(imageTempFilename, imageFilename);
+
+			if (thumbTempFilename != null)
+			{
+				var thumbFilename = Common.CalculateFilename(Config.DownloadLocation, board, Common.MediaType.Thumbnail, sha256Hash, media.ThumbnailExtension);
+
+				FileSystem.Directory.CreateDirectory(FileSystem.Path.GetDirectoryName(thumbFilename));
+
+				if (!FileSystem.File.Exists(thumbFilename))
+					FileSystem.File.Move(thumbTempFilename, thumbFilename);
+			}
+
 			if (existingFile == null)
 			{
 				var dbFile = new DBFile
 				{
-					BoardId = (ushort)boardId,
+					BoardId = boardId,
 					Extension = media.FileExtension.TrimStart('.'),
 					FileExists = true,
 					FileBanned = false,
-					ThumbnailExtension = thumbnailData.HasValue ? "jpg" : null,
+					ThumbnailExtension = thumbTempFilename != null ? media.ThumbnailExtension.TrimStart('.') : null,
 					Md5Hash = md5Hash,
 					Sha1Hash = sha1Hash,
 					Sha256Hash = sha256Hash,
-					Size = (uint)imageData.Value.Length
+					Size = (uint)fileSize
 				};
 
 				await Common.DetermineMediaInfoAsync(imageFilename, dbFile);
@@ -338,19 +338,16 @@ namespace Hayden.Consumers
 			{
 				fileId = existingFile.Id;
 			}
-			
-			var fileMapping = new DBFileMapping
-			{
-				BoardId = (ushort)boardId,
-				PostId = postNumber,
-				FileId = fileId,
-				Filename = media.Filename,
-				Index = 0,
-				IsDeleted = media.IsDeleted,
-				IsSpoiler = media.IsSpoiler.GetValueOrDefault()
-			};
 
-			dbContext.Add(fileMapping);
+			var existingFileMapping = await dbContext.FileMappings
+				.FirstAsync(x => x.BoardId == boardId
+					&& x.PostId == postNumber
+					&& x.Index == media.Index);
+
+			existingFileMapping.FileId = fileId;
+
+			dbContext.Update(existingFileMapping);
+
 			await dbContext.SaveChangesAsync();
 		}
 

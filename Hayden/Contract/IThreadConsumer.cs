@@ -27,9 +27,9 @@ namespace Hayden.Contract
 		/// Executed when the Engine module has downloaded an image & thumbnail, to store the image somewhere and mark it in a possible database.
 		/// </summary>
 		/// <param name="queuedImageDownload">The queued image download that was performed.</param>
-		/// <param name="imageData">A byte array of the downloaded data.</param>
-		/// <param name="thumbnailData">A byte array of the downloaded data.</param>
-		Task ProcessFileDownload(QueuedImageDownload queuedImageDownload, Memory<byte>? imageData, Memory<byte>? thumbnailData);
+		/// <param name="imageTempFilename">A path to a temporary file containing the media data.</param>
+		/// <param name="thumbTempFilename">A path to a temporary file containing the thumbnail data.</param>
+		Task ProcessFileDownload(QueuedImageDownload queuedImageDownload, string imageTempFilename, string thumbTempFilename);
 
 		/// <summary>
 		/// Executed when a thread has been pruned or deleted, to mark it as complete.

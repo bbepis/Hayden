@@ -13,8 +13,7 @@ namespace Hayden.Consumers
 		public Task<IList<QueuedImageDownload>> ConsumeThread(ThreadUpdateInfo threadUpdateInfo)
 			=> Task.FromResult<IList<QueuedImageDownload>>(new List<QueuedImageDownload>());
 
-		public Task ProcessFileDownload(QueuedImageDownload queuedImageDownload, Memory<byte>? imageData,
-			Memory<byte>? thumbnailData)
+		public Task ProcessFileDownload(QueuedImageDownload queuedImageDownload, string imageTempFilename, string thumbTempFilename)
 			=> Task.CompletedTask;
 
 		public Task ThreadUntracked(ulong threadId, string board, bool deleted)

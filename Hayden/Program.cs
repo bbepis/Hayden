@@ -1,5 +1,6 @@
 ﻿using System;
 using System.IO;
+using System.IO.Abstractions;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -110,7 +111,8 @@ namespace Hayden
 				await proxyProvider.InitializeAsync();
 				serviceCollection.AddSingleton<ProxyProvider>(proxyProvider);
 			}
-			
+
+			serviceCollection.AddSingleton<IFileSystem, FileSystem>();
 
 			var serviceProvider = serviceCollection.BuildServiceProvider();
 

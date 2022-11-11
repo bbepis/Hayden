@@ -1,5 +1,4 @@
-﻿using System.ComponentModel.DataAnnotations;
-using System.ComponentModel.DataAnnotations.Schema;
+﻿using System.ComponentModel.DataAnnotations.Schema;
 
 namespace Hayden.Consumers.HaydenMysql.DB
 {
@@ -8,7 +7,7 @@ namespace Hayden.Consumers.HaydenMysql.DB
 	{
 		public ushort BoardId { get; set; }
 		public ulong PostId { get; set; }
-		public uint FileId { get; set; }
+		public uint? FileId { get; set; }
 
 		public byte Index { get; set; }
 

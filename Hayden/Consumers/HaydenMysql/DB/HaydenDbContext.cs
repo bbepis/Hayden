@@ -28,7 +28,7 @@ namespace Hayden.Consumers.HaydenMysql.DB
 		{
 			modelBuilder.Entity<DBThread>(x => x.HasKey(nameof(DBThread.BoardId), nameof(DBThread.ThreadId)));
 			modelBuilder.Entity<DBPost>(x => x.HasKey(nameof(DBPost.BoardId), nameof(DBPost.PostId)));
-			modelBuilder.Entity<DBFileMapping>(x => x.HasKey(nameof(DBFileMapping.BoardId), nameof(DBFileMapping.PostId), nameof(DBFileMapping.FileId)));
+			modelBuilder.Entity<DBFileMapping>(x => x.HasKey(nameof(DBFileMapping.BoardId), nameof(DBFileMapping.PostId), nameof(DBFileMapping.Index)));
 
 			modelBuilder.Entity<DBFile>(x => HasJsonConversion(x.Property<JObject>(nameof(DBFile.AdditionalMetadata))));
 
