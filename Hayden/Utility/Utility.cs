@@ -563,5 +563,13 @@ namespace Hayden
 
 			return (md5Hash, sha1Hash, sha256Hash);
 		}
+
+		public static uint Max<T>(this IEnumerable<T> collection, Func<T, uint> selector, uint @default)
+		{
+			if (!collection.Any())
+				return @default;
+
+			return collection.Max(selector);
+		}
 	}
 }
