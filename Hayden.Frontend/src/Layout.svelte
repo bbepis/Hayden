@@ -1,11 +1,25 @@
 <script lang="ts">
     import type { BoardModel } from "./data/data";
     import { Utility } from "./data/utility";
-    import { moderatorUserStore } from "./data/stores"
+    import { moderatorUserStore, theme } from "./data/stores"
     import { Api } from "./data/api";
+    import { theme as themeStore } from "./data/stores"
 
     let boardInfoPromise = <Promise<BoardModel[]>>Utility.FetchData("/board/all/info");
+
+    const themes = [
+        { key: "yotsuba", text: "Yotsuba" },
+        { key: "tomorrow", text: "Tomorrow" },
+    ]
+
+    let selectedTheme : string = $themeStore;
 </script>
+
+<style>
+    .theme-select {
+        max-width: 150px;
+    }
+</style>
 
 <header>
     <nav class="navbar navbar-expand-sm navbar-toggleable-sm navbar-light box-shadow mb-3">
@@ -58,7 +72,16 @@
 </div>
 
 <footer class="border-top footer text-muted">
-    <div class="container">
-        Hayden.WebServer 1.0
+    <div class="container d-flex align-items-center">
+        <span>Hayden.WebServer 1.0</span>
+        <div class="flex-grow-1"></div>
+        <select class="form-control theme-select"
+            bind:value={selectedTheme}
+            on:change={() => $themeStore = selectedTheme}
+        >
+            {#each themes as theme}
+                <option selected={selectedTheme === theme.key} value={theme.key}>{theme.text}</option>
+            {/each}
+        </select>
     </div>
 </footer>

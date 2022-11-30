@@ -10,7 +10,11 @@
 	import BoardPage from "./page/BoardPage.svelte";
 	import LoginPage from "./page/LoginPage.svelte";
 	import RegisterPage from "./page/RegisterPage.svelte";
+    import { theme } from "./data/stores";
 
+	theme.subscribe(currentTheme => {
+		document.documentElement.className = `theme-${currentTheme}`;
+	})
 
 	let adminComponent;
 </script>
