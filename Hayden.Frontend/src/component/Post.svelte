@@ -144,11 +144,10 @@
         </div>
     {/if}
     <blockquote class="post-contents">
-        {#if post.contentHtml && !post.contentRaw}
-            {@html post.contentHtml.replace("\n", "<br/>")}
-        {/if}
         {#if post.contentRaw}
             {@html RenderRawPost(post.contentRaw)}
+        {:else if post.contentHtml}
+            {@html post.contentHtml.replace("\n", "<br/>")}
         {/if}
     </blockquote>
 </div>
