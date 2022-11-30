@@ -6,15 +6,15 @@
   --post-border-color: #d9bfb7;
   --nav-text-color: #000000;
   --nav-dropdown-bgcolor: #f0e0d6;
-  --link-text-color: #00d;
+  --link-text-color: #0029dd;
   --link-visited-text-color: #9881be;
   --subject-color: #a321ca;
-  --quote-color: #789922;;
+  --quote-color: #789922;
 }
 
 :root.theme-tomorrow {
   --text-color: #c5c8c6;
-  --text-font: 14px arial,helvetica,sans-serif;
+  --text-font: 14px arial, helvetica, sans-serif;
   --page-background-color: #111111;
   --post-background-color: #282a2e;
   --post-border-color: #282a2e;
@@ -44,7 +44,8 @@ a {
   border-color: #1861ac;
 }
 
-.nav-pills .nav-link.active, .nav-pills .show > .nav-link {
+.nav-pills .nav-link.active,
+.nav-pills .show>.nav-link {
   color: var(--nav-text-color);
   background-color: #1b6ec2;
   border-color: #1861ac;
@@ -56,6 +57,7 @@ html {
   font: var(--text-font);
   color: var(--text-color);
 }
+
 @media (min-width: 768px) {
   html {
     font-size: 16px;
@@ -65,6 +67,7 @@ html {
 .border-top {
   border-top: 1px solid #e5e5e5;
 }
+
 .border-bottom {
   border-bottom: 1px solid #e5e5e5;
 }
@@ -89,7 +92,8 @@ html {
 body {
   /* Margin bottom by footer height */
   margin-bottom: 60px;
-	background-color: var(--page-background-color);
+  background-color: var(--page-background-color);
+  color: var(--text-color);
 }
 
 .container-margin {
@@ -101,18 +105,19 @@ body {
   bottom: 0;
   width: 100%;
   white-space: nowrap;
-  line-height: 60px; /* Vertically center the text there */
+  line-height: 60px;
+  /* Vertically center the text there */
 }
 
 /* 4chan styling */
 
 .post {
-    margin: 4px 0;
-    overflow: hidden;
-    color: var(--text-color);
-    /* font-family: arial,helvetica,sans-serif; */
-    /*font-size: 10pt;*/
-    line-height: normal;
+  margin: 4px 0;
+  overflow: hidden;
+  color: var(--text-color);
+  /* font-family: arial,helvetica,sans-serif; */
+  /*font-size: 10pt;*/
+  line-height: normal;
 }
 
 .subject {
@@ -121,80 +126,86 @@ body {
 }
 
 .reply {
-    background-color: var(--post-background-color);
-    border: 1px solid var(--post-border-color);
-    display: table;
-    padding: 2px;
+  background-color: var(--post-background-color);
+  border: 1px solid var(--post-border-color);
+  display: table;
+  padding: 2px;
 }
 
-.reply:target, .reply.highlight {
+.reply:target,
+.reply.highlight {
   background: var(--post-background-color) !important;
   border: 1px solid var(--post-border-color) !important;
   padding: 2px;
 }
 
 .postInfo {
-    display: block;
-    width: 100%;
+  display: block;
+  width: 100%;
 }
 
 div.post div.postInfo {
-    display: block;
-    width: 100%;
-    margin-left: 5px;
-    margin-right: 5px;
+  display: block;
+  width: 100%;
+  margin-left: 5px;
+  margin-right: 5px;
 }
 
 .nameBlock {
-    display: inline-block;
+  display: inline-block;
 }
 
 .name {
-    color: #2a994d;
-    font-weight: 700;
+  color: #2a994d;
+  font-weight: 700;
 }
 
 blockquote {
-    margin: 16px 40px !important;
+  margin: 16px 40px !important;
 }
 
 .fileText {
-    word-wrap: break-word;
-    max-width: calc(100vw - 90px);
-    margin: 0 20px;
+  word-wrap: break-word;
+  max-width: calc(100vw - 90px);
+  margin: 0 20px;
 }
 
 .fileThumb {
-    float: left;
-    margin-left: 20px;
-    margin-right: 20px;
-    margin-top: 3px;
-    margin-bottom: 5px;
+  float: left;
+  margin-left: 20px;
+  margin-right: 20px;
+  margin-top: 3px;
+  margin-bottom: 5px;
 
-    /*max-width: 125px;
+  /*max-width: 125px;
     max-height: 125px;*/
 }
 
 a {
-    color: var(--link-text-color) !important;
-    text-decoration: none;
+  color: var(--link-text-color) !important;
+  text-decoration: none;
 }
 
-nav a, nav a:visited {
-    color: var(--nav-text-color);
-    text-decoration: none;
+nav a,
+nav a:visited {
+  color: var(--nav-text-color);
+  text-decoration: none;
 }
 
-nav, .navbar-light {
-	background-color: var(--post-background-color);
+nav,
+.navbar-light {
+  background-color: var(--post-background-color);
   color: var(--nav-text-color);
 }
 
-nav .dropdown-menu, .dropdown-item:focus, .dropdown-item:hover {
+nav .dropdown-menu,
+.dropdown-item:focus,
+.dropdown-item:hover {
   background-color: var(--nav-dropdown-bgcolor);
 }
 
-.dropdown-item:focus, .dropdown-item:hover {
+.dropdown-item:focus,
+.dropdown-item:hover {
   background-color: #47494d;
 }
 
@@ -204,25 +215,34 @@ nav .dropdown-menu, .dropdown-item:focus, .dropdown-item:hover {
 } */
 
 a.quotelink {
-    text-decoration: underline;
+  text-decoration: underline;
 }
 
 a:hover {
-    color: #adc9e0 !important;
+  color: #adc9e0 !important;
 }
 
-blockquote > span.quote {
-    color: var(--quote-color);
+span.deadlink {
+  color: rgb(150, 0, 0);
+  text-decoration: underline dashed;
+  cursor: pointer;
 }
 
-s:hover, s:focus, s:hover a {
-    color: #fff !important;
+blockquote>span.quote {
+  color: var(--quote-color);
 }
 
-s, s a:not(:hover) {
-    color: #000 !important;
-    background: #000 !important;
-    text-decoration: none;
+s:hover,
+s:focus,
+s:hover a {
+  color: #fff !important;
+}
+
+s,
+s a:not(:hover) {
+  color: #000 !important;
+  background: #000 !important;
+  text-decoration: none;
 }
 
 figure.uploadCell {
