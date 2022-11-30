@@ -1,17 +1,15 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Net.Http;
 using System.Security.Cryptography;
 using System.Threading;
 using System.Threading.Tasks;
 using Hayden.Consumers.HaydenMysql.DB;
 using Hayden.MediaInfo;
+using Hayden.WebServer.Services.Captcha;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using Newtonsoft.Json.Linq;
 
 namespace Hayden.WebServer.Controllers.Api
 {
@@ -33,6 +31,7 @@ namespace Hayden.WebServer.Controllers.Api
 		[HttpPost("makepost")]
 		public async Task<IActionResult> MakePost(
 			[FromServices] HaydenDbContext dbContext,
+			[FromServices] ICaptchaProvider captchaProvider,
 			[FromServices] IMediaInspector mediaInspector,
 			[FromForm] PostForm form)
 		{
@@ -46,7 +45,7 @@ namespace Hayden.WebServer.Controllers.Api
 			if (banResult != null)
 				return banResult;
 
-			if (!await VerifyCaptchaAsync(form.captcha))
+			if (!await captchaProvider.VerifyCaptchaAsync(form.captcha))
 				return BadRequest(new { message = "Invalid captcha" });
 
 			var threadInfo = await dbContext.GetThreadInfo(form.threadId, form.board, true);
@@ -133,6 +132,7 @@ namespace Hayden.WebServer.Controllers.Api
 		[HttpPost("makethread")]
 		public async Task<IActionResult> MakeThread(
 			[FromServices] HaydenDbContext dbContext,
+			[FromServices] ICaptchaProvider captchaProvider,
 			[FromServices] IMediaInspector mediaInspector,
 			[FromForm] NewThreadForm form)
 		{
@@ -148,7 +148,7 @@ namespace Hayden.WebServer.Controllers.Api
 			if (banResult != null)
 				return banResult;
 
-			if (!await VerifyCaptchaAsync(form.captcha))
+			if (!await captchaProvider.VerifyCaptchaAsync(form.captcha))
 				return BadRequest(new { message = "Invalid captcha" });
 
 			(var result, var fileId) = await ProcessUploadedFileInternal(dbContext, mediaInspector, form.file, board);
@@ -223,27 +223,6 @@ namespace Hayden.WebServer.Controllers.Api
 		}
 
 		#region Helpers
-
-		private static readonly HttpClient CaptchaHttpClient = new();
-
-		[NonAction]
-		private async Task<bool> VerifyCaptchaAsync(string captchaResponse)
-		{
-			var response = await CaptchaHttpClient.PostAsync("https://hcaptcha.com/siteverify", new FormUrlEncodedContent(new[]
-			{
-				new KeyValuePair<string, string>("response", captchaResponse),
-				new KeyValuePair<string, string>("secret", "0x0000000000000000000000000000000000000000"),
-				//new KeyValuePair<string, string>("sitekey", "0x0000000000000000000000000000000000000000"),
-			}));
-
-			if (!response.IsSuccessStatusCode)
-				return false;
-
-			var responseString = await response.Content.ReadAsStringAsync();
-			var jObject = JObject.Parse(responseString);
-			
-			return jObject.Value<bool>("success");
-		}
 
 		[NonAction]
 		private async Task<IActionResult> CheckBanAsync(HaydenDbContext dbContext)

@@ -13,6 +13,7 @@ using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 using Nest;
 using Hayden.MediaInfo;
+using Hayden.WebServer.Services.Captcha;
 
 namespace Hayden.WebServer
 {
@@ -78,6 +79,9 @@ namespace Hayden.WebServer
 				});
 
 			services.AddSingleton<IMediaInspector, FfprobeMediaInspector>();
+			services.AddSingleton<ICaptchaProvider, HCaptchaProvider>(_ => new HCaptchaProvider(
+				Config.HCaptchaTesting ? HCaptchaProvider.DummySiteKey : Config.HCaptchaSiteKey,
+				Config.HCaptchaTesting ? HCaptchaProvider.DummySecret : Config.HCaptchaSecret));
 
 			services.AddMvc(x => { x.EnableEndpointRouting = false; });
 		}

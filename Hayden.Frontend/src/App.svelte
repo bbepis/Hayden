@@ -1,7 +1,6 @@
 <script lang="ts">
 	import Layout from "./Layout.svelte"
 	import { Route, router } from 'tinro';
-	import type { InfoObject } from "./data/data";
     import { Utility } from "./data/utility";
 
 	import IndexPage from "./page/IndexPage.svelte";
@@ -12,11 +11,8 @@
 	import LoginPage from "./page/LoginPage.svelte";
 	import RegisterPage from "./page/RegisterPage.svelte";
 
-	export let info : InfoObject;
 
 	let adminComponent;
-
-	Utility.infoObject = info;
 </script>
 
 <Layout>

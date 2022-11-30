@@ -142,7 +142,7 @@
             <div class="row input-row">
                 <div class="col-3">Captcha</div>
                 <div class="col-9">
-                    <div id="post-captcha" class="h-captcha" data-sitekey="10000000-ffff-ffff-ffff-000000000001"></div>
+                    <div id="post-captcha" class="h-captcha" data-sitekey={Utility.infoObject.hCaptchaSiteKey}></div>
                 </div>
             </div>
             <div class="row input-row">

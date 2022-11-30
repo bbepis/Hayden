@@ -1,6 +1,7 @@
 export class InfoObject {
     apiEndpoint: string;
     rawEndpoint: string;
+    hCaptchaSiteKey: string | null;
 }
 
 export class BoardModel {
