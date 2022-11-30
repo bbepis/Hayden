@@ -74,3 +74,10 @@ export class FileModel {
     imageUrl: string;
     thumbnailUrl: string;
 }
+
+export enum ModeratorRole {
+    Janitor = 1,
+    Moderator = 2,
+    Developer = 3,
+    Admin = 4
+}

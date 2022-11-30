@@ -1,25 +1,11 @@
 import { writable } from "svelte/store"
+import { Api } from "./api";
+import type { ModeratorRole } from "./data";
 
-function getCookie(name) {
-    var dc = document.cookie;
-    var prefix = name + "=";
-    var begin = dc.indexOf("; " + prefix);
-    if (begin == -1) {
-        begin = dc.indexOf(prefix);
-        if (begin != 0)
-            return null;
-    }
-    else
-    {
-        begin += 2;
-        var end = document.cookie.indexOf(";", begin);
-        if (end == -1) {
-            end = dc.length;
-        }
-    }
-    // because unescape has been deprecated, replaced with decodeURI
-    //return unescape(dc.substring(begin + prefix.length, end));
-    return decodeURI(dc.substring(begin + prefix.length, end));
-} 
+export const moderatorUserStore = writable<ModeratorRole | null>(null);
 
-export const moderatorUserStore = writable<boolean>(getCookie("identity") != null);
+export async function initStores() {
+    const userInfo = await Api.GetUserInfoAsync();
+
+    moderatorUserStore.set(userInfo.role);
+}

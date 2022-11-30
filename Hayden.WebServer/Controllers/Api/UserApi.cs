@@ -43,11 +43,19 @@ namespace Hayden.WebServer.Controllers.Api
 			return Unauthorized();
 		}
 
+		[HttpPost("user/logout")]
+		public async Task<IActionResult> UserLogoutAsync()
+		{
+			await HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+
+			return Ok();
+		}
+
 		[HttpPost("user/register")]
 		public async Task<IActionResult> UserRegisterAsync([FromServices] HaydenDbContext dbContext,
 			[FromForm] string username, [FromForm] string password, [FromForm] string registerCode)
 		{
-			await Task.Delay(1000); // shoddily mitigate bruteforce
+			await Task.Delay(1000);
 
 			ModeratorRole grantedRole;
 
@@ -81,6 +89,22 @@ namespace Hayden.WebServer.Controllers.Api
 			await LoginAsUser(moderator);
 
 			return Unauthorized();
+		}
+
+		[HttpPost("user/info")]
+		public async Task<IActionResult> GetUserInfoAsync([FromServices] HaydenDbContext dbContext)
+		{
+			var authenticateResult = await AuthenticateAsync(HttpContext);
+
+			var moderator = authenticateResult.Principal != null
+				? await authenticateResult.Principal.GetModeratorAsync(dbContext)
+				: null;
+
+			return Json(new
+			{
+				id = moderator?.Id,
+				role = moderator?.Role
+			});
 		}
 
 		#region Helpers
@@ -124,14 +148,14 @@ namespace Hayden.WebServer.Controllers.Api
 
 	internal static class AuthExtensions
 	{
-		public static uint? GetUserID(this ClaimsPrincipal principal)
+		public static ushort? GetUserID(this ClaimsPrincipal principal)
 		{
 			var claims = principal.FindAll("ID").ToArray();
 
 			if (claims.Length == 0)
 				return null;
 
-			return uint.Parse(claims[0].Value);
+			return ushort.Parse(claims[0].Value);
 		}
 
 		public static bool IsLoggedIn(this ClaimsPrincipal principal)
@@ -139,14 +163,14 @@ namespace Hayden.WebServer.Controllers.Api
 			return principal?.GetUserID().HasValue ?? false;
 		}
 
-		public static async Task<DBModerator> GetModeratorAsync(this ClaimsPrincipal principal, HaydenDbContext cardContext)
+		public static async Task<DBModerator> GetModeratorAsync(this ClaimsPrincipal principal, HaydenDbContext dbContext)
 		{
 			var id = principal.GetUserID();
 
 			if (!id.HasValue)
 				return null;
 
-			return await cardContext.Moderators.FindAsync(id.Value);
+			return await dbContext.Moderators.FindAsync(id.Value);
 		}
 
 		public static Task<DBModerator> GetModeratorAsync(this HttpContext context)

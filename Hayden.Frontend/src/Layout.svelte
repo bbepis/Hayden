@@ -2,6 +2,7 @@
     import type { BoardModel } from "./data/data";
     import { Utility } from "./data/utility";
     import { moderatorUserStore } from "./data/stores"
+    import { Api } from "./data/api";
 
     let boardInfoPromise = <Promise<BoardModel[]>>Utility.FetchData("/board/all/info");
 </script>
@@ -39,7 +40,7 @@
                             <a class="nav-link" href="/Admin">Admin</a>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link" href="#" on:click={() => { $moderatorUserStore = false; } }>Logout</a>
+                            <a class="nav-link" href="#" on:click={() => { $moderatorUserStore = null; Api.UserLogoutAsync(); } }>Logout</a>
                         </li>
                     {/if}
                     <!-- <li class="nav-item">

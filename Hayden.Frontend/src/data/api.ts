@@ -22,6 +22,11 @@ export class Api {
         return result.ok;
     }
 
+    static async UserLogoutAsync(): Promise<void>
+    {
+        await Utility.Post("/user/logout");
+    }
+
     static async UserRegisterAsync(username: string, password: string, registerCode: string): Promise<boolean>
     {
         const result = await Utility.PostForm("/user/register", {
@@ -31,5 +36,12 @@ export class Api {
         });
 
         return result.ok;
+    }
+
+    static async GetUserInfoAsync(): Promise<{ id: number | null, role: number | null }>
+    {
+        const result = await Utility.Post("/user/info");
+
+        return await result.json();
     }
 }

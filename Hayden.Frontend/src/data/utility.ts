@@ -84,8 +84,6 @@ export class Utility {
 
     static async PostForm(endpoint: string, data: any): Promise<Response> {
 
-        let url = this.infoObject.apiEndpoint + endpoint;
-
         let formData = new FormData();
 
         for (var key of Object.keys(data)) {
@@ -97,9 +95,16 @@ export class Utility {
             formData.set(key, data[key]);
         }
 
+        return await Utility.Post(endpoint, formData);
+	}
+
+    static async Post(endpoint: string, body?: any): Promise<Response> {
+
+        let url = this.infoObject.apiEndpoint + endpoint;
+
 		const result = await fetch(url, {
             method: "post",
-            body: formData
+            body: body
         });
 		
 		// if (!result.ok) {

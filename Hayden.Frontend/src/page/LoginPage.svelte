@@ -13,7 +13,9 @@
 
         const result = await Api.UserLoginAsync(formUsername, formPassword);
 
-        $moderatorUserStore = result;
+        const userInfo = await Api.GetUserInfoAsync();
+
+        $moderatorUserStore = userInfo.role;
 
         console.log(result);
 
