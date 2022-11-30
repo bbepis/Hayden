@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" class="theme-tomorrow">
+<html lang="en">
 <head>
 	<meta charset='utf-8'>
 	<meta name='viewport' content='width=device-width,initial-scale=1'>
@@ -7,22 +7,24 @@
 	<title>Hayden.Frontend</title>
 
 	<link rel='icon' type='image/png' href='/favicon.png'>
-	<link rel='stylesheet' href='/build/bundle.css'>
 
 	<link rel="stylesheet" href="/lib/bootstrap/dist/css/bootstrap.min.css" />
-	<link rel="stylesheet" href="/css/site.css" />
+	<link rel='stylesheet' href='/build/bundle.css'>
+	<!-- <link rel="stylesheet" href="/css/site.css" /> -->
+
+	<script>
+		var info = {
+			apiEndpoint: "https://localhost:5001/api",
+			rawEndpoint: "https://localhost:5001",
+			hCaptchaSiteKey: "10000000-ffff-ffff-ffff-000000000001"
+		}
+	</script>
 
 	<script defer src="https://cdn.jsdelivr.net/npm/moment@2.29.1/moment.min.js"></script>
 	<script defer src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script>
 	<script defer src="/lib/bootstrap/dist/js/bootstrap.bundle.min.js"></script>
 	<script src="https://js.hcaptcha.com/1/api.js" async defer></script>
 	<script defer src='/build/bundle.js'></script>
-	<script>
-		var info = {
-			apiEndpoint: "https://localhost:5001/api",
-			rawEndpoint: "https://localhost:5001"
-		}
-	</script>
 </head>
 
 <body>
