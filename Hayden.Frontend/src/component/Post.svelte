@@ -7,6 +7,7 @@
     import { RenderRawPost } from "../data/postrender";
     import PostMenu from "./PostMenu.svelte";
     import { moderatorUserStore } from "../data/stores";
+    import ExpandableVideo from "./ExpandableVideo.svelte";
 
     export let threadId: number;
     export let post: PostModel;
@@ -81,23 +82,32 @@
         {/if}
     </div>
     {#if post.files.length === 1}
+        {@const file = post.files[0]}
         <div class="file">
             <div class="fileText">
-                <a href={post.files[0].imageUrl}
-                    >{post.files[0].filename}.{post.files[0].extension}</a
+                <a href={Utility.infoObject.rawEndpoint + '/' + file.imageUrl}
+                    >{file.filename}.{file.extension}</a
                 >
-                ({Utility.ToHumanReadableSize(post.files[0].fileSize)}{post
+                ({Utility.ToHumanReadableSize(file.fileSize)}{post
                     .files[0].imageWidth !== null
-                    ? `, ${post.files[0].imageWidth} x ${post.files[0].imageHeight}`
+                    ? `, ${file.imageWidth} x ${file.imageHeight}`
                     : ""})
             </div>
-            <a class="fileThumb" href={post.files[0].imageUrl}>
+            <a class="fileThumb" href={file.imageUrl} tinro-ignore>
                 <!-- <img src={post.thumbnailUrl} alt={post.post.mediaFilename}/> -->
-                <ExpandableImage
-                    fullImageUrl={post.files[0].imageUrl}
-                    thumbUrl={post.files[0].thumbnailUrl}
-                    altText={post.files[0].filename}
-                />
+                {#if file.extension === "webm"}
+                    <ExpandableVideo
+                        videoUrl={Utility.infoObject.rawEndpoint + '/' + file.imageUrl}
+                        thumbUrl={Utility.infoObject.rawEndpoint + '/' + file.thumbnailUrl}
+                        altText={file.filename}
+                    />
+                {:else}
+                    <ExpandableImage
+                        fullImageUrl={Utility.infoObject.rawEndpoint + '/' + file.imageUrl}
+                        thumbUrl={Utility.infoObject.rawEndpoint + '/' + file.thumbnailUrl}
+                        altText={file.filename}
+                    />
+                {/if}
             </a>
         </div>
     {:else if post.files.length > 1}
@@ -110,17 +120,25 @@
                             > <span class="dimensionLabel">{file.imageWidth}x{file.imageHeight}</span>
                             <a
                                 class="originalNameLink"
-                                href={file.imageUrl}
+                                href={Utility.infoObject.rawEndpoint + '/' + file.imageUrl}
                                 download="{file.filename}.{file.extension}">{file.filename}.{file.extension}</a
                             ><span class="hideMobile">)</span>
                         </div>
 
                         <div />
-                        <ExpandableImage
-                            fullImageUrl={file.imageUrl}
-                            thumbUrl={file.thumbnailUrl}
-                            altText={file.filename}
-                        />
+                        {#if file.extension === "webm"}
+                            <ExpandableVideo
+                                videoUrl={Utility.infoObject.rawEndpoint + '/' + file.imageUrl}
+                                thumbUrl={Utility.infoObject.rawEndpoint + '/' + file.thumbnailUrl}
+                                altText={file.filename}
+                            />
+                        {:else}
+                            <ExpandableImage
+                                fullImageUrl={Utility.infoObject.rawEndpoint + '/' + file.imageUrl}
+                                thumbUrl={Utility.infoObject.rawEndpoint + '/' + file.thumbnailUrl}
+                                altText={file.filename}
+                            />
+                        {/if}
                     </figure>
             {/each}
         </div>

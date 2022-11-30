@@ -1,21 +1,16 @@
 <script lang="ts">
     export let thumbUrl: string;
-    export let fullImageUrl: string;
+    export let videoUrl: string;
     export let altText: string;
     export let expanded: boolean = false;
 
     let img : HTMLImageElement;
-
-    let loading: boolean = false;
 
     export let onClick: () => void = () => {
         const newValue = !expanded;
         
         if (!newValue && !isElementInViewport(img)) {
             img.scrollIntoView();
-        }
-        else if (newValue) {
-            loading = true;
         }
 
         expanded = newValue;
@@ -31,25 +26,29 @@
         e.preventDefault();
         onClick();
     }
+
+    function onClickClose(e: Event) {
+        e.preventDefault();
+        expanded = false;
+    }
 </script>
 
-<a href={fullImageUrl} on:click={onClickInternal} tinro-ignore>
-    <img
-        bind:this={img}
-        on:load={() => loading = false}
-        src={expanded ? fullImageUrl : thumbUrl}
-        alt={altText}
-        class:loading={loading}
-        decoding="async"/>
-</a>
+{#if expanded}
+    <a on:click={onClickClose}>[Close]</a>
+    <br/>
+    <!-- svelte-ignore a11y-media-has-caption -->
+    <video controls>
+        <source src={videoUrl} />
+    </video>
+{:else}
+    <a href={videoUrl} on:click={onClickInternal} tinro-ignore>
+        <img bind:this={img} src={thumbUrl} alt={altText} decoding="async"/>
+    </a>
+{/if}
 
 <style>
     img {
         cursor: pointer;
         max-width: 100%;
-    }
-
-    .loading {
-        opacity: 50%;
     }
 </style>
