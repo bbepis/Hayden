@@ -8,11 +8,11 @@ using System.Threading.Tasks;
 using Hayden.Consumers.HaydenMysql.DB;
 using Hayden.WebServer.Controllers.Api;
 using Hayden.WebServer.DB.Elasticsearch;
-using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 using Nest;
+using Hayden.MediaInfo;
 
 namespace Hayden.WebServer
 {
@@ -76,6 +76,8 @@ namespace Hayden.WebServer
 						return Task.CompletedTask;
 					};
 				});
+
+			services.AddSingleton<IMediaInspector, FfprobeMediaInspector>();
 
 			services.AddMvc(x => { x.EnableEndpointRouting = false; });
 		}

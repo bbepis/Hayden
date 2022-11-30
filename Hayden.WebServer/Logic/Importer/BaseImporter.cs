@@ -3,6 +3,7 @@ using System.IO;
 using System.Security.Cryptography;
 using System.Threading.Tasks;
 using Hayden.Consumers.HaydenMysql.DB;
+using Hayden.MediaInfo;
 using Newtonsoft.Json.Linq;
 
 namespace Hayden.WebServer.Logic.Importer
@@ -259,14 +260,14 @@ namespace Hayden.WebServer.Logic.Importer
 
 	public static class FileImporterTools
 	{
-		internal static async Task<(DBFile file, bool md5Changed)> UpdateDbFile(string filename, DBFile file = null)
+		internal static async Task<(DBFile file, bool md5Changed)> UpdateDbFile(string filename, IMediaInspector mediaInspector, DBFile file = null)
 		{
 			bool newFile = file == null;
 
 			file ??= new DBFile();
 
 			if (!filename.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase))
-				await Common.DetermineMediaInfoAsync(filename, file);
+				await mediaInspector.DetermineMediaInfoAsync(filename, file);
 
 			using var md5 = MD5.Create();
 			using var sha1 = SHA1.Create();

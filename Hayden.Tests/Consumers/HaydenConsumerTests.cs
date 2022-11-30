@@ -1,4 +1,5 @@
 ﻿using System;
+using System.IO;
 using System.IO.Abstractions;
 using System.IO.Abstractions.TestingHelpers;
 using System.Linq;
@@ -6,121 +7,44 @@ using System.Threading.Tasks;
 using Hayden.Config;
 using Hayden.Consumers;
 using Hayden.Consumers.HaydenMysql.DB;
+using Hayden.MediaInfo;
 using Hayden.Models;
 using Microsoft.EntityFrameworkCore;
+using Moq;
 using Newtonsoft.Json.Linq;
 using NUnit.Framework;
 
 namespace Hayden.Tests.Consumers
 {
 	internal class HaydenConsumerTests
-	{
-		private static DbContextOptions<HaydenDbContext> CreateMemoryContextOptions(bool createTestBoard = true)
-		{
-			var options = new DbContextOptionsBuilder<HaydenDbContext>()
-				.UseInMemoryDatabase(Guid.NewGuid().ToString("D"))
-				.Options;
+    {
+        private static async Task<TestHaydenConsumer> CreateHaydenConsumerAsync(DbContextOptions<HaydenDbContext> options, IFileSystem fileSystem)
+        {
+			var mockMediaInspector = new Mock<IMediaInspector>(MockBehavior.Strict);
 
-			if (createTestBoard)
-			{
-				using var context = new HaydenDbContext(options);
+			mockMediaInspector.Setup(x => x.DetermineMediaInfoAsync(It.IsAny<string>(), It.IsAny<DBFile>()))
+				.Returns((string filename, DBFile dbFile) => {
+					dbFile.ImageHeight = 24;
+					dbFile.ImageWidth = 24;
+					return Task.FromResult(dbFile);
+				});
 
-				context.Boards.Add(new DBBoard { Id = 1, Category = "Test", ShortName = "test", LongName = "Testing Board" });
-				context.SaveChanges();
-			}
+			mockMediaInspector.Setup(x => x.DetermineMediaTypeAsync(It.IsAny<Stream>()))
+				.Returns<string>(null);
 
-			return options;
-		}
+            var consumer = new TestHaydenConsumer(new ConsumerConfig
+            {
+                DownloadLocation = TestCommon.DownloadPath,
+                FullImagesEnabled = true,
+                ThumbnailsEnabled = true
+            }, () => new HaydenDbContext(options), fileSystem, mockMediaInspector.Object);
 
-		private static (Thread, ThreadPointer) GenerateThread()
-		{
-			var thread = new Thread
-			{
-				ThreadId = 123,
-				Title = "Thread Title",
-				IsArchived = false,
-				Posts = new[]
-				{
-					new Post
-					{
-						PostNumber = 123,
-						TimePosted = new DateTimeOffset(2020, 02, 02, 02, 02, 02, TimeSpan.Zero),
-						Author = "Big",
-						Tripcode = "!chungus",
-						ContentRaw = "My first post",
-						ContentRendered = "<b>My first post</b>",
-						Email = "email@example.com",
-						IsDeleted = false,
-						ContentType = ContentType.Yotsuba, // non-zero
-						Media = new[]
-						{
-							new Media
-							{
-								Filename = "filename1",
-								FileExtension = "jpg",
-								ThumbnailExtension = "jpg",
-								FileUrl = "test://my.com/test-file1.jpg",
-								ThumbnailUrl = "test://my.com/test-file1-thumb.jpg",
-								IsSpoiler = true,
-								IsDeleted = false,
-								Index = 0,
-								AdditionalMetadata = new JObject()
-								{
-									["test-property"] = true
-								}
-							},
-							new Media
-							{
-								Filename = "file2",
-								FileExtension = "png",
-								ThumbnailExtension = "webp",
-								FileUrl = "test://my.com/test-file2.png",
-								ThumbnailUrl = "test://my.com/test-file2.webp",
-								IsSpoiler = false,
-								IsDeleted = false,
-								Index = 1,
-								AdditionalMetadata = new JObject()
-								{
-									["test-property"] = false
-								}
-							},
-						}
-					},
-					new Post
-					{
-						PostNumber = 124,
-						TimePosted = new DateTimeOffset(2020, 02, 02, 03, 03, 03, TimeSpan.Zero),
-						Author = null,
-						Tripcode = null,
-						ContentRaw = "Reply",
-						ContentRendered = "Reply",
-						Email = null,
-						IsDeleted = false,
-						ContentType = ContentType.Yotsuba, // non-zero
-						Media = Array.Empty<Media>()
-					}
-				}
-			};
-			return (thread, new ThreadPointer("test", 123));
-		}
+            await consumer.InitializeAsync();
 
-		private const string DownloadPath = @"C:\temp\hayden_test";
+            return consumer;
+        }
 
-		private async Task<TestHaydenConsumer> CreateHaydenConsumerAsync(DbContextOptions<HaydenDbContext> options, IFileSystem fileSystem)
-		{
-			var consumer = new TestHaydenConsumer(new ConsumerConfig
-			{
-				DownloadLocation = DownloadPath,
-				FullImagesEnabled = true,
-				ThumbnailsEnabled = true
-			}, () => new HaydenDbContext(options), fileSystem);
-
-			await consumer.InitializeAsync();
-
-			return consumer;
-		}
-
-		private void AssertDataIsSame(Thread thread, DBPost dbPost)
+        private void AssertDataIsSame(Thread thread, DBPost dbPost)
 		{
 			AssertDataIsSame(thread.Posts.Single(x => x.PostNumber == dbPost.PostId), dbPost);
 		}
@@ -174,12 +98,12 @@ namespace Hayden.Tests.Consumers
 		[Test]
 		public async Task IngestNewPostsTest()
 		{
-			var options = CreateMemoryContextOptions();
+			var options = TestCommon.CreateMemoryContextOptions();
 			var mockFilesystem = new MockFileSystem();
 
 			using var consumer = await CreateHaydenConsumerAsync(options, mockFilesystem);
 
-			var (thread, threadPointer) = GenerateThread();
+			var (thread, threadPointer) = TestCommon.GenerateThread();
 
 			var threadTracker = TrackedThread.StartTrackingThread(consumer.CalculateHash);
 			var threadUpdate = threadTracker.ProcessThreadUpdates(threadPointer, thread);
@@ -243,9 +167,8 @@ namespace Hayden.Tests.Consumers
 				Assert.AreEqual(media.FileExtension, file.Extension);
 				Assert.AreEqual(media.ThumbnailExtension, file.ThumbnailExtension);
 
-				// TODO: fix magick/ffprobe not working correctly in tests due to mocked file
-				//Assert.IsNotNull(file.ImageHeight);
-				//Assert.IsNotNull(file.ImageWidth);
+				Assert.AreEqual(24, file.ImageHeight);
+				Assert.AreEqual(24, file.ImageWidth);
 
 				Assert.IsFalse(file.FileBanned);
 				Assert.IsTrue(file.FileExists);
@@ -269,11 +192,6 @@ namespace Hayden.Tests.Consumers
 				@"C:\temp\hayden_test\test\thumb\y8cdt4omqc6v5opfkx7askwvnd2pru5im985aa8mbh61rzaig2.webp"
 			};
 			CollectionAssert.AreEquivalent(expectedPathList, mockFilesystem.AllFiles, "Unexpected changes were made to the filesystem.");
-
-
-			//mockFilesystem.AddFile("./temp/file1.jpg", new MockFileData(File.ReadAllBytes()));
-
-			//await consumer.ProcessFileDownload(pendingDownloads[0], )
 		}
 	}
 
@@ -281,7 +199,8 @@ namespace Hayden.Tests.Consumers
 	{
 		private Func<HaydenDbContext> GetContext { get; set; }
 
-		public TestHaydenConsumer(ConsumerConfig config, Func<HaydenDbContext> getContext, IFileSystem fileSystem) : base(config, fileSystem)
+		public TestHaydenConsumer(ConsumerConfig config, Func<HaydenDbContext> getContext, IFileSystem fileSystem, IMediaInspector mediaInspector)
+			: base(config, fileSystem, mediaInspector)
 		{
 			GetContext = getContext;
 		}

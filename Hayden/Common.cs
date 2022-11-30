@@ -2,7 +2,6 @@
 using System.Diagnostics;
 using System.IO;
 using System.Threading.Tasks;
-using Hayden.Consumers.HaydenMysql.DB;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
@@ -28,48 +27,6 @@ namespace Hayden
 			};
 
 			return Path.Combine(baseFolder, board, mediaTypeString, $"{base36Name}.{extension.TrimStart('.')}");
-		}
-
-		public static async Task<DBFile> DetermineMediaInfoAsync(string filename, DBFile file = null)
-		{
-			file ??= new DBFile();
-
-			try
-			{
-				var result = await RunJsonCommandAsync("ffprobe", $"-v quiet -hide_banner -show_streams -print_format json \"{filename}\"");
-
-				file.ImageWidth = result["streams"][0].Value<ushort>("width");
-				file.ImageHeight = result["streams"][0].Value<ushort>("height");
-			}
-			catch (MagickException)
-			{
-				file.ImageWidth = null;
-				file.ImageHeight = null;
-			}
-
-			return file;
-		}
-
-		public static async Task<string> DetermineMediaTypeAsync(Stream inputStream)
-		{
-			try
-			{
-				var result = await RunJsonCommandAsync("ffprobe", $"-v quiet -hide_banner -show_streams -print_format json -", inputStream);
-				
-				Console.WriteLine(result?.ToString() ?? "<null>");
-
-				var streamsArray = result["streams"] as JArray;
-
-				if (streamsArray == null || streamsArray.Count != 1)
-					return null;
-
-				return streamsArray[0].Value<string>("codec_name");
-			}
-			catch (MagickException ex)
-			{
-				Console.WriteLine(ex.ToString());
-				return null;
-			}
 		}
 		
 		public static async Task<JObject> RunJsonCommandAsync(string executable, string arguments, Stream inputStream = null)
@@ -131,7 +88,7 @@ namespace Hayden
 					UseShellExecute = false,
 					RedirectStandardError = true,
 					RedirectStandardOutput = true,
-					RedirectStandardInput = true
+					RedirectStandardInput = inputStream != null
 				}
 			};
 
@@ -145,11 +102,15 @@ namespace Hayden
 
 			var errorTask = process.StandardError.ReadToEndAsync();
 			var outputTask = process.StandardOutput.BaseStream.CopyToAsync(outputStream);
-			var inputTask = Task.Run(async () =>
+
+			if (inputStream != null)
 			{
-				await inputStream.CopyToAsync(process.StandardInput.BaseStream);
-				process.StandardInput.Close();
-			});
+				var inputTask = Task.Run(async () =>
+				{
+					await inputStream.CopyToAsync(process.StandardInput.BaseStream);
+					process.StandardInput.Close();
+				});
+			}
 
 			await tcs.Task;
 

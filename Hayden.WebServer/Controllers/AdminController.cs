@@ -5,6 +5,7 @@ using System.Runtime;
 using System.Threading;
 using System.Threading.Tasks;
 using Hayden.Consumers.HaydenMysql.DB;
+using Hayden.MediaInfo;
 using Hayden.WebServer.Controllers.Api;
 using Hayden.WebServer.DB.Elasticsearch;
 using Hayden.WebServer.Logic;
@@ -403,7 +404,7 @@ namespace Hayden.WebServer.Controllers
 						var filename = Common.CalculateFilename(config.Value.FileLocation,
 							boards[file.BoardId].ShortName, Common.MediaType.Image, file.Sha256Hash, file.Extension);
 
-						(DBFile _, bool md5Changed) = await FileImporterTools.UpdateDbFile(filename, file);
+						(DBFile _, bool md5Changed) = await FileImporterTools.UpdateDbFile(filename, provider.GetRequiredService<IMediaInspector>(), file);
 
 						try
 						{

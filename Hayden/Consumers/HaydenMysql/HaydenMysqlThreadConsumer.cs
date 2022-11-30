@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using Hayden.Config;
 using Hayden.Consumers.HaydenMysql.DB;
 using Hayden.Contract;
+using Hayden.MediaInfo;
 using Hayden.Models;
 using Microsoft.EntityFrameworkCore;
 using Newtonsoft.Json;
@@ -20,14 +21,16 @@ namespace Hayden.Consumers
 	{
 		private ConsumerConfig Config { get; }
 		private IFileSystem FileSystem { get; set; }
+		private IMediaInspector MediaInspector { get; set; }
 
 		protected Dictionary<string, ushort> BoardIdMappings { get; } = new();
 
 		/// <param name="config">The object to load configuration values from.</param>
-		public HaydenMysqlThreadConsumer(ConsumerConfig config, IFileSystem fileSystem)
+		public HaydenMysqlThreadConsumer(ConsumerConfig config, IFileSystem fileSystem, IMediaInspector mediaInspector)
 		{
 			Config = config;
 			FileSystem = fileSystem;
+			MediaInspector = mediaInspector;
 		}
 
 		public async Task InitializeAsync()
@@ -325,7 +328,7 @@ namespace Hayden.Consumers
 					Size = (uint)fileSize
 				};
 
-				await Common.DetermineMediaInfoAsync(imageFilename, dbFile);
+				await MediaInspector.DetermineMediaInfoAsync(imageFilename, dbFile);
 
 				dbContext.Add(dbFile);
 				await dbContext.SaveChangesAsync();

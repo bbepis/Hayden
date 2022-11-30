@@ -7,6 +7,7 @@ using System.Security.Cryptography;
 using System.Threading;
 using System.Threading.Tasks;
 using Hayden.Consumers.HaydenMysql.DB;
+using Hayden.MediaInfo;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -30,7 +31,10 @@ namespace Hayden.WebServer.Controllers.Api
 
 		[RequestSizeLimit((int)(4.1 * 1024 * 1024))]
 		[HttpPost("makepost")]
-		public async Task<IActionResult> MakePost([FromServices] HaydenDbContext dbContext, [FromForm] PostForm form)
+		public async Task<IActionResult> MakePost(
+			[FromServices] HaydenDbContext dbContext,
+			[FromServices] IMediaInspector mediaInspector,
+			[FromForm] PostForm form)
 		{
 			if (form == null || form.board == null || form.threadId == 0)
 				return BadRequest();
@@ -54,7 +58,7 @@ namespace Hayden.WebServer.Controllers.Api
 
 			if (form.file != null)
 			{
-				(var result, fileId) = await ProcessUploadedFileInternal(dbContext, form.file, threadInfo.Item1);
+				(var result, fileId) = await ProcessUploadedFileInternal(dbContext, mediaInspector, form.file, threadInfo.Item1);
 
 				if (result != null)
 					return result;
@@ -127,7 +131,9 @@ namespace Hayden.WebServer.Controllers.Api
 
 		[RequestSizeLimit((int)(4.1 * 1024 * 1024))]
 		[HttpPost("makethread")]
-		public async Task<IActionResult> MakeThread([FromServices] HaydenDbContext dbContext,
+		public async Task<IActionResult> MakeThread(
+			[FromServices] HaydenDbContext dbContext,
+			[FromServices] IMediaInspector mediaInspector,
 			[FromForm] NewThreadForm form)
 		{
 			if (form == null || form.file == null)
@@ -145,7 +151,7 @@ namespace Hayden.WebServer.Controllers.Api
 			if (!await VerifyCaptchaAsync(form.captcha))
 				return BadRequest(new { message = "Invalid captcha" });
 
-			(var result, var fileId) = await ProcessUploadedFileInternal(dbContext, form.file, board);
+			(var result, var fileId) = await ProcessUploadedFileInternal(dbContext, mediaInspector, form.file, board);
 
 			if (result != null)
 				return result;
@@ -256,7 +262,7 @@ namespace Hayden.WebServer.Controllers.Api
 		}
 
 		[NonAction]
-		private async Task<(IActionResult result, uint id)> ProcessUploadedFileInternal(HaydenDbContext dbContext,
+		private async Task<(IActionResult result, uint id)> ProcessUploadedFileInternal(HaydenDbContext dbContext, IMediaInspector mediaInspector,
 			IFormFile file, DBBoard boardInfo)
 		{
 			var extension = Path.GetExtension(file.FileName).TrimStart('.').ToLower();
@@ -264,7 +270,7 @@ namespace Hayden.WebServer.Controllers.Api
 			if (extension != "png" && extension != "jpg" && extension != "jpeg" && extension != "gif")
 				return (UnprocessableEntity(new { message = "File type not allowed" }), 0);
 
-			(uint fileId, var fileBanned, bool badFile) = await ProcessUploadedFileInternal(dbContext, file, boardInfo, extension);
+			(uint fileId, var fileBanned, bool badFile) = await ProcessUploadedFileInternal(dbContext, mediaInspector, file, boardInfo, extension);
 
 			if (fileBanned)
 				return (UnprocessableEntity(new { message = "File is banned" }), 0);
@@ -276,8 +282,8 @@ namespace Hayden.WebServer.Controllers.Api
 		}
 
 		[NonAction]
-		private async Task<(uint id, bool banned, bool badFile)> ProcessUploadedFileInternal(HaydenDbContext dbContext, IFormFile file,
-			DBBoard boardInfo, string extension)
+		private async Task<(uint id, bool banned, bool badFile)> ProcessUploadedFileInternal(HaydenDbContext dbContext, IMediaInspector mediaInspector,
+			IFormFile file, DBBoard boardInfo, string extension)
 		{
 			byte[] sha256Hash;
 			byte[] md5Hash;
@@ -319,7 +325,7 @@ namespace Hayden.WebServer.Controllers.Api
 
 				try
 				{
-					var mediaType = await Common.DetermineMediaTypeAsync(dataStream);
+					var mediaType = await mediaInspector.DetermineMediaTypeAsync(dataStream);
 
 					if (mediaType != "png" && mediaType != "gif" && mediaType != "mjpeg")
 						return (0, false, true);

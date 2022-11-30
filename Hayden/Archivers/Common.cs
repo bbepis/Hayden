@@ -127,8 +127,13 @@ namespace Hayden
 			return !left.Equals(right);
 		}
 
-		#endregion
-	}
+        #endregion
+
+        public override string ToString()
+        {
+			return $"/{Board}/{ThreadId}";
+        }
+    }
 
 	public enum ThreadUpdateStatus
 	{
