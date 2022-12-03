@@ -1,4 +1,6 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using Hayden.Contract;
@@ -9,11 +11,11 @@ namespace Hayden.Cache
 	/// <summary>
 	/// A state storage implementation using LiteDb.
 	/// </summary>
-	public class LiteDbStateStore : IStateStore
+	public class LiteDbStateStore : IStateStore, IDisposable
 	{
-		protected string FilePath { get; set; }
-
 		public LiteDatabase Database { get; private set; }
+
+		protected Stream Stream { get; set; }
 
 		private LiteCollection<QueuedImageDownload> QueuedImageDownloads { get; set; }
 
@@ -25,9 +27,15 @@ namespace Hayden.Cache
 
 		public LiteDbStateStore(string filepath)
 		{
-			FilePath = filepath;
+			Database = new LiteDatabase(filepath);
 
-			Database = new LiteDatabase(FilePath);
+			QueuedImageDownloads = Database.GetCollection<QueuedImageDownload>("QueuedImageDownloads");
+		}
+
+		public LiteDbStateStore(Stream stream)
+		{
+			Database = new LiteDatabase(stream);
+			Stream = stream;
 
 			QueuedImageDownloads = Database.GetCollection<QueuedImageDownload>("QueuedImageDownloads");
 		}
@@ -72,5 +80,11 @@ namespace Hayden.Cache
 		{
 			return Task.FromResult((IList<QueuedImageDownload>)QueuedImageDownloads.FindAll().ToArray());
 		}
-	}
+
+        public void Dispose()
+        {
+            Database.Dispose();
+			Stream?.Dispose();
+        }
+    }
 }
