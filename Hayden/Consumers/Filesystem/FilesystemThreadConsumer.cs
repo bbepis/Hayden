@@ -169,10 +169,10 @@ namespace Hayden.Consumers
 				throw new InvalidOperationException("Queued image download did not have the required properties");
 			}
 
-			if (imageTempFilename != null)
+			if (imageTempFilename != null && !File.Exists(imageFilename))
 				File.Move(imageTempFilename, imageFilename);
 
-			if (thumbTempFilename != null)
+			if (thumbTempFilename != null && !File.Exists(thumbFilename))
 				File.Move(thumbTempFilename, thumbFilename);
 		}
 
