@@ -50,6 +50,8 @@
     let formFiles: FileList = null;
     let isPosting = false;
 
+    let postErrorMessage: string = null;
+
     async function Post() {
         if ((formText === "" || formText === null) && (formFiles === null || formFiles.length === 0))
             return;
@@ -80,6 +82,12 @@
             {
                 let obj = await response.json();
                 document.location.href = `/${board}/thread/${obj.threadId}`;
+            }
+            else {
+                var obj = await response.json();
+                
+                if (obj["message"] !== undefined)
+                    postErrorMessage = obj["message"];
             }
         }
         catch (e) {
@@ -122,6 +130,11 @@
 
     {#if data.boardInfo.isReadOnly === false}
         <div id="reply-box" class="rounded border mb-5 container">
+            {#if postErrorMessage !== null}
+                <div class="row input-row">
+                    <div class="col-12" style="color:red;">{postErrorMessage}</div>
+                </div>
+            {/if}
             <div style="text-align: center">Create a new thread</div>
             <div class="row input-row">
                 <div class="col-3">Name</div>
