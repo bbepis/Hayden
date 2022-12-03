@@ -36,10 +36,10 @@ namespace Hayden.WebServer.Controllers.Api
 			[FromForm] PostForm form)
 		{
 			if (form == null || form.board == null || form.threadId == 0)
-				return BadRequest();
+				return BadRequest(new { message = "Request is malformed" });
 
 			if (string.IsNullOrWhiteSpace(form.text) && form.file == null)
-				return BadRequest();
+				return BadRequest(new { message = "You must have text or an attached file." });
 			
 			var banResult = await CheckBanAsync(dbContext);
 			if (banResult != null)
@@ -136,13 +136,16 @@ namespace Hayden.WebServer.Controllers.Api
 			[FromServices] IMediaInspector mediaInspector,
 			[FromForm] NewThreadForm form)
 		{
-			if (form == null || form.file == null)
-				return BadRequest();
+			if (form == null || form.board == null)
+                return BadRequest(new { message = "Request is malformed" });
+
+            if (form.file == null)
+				return BadRequest(new { message = "You must have an attached file." });
 
 			var board = await dbContext.Boards.FirstOrDefaultAsync(x => x.ShortName == form.board);
 
 			if (board == null)
-				return BadRequest();
+                return BadRequest(new { message = "Board does not exist" });
 
 			var banResult = await CheckBanAsync(dbContext);
 			if (banResult != null)
