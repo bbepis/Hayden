@@ -252,6 +252,9 @@ namespace Hayden.WebServer.Controllers.Api
 				PostSemaphore.Release();
 			}
 
+			LastPostTimes[HttpContext.Connection.RemoteIpAddress] = DateTimeOffset.Now;
+
+
 			return Json(new { threadId = nextPostId });
 		}
 
