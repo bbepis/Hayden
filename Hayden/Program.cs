@@ -119,6 +119,7 @@ namespace Hayden
 			}
 
 			serviceCollection.AddSingleton<IFileSystem, FileSystem>();
+			serviceCollection.AddSingleton<IMediaInspector, FfprobeMediaInspector>();
 
 			var serviceProvider = serviceCollection.BuildServiceProvider();
 
