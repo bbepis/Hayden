@@ -145,13 +145,13 @@ namespace Hayden
                 // If allThreads is null, then the board hasn't changed since we last checked
                 if (allThreads != null)
                 {
-                    // Examine the threads we are tracking to find any that have fallen off.
-                    // This is the only way we can find out if a thread has been archived or deleted in this polling model
+					// Examine the threads we are tracking to find any that have fallen off.
+					// This is the only way we can find out if a thread has been archived or deleted in this polling model
 
-                    // Locking on the tracking sortedlist is not required since all operations at this point in time are read-only
-
-                    // TODO: this code causes "Collection was modified after the enumerator was instantiated." issues
-                    var missingTrackedThreads = TrackedThreads.Where(x => x.Key.Board == board && !allThreads.Contains(x.Key));
+					// Locking on the tracking sortedlist is not required since all operations at this point in time are read-only
+					// ^ not true, TrackedThreads get changed in GetBoardThreads
+					// TODO: this code causes "Collection was modified after the enumerator was instantiated." issues
+					var missingTrackedThreads = TrackedThreads.Where(x => x.Key.Board == board && !allThreads.Contains(x.Key));
 
                     foreach (var (pointer, _) in missingTrackedThreads)
                     {
@@ -818,10 +818,8 @@ namespace Hayden
 						var threadUpdateInfo = trackedThread.ProcessThreadUpdates(threadPointer, response.Data);
 						threadUpdateInfo.IsNewThread = isNewThread;
 
-						if (!threadUpdateInfo.HasChanges)
+						if (!threadUpdateInfo.HasChanges && !threadUpdateInfo.Thread.IsArchived)
 						{
-							// This should be safe when a thread becomes archived, because that archive bit flip should be counted as a change as well
-
 							return new ThreadUpdateTaskResult(true, emptyImageQueue, ThreadUpdateStatus.NotModified, 0);
 						}
 						
