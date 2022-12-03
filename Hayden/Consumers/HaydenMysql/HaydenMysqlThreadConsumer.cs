@@ -318,10 +318,10 @@ namespace Hayden.Consumers
 				var dbFile = new DBFile
 				{
 					BoardId = boardId,
-					Extension = media.FileExtension.TrimStart('.'),
+					Extension = media.FileExtension.TrimStart('.').ToLower(),
 					FileExists = true,
 					FileBanned = false,
-					ThumbnailExtension = thumbTempFilename != null ? media.ThumbnailExtension.TrimStart('.') : null,
+					ThumbnailExtension = thumbTempFilename != null ? media.ThumbnailExtension.TrimStart('.').ToLower() : null,
 					Md5Hash = md5Hash,
 					Sha1Hash = sha1Hash,
 					Sha256Hash = sha256Hash,

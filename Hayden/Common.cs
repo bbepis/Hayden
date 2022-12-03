@@ -26,7 +26,7 @@ namespace Hayden
 				_                   => throw new ArgumentOutOfRangeException(nameof(mediaType), mediaType, null)
 			};
 
-			return Path.Combine(baseFolder, board, mediaTypeString, $"{base36Name}.{extension.TrimStart('.')}");
+			return Path.Combine(baseFolder, board, mediaTypeString, $"{base36Name}.{extension.TrimStart('.').ToLower()}");
 		}
 		
 		public static async Task<JObject> RunJsonCommandAsync(string executable, string arguments, Stream inputStream = null)
