@@ -88,6 +88,7 @@ namespace Hayden.Consumers
 
 				BoardIdMappings[boardObject.ShortName] = boardObject.Id;
 			}
+		}
 
 		protected virtual void SetUpDBContext()
 		{
@@ -346,6 +347,9 @@ namespace Hayden.Consumers
 				            && x.BoardId == boardId)
 				.FirstOrDefaultAsync();
 
+			if (existingFile?.FileBanned == true)
+				return;
+
 			var imageFilename = Common.CalculateFilename(ConsumerConfig.DownloadLocation, board, Common.MediaType.Image, sha256Hash, media.FileExtension);
 
 			FileSystem.Directory.CreateDirectory(FileSystem.Path.GetDirectoryName(imageFilename));
@@ -363,6 +367,9 @@ namespace Hayden.Consumers
 					FileSystem.File.Move(thumbTempFilename, thumbFilename);
 			}
 
+			string thumbnailExtension =
+				thumbTempFilename != null ? media.ThumbnailExtension.TrimStart('.').ToLower() : null;
+
 			if (existingFile == null)
 			{
 				var dbFile = new DBFile
@@ -371,7 +378,7 @@ namespace Hayden.Consumers
 					Extension = media.FileExtension.TrimStart('.').ToLower(),
 					FileExists = true,
 					FileBanned = false,
-					ThumbnailExtension = thumbTempFilename != null ? media.ThumbnailExtension.TrimStart('.').ToLower() : null,
+					ThumbnailExtension = thumbnailExtension,
 					Md5Hash = md5Hash,
 					Sha1Hash = sha1Hash,
 					Sha256Hash = sha256Hash,
@@ -388,6 +395,18 @@ namespace Hayden.Consumers
 			else
 			{
 				fileId = existingFile.Id;
+
+				if (!existingFile.FileExists && imageTempFilename != null)
+				{
+					existingFile.FileExists = true;
+					dbContext.Update(existingFile);
+				}
+
+				if (existingFile.ThumbnailExtension == null && thumbTempFilename != null)
+				{
+					existingFile.ThumbnailExtension = thumbnailExtension;
+					dbContext.Update(existingFile);
+				}
 			}
 
 			var existingFileMapping = await dbContext.FileMappings
