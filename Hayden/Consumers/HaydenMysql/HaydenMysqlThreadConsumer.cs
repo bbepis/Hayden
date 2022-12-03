@@ -89,7 +89,7 @@ namespace Hayden.Consumers
 				BoardIdMappings[boardObject.ShortName] = boardObject.Id;
 			}
 
-		private void SetUpDBContext()
+		protected virtual void SetUpDBContext()
 		{
 			var contextBuilder = new DbContextOptionsBuilder();
 

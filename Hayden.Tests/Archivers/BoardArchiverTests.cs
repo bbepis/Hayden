@@ -100,12 +100,12 @@ namespace Hayden.Tests.Archivers
             var fileSystem = new MockFileSystem();
 
             consumerMock.Setup(x => x.CalculateHash(It.IsAny<Post>()))
-                .Returns((Post post) => post.PostNumber);
+                .Returns((Post post) => (uint)post.PostNumber);
 
             consumerMock.Setup(x => x.ConsumeThread(It.IsAny<ThreadUpdateInfo>()))
-                .Returns((ThreadUpdateInfo updateInfo) => updateInfo.NewPosts
+                .Returns((ThreadUpdateInfo updateInfo) => Task.FromResult<IList<QueuedImageDownload>>(updateInfo.NewPosts
                     .SelectMany(x => x.Media, (post, media) => new QueuedImageDownload(new Uri(media.FileUrl), new Uri(media.ThumbnailUrl)))
-                    .ToArray());
+                    .ToArray()));
 
             var processedFiles = new List<(QueuedImageDownload download, string tempFilePath, string tempThumbPath)>();
 

@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.IO;
 using System.IO.Abstractions;
 using System.IO.Abstractions.TestingHelpers;
@@ -37,6 +38,9 @@ namespace Hayden.Tests.Consumers
                 DownloadLocation = TestCommon.DownloadPath,
                 FullImagesEnabled = true,
                 ThumbnailsEnabled = true
+            }, new SourceConfig
+            {
+				Boards = new Dictionary<string, BoardRulesConfig>()
             }, () => new HaydenDbContext(options), fileSystem, mockMediaInspector.Object);
 
             await consumer.InitializeAsync();
@@ -195,16 +199,18 @@ namespace Hayden.Tests.Consumers
 		}
 	}
 
-	internal class TestHaydenConsumer : HaydenMysqlThreadConsumer
+	internal class TestHaydenConsumer : HaydenThreadConsumer
 	{
 		private Func<HaydenDbContext> GetContext { get; set; }
 
-		public TestHaydenConsumer(ConsumerConfig config, Func<HaydenDbContext> getContext, IFileSystem fileSystem, IMediaInspector mediaInspector)
-			: base(config, fileSystem, mediaInspector)
+		public TestHaydenConsumer(ConsumerConfig consumerConfig, SourceConfig sourceConfig, Func<HaydenDbContext> getContext, IFileSystem fileSystem, IMediaInspector mediaInspector)
+			: base(consumerConfig, sourceConfig, fileSystem, mediaInspector)
 		{
 			GetContext = getContext;
 		}
 
 		protected override HaydenDbContext GetDBContext() => GetContext();
+
+		protected override void SetUpDBContext() { }
 	}
 }
