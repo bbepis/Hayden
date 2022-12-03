@@ -65,7 +65,7 @@ namespace Hayden.WebServer.Controllers.Api
                 }
             }
 
-			var threadInfo = await dbContext.GetThreadInfo(form.threadId, form.board, true);
+            var threadInfo = await dbContext.GetThreadInfo(form.threadId, form.board, true);
 
 			if (threadInfo.Item2 == null)
 				return UnprocessableEntity(new { message = "Thread does not exist" });
@@ -131,11 +131,11 @@ namespace Hayden.WebServer.Controllers.Api
 			finally
 			{
 				PostSemaphore.Release();
-			}
+            }
 
             LastPostTimes[HttpContext.Connection.RemoteIpAddress] = DateTimeOffset.Now;
 
-			return NoContent();
+            return NoContent();
 		}
 
 		public class NewThreadForm
@@ -162,12 +162,12 @@ namespace Hayden.WebServer.Controllers.Api
             if (form.file == null)
 				return BadRequest(new { message = "You must have an attached file." });
 
-			var board = await dbContext.Boards.FirstOrDefaultAsync(x => x.ShortName == form.board);
+            var board = await dbContext.Boards.FirstOrDefaultAsync(x => x.ShortName == form.board);
 
 			if (board == null)
                 return BadRequest(new { message = "Board does not exist" });
 
-			var banResult = await CheckBanAsync(dbContext);
+            var banResult = await CheckBanAsync(dbContext);
 			if (banResult != null)
 				return banResult;
 
@@ -185,7 +185,7 @@ namespace Hayden.WebServer.Controllers.Api
                 }
             }
 
-			(var result, var fileId) = await ProcessUploadedFileInternal(dbContext, mediaInspector, form.file, board);
+            (var result, var fileId) = await ProcessUploadedFileInternal(dbContext, mediaInspector, form.file, board);
 
 			if (result != null)
 				return result;
@@ -257,7 +257,7 @@ namespace Hayden.WebServer.Controllers.Api
 			LastPostTimes[HttpContext.Connection.RemoteIpAddress] = DateTimeOffset.Now;
 
 
-			return Json(new { threadId = nextPostId });
+            return Json(new { threadId = nextPostId });
 		}
 
 		#region Helpers
@@ -353,7 +353,7 @@ namespace Hayden.WebServer.Controllers.Api
 						await Common.RunStreamCommandAsync("magick",
 							$"convert - -resize 125x125> -background grey -flatten jpg:-", dataStream, thumbStream);
 					else
-					await Common.RunStreamCommandAsync("convert",
+						await Common.RunStreamCommandAsync("convert",
 							$"- -resize 125x125> -background grey -flatten jpg:-", dataStream, thumbStream);
 				}
 				//catch (MagickException ex)
@@ -384,19 +384,7 @@ namespace Hayden.WebServer.Controllers.Api
 				Size = (uint)fileData.Length
 			};
 
-			try
-			{
-				var result = await Common.RunJsonCommandAsync("ffprobe",
-					$"-v quiet -hide_banner -show_streams -print_format json \"{destinationFilename}\"");
-
-				dbFile.ImageWidth = result["streams"][0].Value<ushort>("width");
-				dbFile.ImageHeight = result["streams"][0].Value<ushort>("height");
-			}
-			catch (Exception ex) when (ex.Message.Contains("magick"))
-			{
-				dbFile.ImageWidth = null;
-				dbFile.ImageHeight = null;
-			}
+			await mediaInspector.DetermineMediaInfoAsync(destinationFilename, dbFile);
 
 			dbContext.Files.Add(dbFile);
 
