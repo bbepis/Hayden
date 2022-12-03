@@ -99,7 +99,8 @@ namespace Hayden.WebServer.Controllers.Api
 					IsDeleted = false,
 					PostId = nextPostId,
 					ThreadId = form.threadId,
-					Tripcode = null
+					Tripcode = null,
+					PosterIP = HttpContext.Connection.RemoteIpAddress?.GetAddressBytes()
 				};
 
 				dbContext.Add(newPost);
@@ -225,7 +226,8 @@ namespace Hayden.WebServer.Controllers.Api
 					IsDeleted = false,
 					PostId = nextPostId,
 					ThreadId = nextPostId,
-					Tripcode = null
+					Tripcode = null,
+					PosterIP = HttpContext.Connection.RemoteIpAddress?.GetAddressBytes()
 				};
 
 				dbContext.Add(newPost);
