@@ -55,20 +55,23 @@ namespace Hayden.WebServer
 						y.CommandTimeout(86400);
 						y.EnableIndexOptimizedBooleanColumns();
 					}));
-			
-			services.AddSingleton<ElasticClient>(x =>
+
+			if (Configuration["Elasticsearch:Url"] != null)
 			{
-				var settings = new ConnectionSettings(new Uri(Configuration["Elasticsearch:Url"]))
-					.DefaultMappingFor<PostIndex>(map => map.IndexName(PostIndex.IndexName));
-
-				if (bool.Parse(Configuration["Elasticsearch:Debug"]))
+				services.AddSingleton<ElasticClient>(x =>
 				{
-					settings.EnableDebugMode();
-				}
+					var settings = new ConnectionSettings(new Uri(Configuration["Elasticsearch:Url"]))
+						.DefaultMappingFor<PostIndex>(map => map.IndexName(PostIndex.IndexName));
 
-				return new ElasticClient(settings);
-			});
-			
+					if (bool.Parse(Configuration["Elasticsearch:Debug"]))
+					{
+						settings.EnableDebugMode();
+					}
+
+					return new ElasticClient(settings);
+				});
+			}
+
 			services.AddAuthentication()
 				.AddCookie(options =>
 				{
