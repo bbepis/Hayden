@@ -344,8 +344,12 @@ namespace Hayden.WebServer.Controllers.Api
 
 					dataStream.Position = 0;
 
+					if (OperatingSystem.IsWindows())
+						await Common.RunStreamCommandAsync("magick",
+							$"convert - -resize 125x125> -background grey -flatten jpg:-", dataStream, thumbStream);
+					else
 					await Common.RunStreamCommandAsync("convert",
-						$"- -resize 125x125 -background grey -flatten jpg:-", dataStream, thumbStream);
+							$"- -resize 125x125> -background grey -flatten jpg:-", dataStream, thumbStream);
 				}
 				//catch (MagickException ex)
 				catch (Exception ex)
