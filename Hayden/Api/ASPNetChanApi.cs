@@ -85,18 +85,27 @@ namespace Hayden
 					
 					var fileUrl = fileLinkElement.Href;
 
+					var originalFileDownloadElement = (IHtmlAnchorElement)postElement.QuerySelector(".file-header > small > a");
 					var fileImageElement = (IHtmlImageElement)postImageElement.QuerySelector("img");
 
-					var originalFilename = fileImageElement.AlternativeText;
+					var originalFilename = originalFileDownloadElement.Download.TrimAndNullify() ?? fileImageElement.AlternativeText.Trim();
 					var thumbnailUrl = fileImageElement.Source;
+
+					var extension = Path.GetExtension(originalFilename);
+					if (string.IsNullOrWhiteSpace(extension))
+						extension = Path.GetExtension(fileUrl);
+
+					var isSpoiler = thumbnailUrl.EndsWith("/spoilerimage")
+					                || fileImageElement.AlternativeText?.Trim() == "Spoilered";
 
 					mediaList.Add(new Media
 					{
 						Filename = Path.GetFileNameWithoutExtension(originalFilename),
-						FileExtension = Path.GetExtension(originalFilename),
+						FileExtension = extension,
 						FileUrl = fileUrl,
 						ThumbnailUrl = thumbnailUrl,
-						ThumbnailExtension = Path.GetExtension(thumbnailUrl),
+						ThumbnailExtension = isSpoiler ? "jpg" : Path.GetExtension(thumbnailUrl),
+						IsSpoiler = isSpoiler,
 						Index = index
 					});
 
