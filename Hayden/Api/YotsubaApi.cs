@@ -4,6 +4,7 @@ using System.Linq;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Web;
 using Hayden.Api;
 using Hayden.Consumers;
 using Hayden.Consumers.HaydenMysql.DB;
@@ -48,7 +49,7 @@ namespace Hayden
 			return new Thread
 			{
 				ThreadId = thread.OriginalPost.PostNumber,
-				Title = thread.OriginalPost.Subject,
+				Title = HttpUtility.HtmlDecode(thread.OriginalPost.Subject)?.TrimAndNullify(),
 				IsArchived = thread.Archived,
 				OriginalObject = thread,
 				Posts = thread.Posts.Select(x => x.ConvertToPost(board)).ToArray(),
@@ -250,11 +251,11 @@ namespace Hayden
 					{
 						FileUrl = $"https://i.4cdn.org/{board}/{TimestampedFilenameFull}",
 						ThumbnailUrl = $"https://i.4cdn.org/{board}/{TimestampedFilename}s.jpg",
-						Filename = OriginalFilename,
+						Filename = HttpUtility.HtmlDecode(OriginalFilename)?.Trim(),
 						FileExtension = FileExtension,
 						ThumbnailExtension = "jpg",
 						Index = 0,
-						FileSize = FileSize.Value,
+						FileSize = FileSize,
 						IsDeleted = FileDeleted ?? false,
 						IsSpoiler = SpoilerImage ?? false,
 						Md5Hash = Convert.FromBase64String(FileMd5),
@@ -267,7 +268,7 @@ namespace Hayden
 			{
 				PostNumber = PostNumber,
 				TimePosted = DateTimeOffset.FromUnixTimeSeconds(UnixTimestamp),
-				Author = Name,
+				Author = HttpUtility.HtmlDecode(Name)?.TrimAndNullify(),
 				Tripcode = Trip,
 				Email = null,
 				ContentRendered = Comment,
