@@ -330,7 +330,7 @@ namespace Hayden.Consumers
 		}
 
 		public uint CalculateHash(Post post)
-			=> HaydenMysqlThreadConsumer.CalculatePostHash(post.ContentRendered, post.ContentRaw,
+			=> HaydenThreadConsumer.CalculatePostHash(post.ContentRendered, post.ContentRaw,
 				post.Media.Count(x => x.IsSpoiler ?? false),
 				post.Media.Length,
 				post.Media.Count(x => x.IsDeleted));

@@ -1,5 +1,4 @@
-﻿using System;
-using System.ComponentModel.DataAnnotations;
+﻿using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
 namespace Hayden.Consumers.HaydenMysql.DB
@@ -11,12 +10,16 @@ namespace Hayden.Consumers.HaydenMysql.DB
 		[DatabaseGenerated(DatabaseGeneratedOption.Identity)]
 		public ushort Id { get; set; }
 
+		[Required, MaxLength(255)]
 		public string Username { get; set; }
 
+		[Required, FixedLength(64)]
 		public byte[] PasswordHash { get; set; }
+
+		[Required, FixedLength(32)]
 		public byte[] PasswordSalt { get; set; }
 
-		public byte Role { get; set; }
+		public ModeratorRole Role { get; set; }
 
 		[NotMapped]
 		public bool CanDeletePosts => (ModeratorRole)Role is ModeratorRole.Janitor or ModeratorRole.Moderator or ModeratorRole.Admin;

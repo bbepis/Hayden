@@ -13,19 +13,25 @@ namespace Hayden.Consumers.HaydenMysql.DB
 
 		public ushort BoardId { get; set; }
 
-		[Column(TypeName = "binary(16)")]
+		[Required, FixedLength(16)]
 		public byte[] Md5Hash { get; set; }
 
-		[Column(TypeName = "binary(20)")]
+		[Required, FixedLength(20)]
 		public byte[] Sha1Hash { get; set; }
 
-		[Column(TypeName = "binary(32)")]
+		[Required, FixedLength(32)]
 		public byte[] Sha256Hash { get; set; }
 
-		[Column(TypeName = "varchar(4)")]
+		[FixedLength(40)]
+		public byte[] PerceptualHash { get; set; }
+
+		[FixedLength(16)]
+		public byte[] StreamHash { get; set; }
+
+		[Required, MaxLength(4)]
 		public string Extension { get; set; }
 
-		[Column(TypeName = "varchar(4)")]
+		[MaxLength(4)]
 		public string ThumbnailExtension { get; set; }
 		
 		public bool FileExists { get; set; }

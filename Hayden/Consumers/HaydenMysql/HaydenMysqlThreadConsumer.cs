@@ -17,51 +17,68 @@ namespace Hayden.Consumers
 	/// <summary>
 	/// A thread consumer for the HaydenMysql MySQL backend.
 	/// </summary>
-	public class HaydenMysqlThreadConsumer : IThreadConsumer
+	public class HaydenThreadConsumer : IThreadConsumer
 	{
-		private ConsumerConfig Config { get; }
+		private ConsumerConfig ConsumerConfig { get; }
+		private SourceConfig SourceConfig { get; }
+		private DbContextOptions DbContextOptions { get; set; }
 		private IFileSystem FileSystem { get; set; }
 		private IMediaInspector MediaInspector { get; set; }
 
-		protected Dictionary<string, ushort> BoardIdMappings { get; } = new();
+		protected Dictionary<string, ushort> BoardIdMappings { get; } = new(StringComparer.OrdinalIgnoreCase);
 
-		/// <param name="config">The object to load configuration values from.</param>
-		public HaydenMysqlThreadConsumer(ConsumerConfig config, IFileSystem fileSystem, IMediaInspector mediaInspector)
+		/// <param name="consumerConfig">The object to load configuration values from.</param>
+		public HaydenThreadConsumer(ConsumerConfig consumerConfig, SourceConfig sourceConfig, IFileSystem fileSystem, IMediaInspector mediaInspector)
 		{
-			Config = config;
+			ConsumerConfig = consumerConfig;
+			SourceConfig = sourceConfig;
 			FileSystem = fileSystem;
 			MediaInspector = mediaInspector;
+
+			SetUpDBContext();
 		}
 
 		public async Task InitializeAsync()
 		{
 			// TODO: logic to initialize unseen boards
-
-			if (!Config.FullImagesEnabled && Config.ThumbnailsEnabled)
+			if (!ConsumerConfig.FullImagesEnabled && ConsumerConfig.ThumbnailsEnabled)
 			{
 				throw new InvalidOperationException(
 					"Consumer cannot be used if thumbnails enabled and full images are not. Full images are required for proper hash calculation");
 			}
 
 			await using var context = GetDBContext();
-
+			
 			await foreach (var board in context.Boards)
 			{
 				BoardIdMappings[board.ShortName] = board.Id;
 			}
 		}
 
-		protected virtual HaydenDbContext GetDBContext()
+		private void SetUpDBContext()
 		{
 			var contextBuilder = new DbContextOptionsBuilder();
 
-			contextBuilder.UseMySql(Config.ConnectionString, ServerVersion.AutoDetect(Config.ConnectionString), x =>
+			if (ConsumerConfig.DatabaseType == DatabaseType.MySql)
 			{
-				x.EnableIndexOptimizedBooleanColumns();
-			});
+				contextBuilder.UseMySql(ConsumerConfig.ConnectionString, ServerVersion.AutoDetect(ConsumerConfig.ConnectionString), x =>
+				{
+					x.EnableIndexOptimizedBooleanColumns();
+				});
+			}
+			else if (ConsumerConfig.DatabaseType == DatabaseType.Sqlite)
+			{
+				contextBuilder.UseSqlite(ConsumerConfig.ConnectionString);
+			}
+			else
+			{
+				throw new Exception("Unknown database type; not supported by HaydenConsumer");
+			}
 
-			return new HaydenDbContext(contextBuilder.Options);
+			DbContextOptions = contextBuilder.Options;
 		}
+
+		protected virtual HaydenDbContext GetDBContext() => new(DbContextOptions);
 
 		/// <inheritdoc/>
 		public async Task<IList<QueuedImageDownload>> ConsumeThread(ThreadUpdateInfo threadUpdateInfo)
@@ -84,7 +101,7 @@ namespace Hayden.Consumers
 
 			async Task ProcessImages(Post post)
 			{
-				if (!Config.FullImagesEnabled && !Config.ThumbnailsEnabled)
+				if (!ConsumerConfig.FullImagesEnabled && !ConsumerConfig.ThumbnailsEnabled)
 					return; // skip the DB check since we're not even bothering with images
 
 				if (post.Media == null)
@@ -101,14 +118,14 @@ namespace Hayden.Consumers
 							&& x.BoardId == boardId);
 					}
 					
-					if (existingFile == null && file.Sha1Hash != null && !Config.IgnoreSha1Hash)
+					if (existingFile == null && file.Sha1Hash != null && !ConsumerConfig.IgnoreSha1Hash)
 					{
 						existingFile = await dbContext.Files.FirstOrDefaultAsync(x =>
 							x.Sha1Hash == file.Sha1Hash
 							&& x.BoardId == boardId);
 					}
 					
-					if (existingFile == null && file.Md5Hash != null && !Config.IgnoreMd5Hash)
+					if (existingFile == null && file.Md5Hash != null && !ConsumerConfig.IgnoreMd5Hash)
 					{
 						existingFile = await dbContext.Files.FirstOrDefaultAsync(x =>
 							x.Md5Hash == file.Md5Hash
@@ -139,10 +156,10 @@ namespace Hayden.Consumers
 
 					Uri imageUrl = null, thumbUrl = null;
 
-					if (Config.FullImagesEnabled && file.FileUrl != null)
+					if (ConsumerConfig.FullImagesEnabled && file.FileUrl != null)
 						imageUrl = new Uri(file.FileUrl);
 
-					if (Config.ThumbnailsEnabled && file.ThumbnailUrl != null)
+					if (ConsumerConfig.ThumbnailsEnabled && file.ThumbnailUrl != null)
 						thumbUrl = new Uri(file.ThumbnailUrl);
 
 					imageDownloads.Add(new QueuedImageDownload(imageUrl, thumbUrl, new()
@@ -293,10 +310,9 @@ namespace Hayden.Consumers
 			var existingFile = await dbContext.Files
 				.Where(x => x.Sha256Hash == sha256Hash
 				            && x.BoardId == boardId)
-				.Select(x => new { x.Id })
 				.FirstOrDefaultAsync();
 
-			var imageFilename = Common.CalculateFilename(Config.DownloadLocation, board, Common.MediaType.Image, sha256Hash, media.FileExtension);
+			var imageFilename = Common.CalculateFilename(ConsumerConfig.DownloadLocation, board, Common.MediaType.Image, sha256Hash, media.FileExtension);
 
 			FileSystem.Directory.CreateDirectory(FileSystem.Path.GetDirectoryName(imageFilename));
 
@@ -305,7 +321,7 @@ namespace Hayden.Consumers
 
 			if (thumbTempFilename != null)
 			{
-				var thumbFilename = Common.CalculateFilename(Config.DownloadLocation, board, Common.MediaType.Thumbnail, sha256Hash, media.ThumbnailExtension);
+				var thumbFilename = Common.CalculateFilename(ConsumerConfig.DownloadLocation, board, Common.MediaType.Thumbnail, sha256Hash, media.ThumbnailExtension);
 
 				FileSystem.Directory.CreateDirectory(FileSystem.Path.GetDirectoryName(thumbFilename));
 

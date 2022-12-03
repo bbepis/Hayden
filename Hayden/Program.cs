@@ -21,7 +21,7 @@ namespace Hayden
 	{
 		static async Task Main(string[] args)
 		{
-			Console.WriteLine("Hayden v0.8.0");
+			Console.WriteLine("Hayden v0.9.0");
 			Console.WriteLine("By Bepis");
 
 			if (args.Length != 1)
@@ -91,7 +91,7 @@ namespace Hayden
 			
 			switch (configFile.Consumer.Type)
 			{
-				case "Hayden":        serviceCollection.AddSingleton<IThreadConsumer, HaydenMysqlThreadConsumer>(); break;
+				case "Hayden":        serviceCollection.AddSingleton<IThreadConsumer, HaydenThreadConsumer>(); break;
 				case "Filesystem":    serviceCollection.AddSingleton<IThreadConsumer, FilesystemThreadConsumer>(); break;
 				case "Asagi":         serviceCollection.AddSingleton<IThreadConsumer, AsagiThreadConsumer>(); break;
 				case "Null":          serviceCollection.AddSingleton<IThreadConsumer, NullThreadConsumer>(); break;

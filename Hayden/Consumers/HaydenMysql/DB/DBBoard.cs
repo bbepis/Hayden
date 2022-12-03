@@ -10,25 +10,21 @@ namespace Hayden.Consumers.HaydenMysql.DB
 		[DatabaseGenerated(DatabaseGeneratedOption.Identity)]
 		public ushort Id { get; set; }
 
-		[Column(TypeName = "varchar(16)")]
+		[Required, MaxLength(16)]
 		public string ShortName { get; set; }
 
-		[Column(TypeName = "varchar(255)")]
+		[Required, MaxLength(255)]
 		public string LongName { get; set; }
 
-		[Column(TypeName = "varchar(16)")]
+		[Required, MaxLength(255)]
 		public string Category { get; set; }
-
-		[Column(TypeName = "tinyint")]
+		
 		public bool IsNSFW { get; set; }
-
-		[Column(TypeName = "tinyint")]
+		
 		public byte MultiImageLimit { get; set; }
 
-		[Column(TypeName = "tinyint")]
 		public bool IsReadOnly { get; set; }
-
-		[Column(TypeName = "tinyint")]
+		
 		public bool ShowsDeletedPosts { get; set; }
 	}
 }

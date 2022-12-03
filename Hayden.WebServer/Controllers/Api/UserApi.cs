@@ -77,7 +77,7 @@ namespace Hayden.WebServer.Controllers.Api
 
 			var moderator = new DBModerator
 			{
-				Role = (byte)grantedRole,
+				Role = grantedRole,
 				Username = username,
 				PasswordHash = hashedPassword,
 				PasswordSalt = salt

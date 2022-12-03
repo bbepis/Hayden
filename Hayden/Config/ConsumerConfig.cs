@@ -28,7 +28,12 @@ namespace Hayden.Config
 		public bool ThumbnailsEnabled { get; set; }
 
 		/// <summary>
-		/// The connection string of the MySql database to connect to.
+		/// (Specific to some providers) The type of database to use. Options are 'MySql' and 'Sqlite'.
+		/// </summary>
+		public DatabaseType? DatabaseType { get; set; }
+
+		/// <summary>
+		/// (Specific to some providers) The connection string of the database to connect to.
 		/// </summary>
 		public string ConnectionString { get; set; }
 
@@ -46,5 +51,12 @@ namespace Hayden.Config
 		/// If set to true, the scraper will not use the SHA1 hash (if available) to skip downloading media that has already been downloaded. This will safeguard against MD5 conflicts, however will obviously use a lot more bandwidth.
 		/// </summary>
 		public bool IgnoreSha1Hash { get; set; }
+	}
+
+	public enum DatabaseType
+	{
+		None,
+		MySql,
+		Sqlite
 	}
 }

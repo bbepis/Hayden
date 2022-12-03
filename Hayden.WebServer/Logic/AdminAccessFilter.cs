@@ -35,7 +35,7 @@ namespace Hayden.WebServer.Logic
 				return;
 			}
 
-			if (!AllowedRoles.Contains((ModeratorRole)moderator.Role))
+			if (!AllowedRoles.Contains(moderator.Role))
 			{
 				context.Result = new ForbidResult(CookieAuthenticationDefaults.AuthenticationScheme);
 				return;

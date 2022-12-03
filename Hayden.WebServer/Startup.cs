@@ -86,6 +86,26 @@ namespace Hayden.WebServer
 			services.AddMvc(x => { x.EnableEndpointRouting = false; });
 		}
 
+		public static async Task<bool> PerformInitialization(IServiceProvider services)
+		{
+			using var scope = services.CreateScope();
+
+			await using var dbContext = scope.ServiceProvider.GetRequiredService<HaydenDbContext>();
+
+			try
+			{
+				await dbContext.Database.OpenConnectionAsync();
+			}
+			catch (Exception ex)
+			{
+				Console.WriteLine("Database cannot be connected to, or is not ready");
+				return false;
+			}
+
+			await dbContext.UpgradeOrCreateAsync();
+			return true;
+		}
+
 		// This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
 		public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
 		{

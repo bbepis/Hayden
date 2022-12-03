@@ -1,4 +1,5 @@
 ﻿using System;
+using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
 namespace Hayden.Consumers.HaydenMysql.DB
@@ -10,7 +11,7 @@ namespace Hayden.Consumers.HaydenMysql.DB
 
 		public ulong ThreadId { get; set; }
 
-		[Column(TypeName = "varchar(255)")]
+		[MaxLength(255)]
 		public string Title { get; set; }
 		public DateTime LastModified { get; set; }
 
