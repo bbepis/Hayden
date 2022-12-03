@@ -1,6 +1,8 @@
 ﻿using System;
+using System.Collections.Concurrent;
 using System.IO;
 using System.Linq;
+using System.Net;
 using System.Security.Cryptography;
 using System.Threading;
 using System.Threading.Tasks;
@@ -15,6 +17,8 @@ namespace Hayden.WebServer.Controllers.Api
 {
 	public partial class ApiController
 	{
+		private static readonly ConcurrentDictionary<IPAddress, DateTimeOffset> LastPostTimes = new();
+
 		private static readonly SemaphoreSlim PostSemaphore = new(1);
 
 		public class PostForm
@@ -47,6 +51,19 @@ namespace Hayden.WebServer.Controllers.Api
 
 			if (!await captchaProvider.VerifyCaptchaAsync(form.captcha))
 				return BadRequest(new { message = "Invalid captcha" });
+
+            if (HttpContext.Connection.RemoteIpAddress != null
+                && LastPostTimes.TryGetValue(HttpContext.Connection.RemoteIpAddress, out var lastPostTime))
+            {
+                var lastTimePosting = DateTimeOffset.Now - lastPostTime;
+
+                if (lastTimePosting < TimeSpan.FromSeconds(60))
+                {
+	                var timeRemaining = TimeSpan.FromSeconds(60) - lastTimePosting;
+
+					return UnprocessableEntity(new { message = $"Please wait {timeRemaining.TotalSeconds:N0} seconds before posting" });
+                }
+            }
 
 			var threadInfo = await dbContext.GetThreadInfo(form.threadId, form.board, true);
 
@@ -115,6 +132,8 @@ namespace Hayden.WebServer.Controllers.Api
 				PostSemaphore.Release();
 			}
 
+            LastPostTimes[HttpContext.Connection.RemoteIpAddress] = DateTimeOffset.Now;
+
 			return NoContent();
 		}
 
@@ -153,6 +172,17 @@ namespace Hayden.WebServer.Controllers.Api
 
 			if (!await captchaProvider.VerifyCaptchaAsync(form.captcha))
 				return BadRequest(new { message = "Invalid captcha" });
+
+            if (HttpContext.Connection.RemoteIpAddress != null
+				&& LastPostTimes.TryGetValue(HttpContext.Connection.RemoteIpAddress, out var lastPostTime))
+			{
+				var lastTimePosting = DateTimeOffset.Now - lastPostTime;
+
+                if (lastTimePosting < TimeSpan.FromSeconds(60))
+				{
+					return UnprocessableEntity(new { message = $"Please wait {lastTimePosting.TotalSeconds:N0} seconds before posting" });
+                }
+            }
 
 			(var result, var fileId) = await ProcessUploadedFileInternal(dbContext, mediaInspector, form.file, board);
 
