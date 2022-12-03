@@ -106,7 +106,7 @@ namespace Hayden
 			Directory.CreateDirectory(haydenDirectory);
 
 			// TODO: make this & proxy provider configurable
-			var stateStore = new LiteDbStateStore(Path.Combine(haydenDirectory, "imagequeue.db"));
+			var stateStore = new SqliteStateStore(Path.Combine(haydenDirectory, "imagequeue.db"));
 			serviceCollection.AddSingleton<IStateStore>(stateStore);
 
 			ProxyProvider proxyProvider = null;
