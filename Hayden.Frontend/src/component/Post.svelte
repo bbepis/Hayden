@@ -67,7 +67,7 @@
                     on:keydown={menuKeyDown}
                     on:click={e => {e.stopPropagation();}}
                     bind:this={menu}>
-                    <PostMenu />
+                    <PostMenu on:postaction boardId={board.id} postId={post.postId} />
                 </div>
             </span>
         {/if}

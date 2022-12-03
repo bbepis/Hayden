@@ -1,20 +1,37 @@
 <script lang="ts">
 	import { onMount } from "svelte";
-    import type { ThreadModel, PostModel } from "../data/data";
-	import Post from "./Post.svelte"
+	import type { ThreadModel, PostModel } from "../data/data";
+    import BanUserModal from "./admin/BanUserModal.svelte";
+    import DeletePostModal from "./admin/DeletePostModal.svelte";
+	import Post from "./Post.svelte";
 
-    export let thread: ThreadModel;
-    export let jumpToHash: boolean = false;
+	export let thread: ThreadModel;
+	export let jumpToHash: boolean = false;
+
+	let banUserModal: BanUserModal;
+	let deletePostModal: DeletePostModal;
+
+	function postAction(
+		e: CustomEvent<{ action: string; boardId: number; postId: number }>
+	) {
+		if (e.detail.action === "ban-ip") {
+			banUserModal.showModal(e.detail.boardId, e.detail.postId);
+		}
+		else if (e.detail.action === "delete-post") {
+			deletePostModal.showModal(e.detail.boardId, e.detail.postId);
+		}
+	}
 
 	function calculateBackquotes(post: PostModel): number[] {
-		return thread.posts.filter(x => {
-			if (!x.contentHtml) {
-				return false;
-			}
+		return thread.posts
+			.filter((x) => {
+				if (!x.contentHtml) {
+					return false;
+				}
 
-			return x.contentHtml.indexOf(`&gt;&gt;${post.postId}`) >= 0;
-		})
-		.map(x => x.postId);
+				return x.contentHtml.indexOf(`&gt;&gt;${post.postId}`) >= 0;
+			})
+			.map((x) => x.postId);
 	}
 
 	onMount(() => {
@@ -26,16 +43,24 @@
 
 <div class="thread">
 	{#each thread.posts as post, index (post.postId)}
-		{#if index !== 0}
-
-		<div style="margin: 0px 25px;">
-			<Post post={post} threadId={thread.threadId} board={thread.board} subject={index === 0 ? thread.subject : null} backquotes={calculateBackquotes(post)}></Post>
+		<div class:reply-margin={index !== 0}>
+			<Post
+				{post}
+				threadId={thread.threadId}
+				board={thread.board}
+				subject={index === 0 ? thread.subject : null}
+				backquotes={calculateBackquotes(post)}
+				on:postaction={postAction}
+			/>
 		</div>
-
-		{:else}
-		
-		<Post post={post} threadId={thread.threadId} board={thread.board} subject={index === 0 ? thread.subject : null} backquotes={calculateBackquotes(post)}></Post>
-		
-		{/if}
 	{/each}
 </div>
+
+<BanUserModal bind:this={banUserModal} />
+<DeletePostModal bind:this={deletePostModal} />
+
+<style>
+	.reply-margin {
+		margin-left: 25px;
+	}
+</style>
