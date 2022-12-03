@@ -16,6 +16,8 @@ using Microsoft.EntityFrameworkCore;
 using Nest;
 using Hayden.MediaInfo;
 using Hayden.WebServer.Services.Captcha;
+using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Authentication;
 
 namespace Hayden.WebServer
 {
@@ -161,6 +163,16 @@ namespace Hayden.WebServer
 			}
 
 			app.UseRouting();
+
+			app.Use(async (context, next) =>
+			{
+				var authenticateResult = await context.AuthenticateAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+
+				if (authenticateResult.Succeeded)
+					context.User = authenticateResult.Principal;
+
+				await next();
+			});
 
 			app.UseAuthentication();
 			app.UseAuthorization();
