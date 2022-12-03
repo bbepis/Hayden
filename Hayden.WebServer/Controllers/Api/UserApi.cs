@@ -88,7 +88,7 @@ namespace Hayden.WebServer.Controllers.Api
 
 			await LoginAsUser(moderator);
 
-			return Unauthorized();
+			return Ok();
 		}
 
 		[HttpPost("user/info")]
