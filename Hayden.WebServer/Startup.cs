@@ -4,6 +4,8 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using System;
+using System.Linq;
+using System.Security.Cryptography;
 using System.Threading.Tasks;
 using Hayden.Consumers.HaydenMysql.DB;
 using Hayden.WebServer.Controllers.Api;
@@ -103,6 +105,17 @@ namespace Hayden.WebServer
 			}
 
 			await dbContext.UpgradeOrCreateAsync();
+
+			if (dbContext.Moderators.All(x => x.Role != ModeratorRole.Admin))
+			{
+				var code = Convert.ToHexString(RandomNumberGenerator.GetBytes(8));
+
+				ApiController.RegisterCodes.Add(code, ModeratorRole.Admin);
+
+				Console.WriteLine("No admin account detected. Use this code to register an admin account:");
+				Console.WriteLine(code);
+			}
+
 			return true;
 		}
 
