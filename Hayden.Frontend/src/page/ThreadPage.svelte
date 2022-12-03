@@ -82,6 +82,8 @@
 
             if (response.ok)
             {
+                (<any>window).hcaptcha.reset();
+
                 Refresh();
                 formName = null;
                 formText = null;
@@ -132,9 +134,9 @@
         {#if thread.board.isReadOnly === false && thread.archived === false}
             <div id="reply-box" class="rounded border mb-5 container">
                 {#if postErrorMessage !== null}
-                <div class="row input-row">
-                    <div class="col-12" style="color:red;">{postErrorMessage}</div>
-                </div>
+                    <div class="row input-row">
+                        <div class="col-12" style="color:red;">{postErrorMessage}</div>
+                    </div>
                 {/if}
                 <div class="row input-row">
                     <div class="col-3">Name</div>
