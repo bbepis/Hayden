@@ -40,7 +40,6 @@ namespace Hayden.Consumers
 
 		public async Task InitializeAsync()
 		{
-			// TODO: logic to initialize unseen boards
 			if (!ConsumerConfig.FullImagesEnabled && ConsumerConfig.ThumbnailsEnabled)
 			{
 				throw new InvalidOperationException(
@@ -48,12 +47,47 @@ namespace Hayden.Consumers
 			}
 
 			await using var context = GetDBContext();
-			
+
+			if (context.Database.ProviderName != "Microsoft.EntityFrameworkCore.InMemory")
+			{
+				try
+				{
+					await context.Database.OpenConnectionAsync();
+				}
+				catch (Exception ex)
+				{
+					throw new Exception("Database cannot be connected to, or is not ready");
+				}
+
+				await context.UpgradeOrCreateAsync();
+			}
+
 			await foreach (var board in context.Boards)
 			{
 				BoardIdMappings[board.ShortName] = board.Id;
 			}
-		}
+
+			foreach (var boardRule in SourceConfig.Boards)
+			{
+				if (BoardIdMappings.ContainsKey(boardRule.Key))
+					continue;
+
+				var boardObject = new DBBoard
+				{
+					ShortName = boardRule.Key,
+					LongName = boardRule.Key,
+					Category = "Archive",
+					IsNSFW = false,
+					IsReadOnly = true,
+					MultiImageLimit = 0,
+					ShowsDeletedPosts = true
+				};
+
+				context.Add(boardObject);
+				await context.SaveChangesAsync();
+
+				BoardIdMappings[boardObject.ShortName] = boardObject.Id;
+			}
 
 		private void SetUpDBContext()
 		{
