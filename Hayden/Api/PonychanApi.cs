@@ -156,21 +156,36 @@ namespace Hayden
 
 		private static readonly JsonSerializer jsonSerializer = JsonSerializer.Create(new JsonSerializerSettings { NullValueHandling = NullValueHandling.Ignore });
 
+		private static readonly string[] preservedExtensionTypes =
+		{
+			// https://bitbucket.org/ponychan/ponychan-tinyboard/src/c2ad54a1360f92caae4f560fbb61abe28ed1c43f/core/inc/post/create.php#lines-434
+			// https://bitbucket.org/ponychan/ponychan-tinyboard/src/master/core/inc/image.php
+			".jpg",
+			".png",
+			".gif",
+			".webp"
+			// jpeg gets turned into jpg
+		};
+
 		public Post ConvertToPost(string board, string imageboardUrlRoot)
 		{
 			Media[] media = Array.Empty<Media>();
 
 			if (FileMd5 != null)
 			{
+				var thumbnailExtension = preservedExtensionTypes.Contains(FileExtension.ToLower())
+					? FileExtension
+					: ".jpg";
+
 				media = new[]
 				{
 					new Media
 					{
 						FileUrl = $"{imageboardUrlRoot}{board}/src/{ServerFilename}",
-						ThumbnailUrl = $"{imageboardUrlRoot}{board}/thumb/{ServerFilename}",
+						ThumbnailUrl = $"{imageboardUrlRoot}{board}/thumb/{Path.ChangeExtension(ServerFilename, thumbnailExtension)}",
 						Filename = Path.GetFileName(OriginalFilename),
 						FileExtension = FileExtension,
-						ThumbnailExtension = Path.GetExtension(ServerFilename),
+						ThumbnailExtension = thumbnailExtension,
 						Index = 0,
 						FileSize = FileSize.Value,
 						IsDeleted = false, // Ponychan API does not expose this
