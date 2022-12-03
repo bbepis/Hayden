@@ -5,6 +5,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using Hayden.Contract;
 using LiteDB;
+using LiteDB.Engine;
 
 namespace Hayden.Cache
 {
@@ -17,7 +18,7 @@ namespace Hayden.Cache
 
 		protected Stream Stream { get; set; }
 
-		private LiteCollection<QueuedImageDownload> QueuedImageDownloads { get; set; }
+		private ILiteCollection<QueuedImageDownload> QueuedImageDownloads { get; set; }
 
 		static LiteDbStateStore()
 		{
@@ -61,7 +62,7 @@ namespace Hayden.Cache
 
 			Program.Log("Shrinking state database...", true);
 
-			Database.Shrink();
+			Database.Rebuild();
 
 			return Task.CompletedTask;
 		}
