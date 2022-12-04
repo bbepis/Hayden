@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using Nuke.Common;
@@ -79,7 +80,8 @@ class Build : NukeBuild
 
 			Serilog.Log.Information($"Publishing {prefix} {runtimeName}");
 
-			var outputFolder = BuildOutputDirectory / prefix / runtimeName;
+			var prefixFolder = BuildOutputDirectory / prefix;
+			var outputFolder = prefixFolder / runtimeName;
 			var outputZip = BuildOutputDirectory / $"{prefix}-{version}-{runtimeName}.zip";
 
 			EnsureCleanDirectory(outputFolder);
@@ -90,10 +92,18 @@ class Build : NukeBuild
 				.SetRuntime(runtime != "any" ? runtime : null)
 				.DisableSelfContained());
 
+			var devConfigFile = outputFolder / "appsettings.Development.json";
+
+			if (File.Exists(devConfigFile))
+				DeleteFile(devConfigFile);
+
 			if (package)
 			{
+				if (File.Exists(outputZip))
+					DeleteFile(outputZip);
+
 				CompressionTasks.CompressZip(outputFolder, outputZip);
-				DeleteDirectory(outputFolder);
+				DeleteDirectory(prefixFolder);
 			}
 		}
 	}
