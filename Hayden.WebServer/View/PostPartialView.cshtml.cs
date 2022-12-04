@@ -44,7 +44,10 @@ namespace Hayden.WebServer.View
 		{
 			string b36Name = Utility.ConvertToBase(file.Sha256Hash);
 
-			var prefix = config.ImagePrefix ?? "image";
+			// https://github.com/dotnet/runtime/issues/36510
+			var prefix = !string.IsNullOrWhiteSpace(config.ImagePrefix)
+				? config.ImagePrefix
+				: "/image";
 
 			var imageUrl = $"{prefix}/{board}/image/{b36Name}.{file.Extension}";
 			var thumbUrl = $"{prefix}/{board}/thumb/{b36Name}.jpg";
