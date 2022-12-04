@@ -1,0 +1,28 @@
+{
+	"source" : {
+		"type" : "4chan",
+		"boards" : {
+			"g": {}
+		},
+		"apiDelay" : 1,
+		"boardDelay" : 30,
+		"ReadArchive": false
+	},
+	
+	"proxies" : [],
+
+	"consumer" : {
+		"type" : "Hayden",
+		
+		"downloadLocation" : "C:\\hayden_storage",
+        
+		"databaseType": "MySQL",
+		"connectionString": "Server=localhost;Port=3306;Database=hayden;Uid=root;Pwd=root;",
+        
+		//"databaseType": "Sqlite",
+		//"connectionString": "Data Source=C:\\hayden_storage\\database-sqlite.db",
+
+		"fullImagesEnabled" : true,
+		"thumbnailsEnabled" : true
+	}
+}

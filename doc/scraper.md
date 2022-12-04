@@ -1,72 +1,123 @@
-### How to run it (CLI scraper)
+# How to run it (CLI scraper)
 
 `Usage: hayden <config file location>`
 
 That's pretty much it. As for the config file, it's simply a JSON file containing parameters and rules for Hayden to follow.
 
-Here is an example:
+An example config can be found here: [example-config-scraper.json](example-config-scraper.json)
+
+&nbsp;
+
+# Config file specification
+
+Config keys are case insensitive.
+
+## `source`
+
+This contains configuration relating to an external website to scrape from.
+
+### `source.type`
+
+Specifies the imageboard software of the website you're scraping from. Can be these types:
+- `4chan`
+- `LynxChan`
+- `Vichan`
+- `InfinityNext`
+- `FoolFuuka`
+- `Meguca`
+- `PonyChan`
+- `ASPNetChan`
+
+### `source.imageboardSite`
+
+The root URL of the imageboard you wish to scrape from. An example would be `https://8chan.moe/`
+
+This is ignored and not required for the `4chan` type; it always scrapes from `4chan.org`
+
+### `source.boards`
+
+An array of the boards you wish to scrape from the site; Hayden cannot automatically detect which boards exist on an imageboard.
+
+It's keyed with the short name of the board you wish to scrape, and the value is an object containing more specific rules around the board.
+
+All regexes are applied on an OR basis; any regex matching will cause the thread to be archived.
+
+Available properties to apply to each board:
+
+- `ThreadTitleRegex`  
+A regex for filtering on the title/subject line of a thread.
+
+- `OPContentRegex`  
+A regex for filtering on the opening post content of a thread.
+
+- `AnyFilter`  
+A regex for filtering on the title/subject OR opening post content of a thread.
+
+### `source.apiDelay`
+The amount of seconds Hayden should wait (at minimum) inbetween making API calls. (This is specifically per connection, including proxies). Can be a decimal number
+
+### `source.boardScrapeDelay`
+The amount of seconds Hayden should wait at minimum before attempting to scrape the board thread listings again. If a single scrape run takes longer than this time, then the next board scrape will happen immediately. Can be a decimal number.
+
+### `readArchive`
+Specifies either `true` or `false` that Hayden should read the archives for each board on startup (only applicable to boards and imageboard software that support and have an archive). Obviously incurs a speed penalty for the initial scrape.
+
+&nbsp;
+
+## `proxies`
+
+An array of proxies that can be used to allow parallelized scraping without incurring ban risk from polling too much from a single IP address.
+
+Proxy objects look like this:
 
 ```json
 {
-	"source" : {
-		"type" : "Vichan",
-        "imageboardSite": "https://myimageboardsite.com/",
-		"boards" : {
-			"vg": {},
-			"trash": {},
-			"tg": {}
-		},
-		"apiDelay" : 1,
-		"boardScrapeDelay" : 30,
-		"readArchive": false
-	},
-	
-	"consumer" : {
-		"type" : "Filesystem",
-		"downloadLocation" : "C:\\my-archive-folder",
-		
-		"fullImagesEnabled" : true,
-		"thumbnailsEnabled" : true
-	}
+	"url": "socks5://1.2.3.4:8000",
+	"username": "user",
+	"password": "pass"
 }
 ```
 
-The configuration is more or less self-explanatory, except for a few parts.
-
-`source.type` specifies the source. Can be six types: `4chan`, `LynxChan`, `Vichan`, `InfinityNext`, `FoolFuuka` and `Meguca`.
-
-`source.imageboardSite` specifies the source. Can be six types: `4chan`, `LynxChan`, `Vichan`, `InfinityNext`, `FoolFuuka` and `Meguca`.
-
-When using the latter two source types, an additional `source.imageboardWebsite` property is required containing the base URL of the imageboard. So if the website has a /v/ board at `https://8chan.moe/v/`, you should set `imageboardWebsite` to `https://8chan.moe/`.
-
-`apiDelay` specifies the amount of seconds Hayden should wait (at minimum) inbetween making API calls. (This is specifically per connection, including proxies). Can be a decimal number
-
-`boardScrapeDelay` is the amount of seconds Hayden should wait at minimum before attempting to scrape the board thread listings again. If a single scrape run takes longer than this time, then the next board scrape will happen immediately. Can be a decimal number.
-
-`readArchive` specifies either `true` or `false` that Hayden should read the archives for each board on startup (only applicable to boards and imageboard software that support and have an archive). Obviously incurs a speed penalty for the initial scrape.
+May support HTTP proxies; I've only ever tested SOCKS5.
 
 &nbsp;
 
-Individual objects under `source.boards` support a small amount of filters. Here is an example of two of the currently supported filters:
+## `consumer`
 
-```json
-...
-"tg": {"ThreadTitleRegexFilter": "big.+", "OPContentRegexFilter": "chungus.*"},
-...
-```
+This contains configuration relating to where data should be saved to. See below for more detailed information about each consumer type.
 
-Hayden will only enqueue threads from /tg/ if either the title/subject line matches the regex of "`big.+`", **or** the post content of OP contains the regex "`chungus.*`". The regexes are also compiled as case-insensitive.
+### `consumer.type`
 
-There is an additional `"AnyFilter"` that combines the both, i.e. it'll run the regex on both the OP content and subject fields, and succeed if any of them match.
+The type of consumer that will be used to store data.
 
-&nbsp;
-
-Last part is the `consumer.type` stuff. There are three options:
 - `Filesystem` for flat-file JSON storage
 - `Asagi` for Asagi
-- `Hayden` for Hayden's MySQL format
+- `Hayden` for Hayden's database format
 
-The latter two require an additional parameter in the `consumer` object: `connectionString` containing the connection string used to connect to the MySQL database in question
+### `consumer.downloadLocation`
+
+The directory to where files should be downloaded to. The result directory structure is specific to each consumer type.
+
+### `consumer.DatabaseType`
+
+The type of database to connect to. Only applicable to `Asagi` and `Hayden` consumer types.
+
+Can be these options:
+
+- `MySQL` (this is also the case for MariaDB; Hayden will automatically determine if it's MySQL or MariaDB)
+- `Sqlite`
+
+### `consumer.ConnectionString`
+
+The connection string to use to connect to the database. Format is specific to the database type; check the sample config for examples
+
+### `consumer.fullImagesEnabled`
+
+Specifies if full-size images should be downloaded.
+
+### `consumer.thumbnailsEnabled`
+
+Specifies if thumbnail images should be downloaded. As of writing, `Hayden` consumer type will not allow only downloading thumbnails without downloading full images.
 
 &nbsp;
 
@@ -74,19 +125,19 @@ The latter two require an additional parameter in the `consumer` object: `connec
 
 &nbsp;
 
-### Supported data stores
+# Supported data stores
 
 There are currently 3 supported data stores:
 
-- Hayden MySQL datastore
-  - A database schema intended for usage with the Hayden.WebServer HTTP frontend, with a similar goal of FoolFuuka of being able to display archived threads as webpages. Should be considered stable, however there will likely be some schema changes / improvements in the future
+- Hayden
+  - A custom database schema intended to support exotic data structures from altchans (such as multiple image support) while also retaining support for 4chan. This is currently the only datastore that the Hayden webserver can read from. Should be considered stable, however there will likely be some schema changes / improvements in the future that will be forwards compatible.
 
-- Asagi (specifically the MySQL backend)
-  - While "supported", it carries no guarantees that it's still 100% compliant and safe as it once was in this project. It's a large module to support and AFAIK no-one actually uses Hayden for it, so there's no point in me maintaining something with no demand, let alone me actually being able to constantly verify that it works. If you have a use case for this, let me know
+- Asagi
+  - The database schema used by [Asagi](https://github.com/bibanon/asagi) and [FoolFuuka](https://github.com/pleebe/FoolFuuka). This may or may not be fully 100% functional anymore; it's been a long time since I've tested it but from the lack of issues I've heard about it, it seems to be working just fine. This uses the extended-length schema as of 2022 that supports the newer 4chan `tim` fields, and as such may have issues with older versions that don't have the same changes. While Asagi theoretically supports PostgreSQL, this only supports MySQL/MariaDB.
 
 - JSON flat file
   - Similar to what you would recieve when running something like gallery-dl. Creates a folder for each thread, and in it writes a metadata JSON file and each image (+ thumbnail).  
-  This is different to just writing the returned API JSON document, as it does not keep track of deleted / modified posts. Hayden instead writes a slightly off-spec document to account for this.
+  This is different to just writing the returned API JSON document, as it does not keep track of deleted / modified posts. Hayden instead writes a custom format that it uses internally, with the original JSON document as a property.
 
 A table of which API frontends support which backends:
 
@@ -96,13 +147,26 @@ A table of which API frontends support which backends:
 | Filesystem | ✅       | ✅        | ✅               | ✅            | ✅      | ✅         | ✅        | ✅          |
 | Hayden     | ✅       | ✅        | ✅               | ✅            | ✅      | ✅         | ✅        | ✅          |
 
+For Hayden and Asagi data stores, they require a database to be able to operate. Hayden will create the tables for you, but not the database. If required, a specific database collation will be listed in the table below.
+
+Supported DBMS' for each store:
+
+|        | MySQL 8.x                    | MariaDB                      | SQLite | PostgreSQL |
+| ------ | ---------------------------- | ---------------------------- | ------ | ---------- |
+| Asagi  | ⚠️ (`utf8mb4_general_ci`) [1] | ✅ (`utf8mb4_general_ci`)     | ❌      | ❌          |
+| Hayden | ✅ (`utf8mb4_0900_ai_ci`)     | ⚠️ (`utf8mb4_general_ci`) [2] | ✅      | ❌          |
+
+**[1]:** Asagi databases are scaffolded using a schema designed for MariaDB. This may or may not work for MySQL; YMMV and you might have to modify it a bit. Let me know how you go
+
+**[2]:** Hayden datastore was designed for MySQL and may not work for MariaDB. `utf8mb4_general_ci` is listed as a generic recommendation and is untested; Hayden does not perform any text searches and as such `utf8mb4_bin` may be more suitable. You'll have to figure out what works best for you
+
 &nbsp;
 
 --------
 
 &nbsp;
 
-### How to read console output
+# How to read console output
 
 Here's an example excerpt 
 

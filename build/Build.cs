@@ -60,6 +60,7 @@ class Build : NukeBuild
 		.Executes(() =>
 		{
 			// no point, --no-restore is broken when using RIDs
+			// https://github.com/dotnet/sdk/issues/3383
 
 			//DotNetTasks.DotNetRestore(x => x
 			//	.SetProjectFile("./Hayden.WebServer/Hayden.WebServer.csproj"));
