@@ -126,7 +126,9 @@ namespace Hayden.Consumers.HaydenMysql.DB.Migrations
                         .IsFixedLength();
 
                     b.Property<byte[]>("PerceptualHash")
-                        .HasColumnType("binary(20)");
+	                    .HasMaxLength(40)
+                        .HasColumnType("binary(40)")
+	                    .IsFixedLength();
 
                     b.Property<byte[]>("Sha1Hash")
                         .IsRequired()
