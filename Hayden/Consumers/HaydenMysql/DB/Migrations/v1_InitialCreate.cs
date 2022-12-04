@@ -80,7 +80,7 @@ namespace Hayden.Consumers.HaydenMysql.DB.Migrations
                     Md5Hash = table.Column<byte[]>(type: isSqlite ? "BLOB" : "binary(16)", fixedLength: true, maxLength: 16, nullable: false),
                     Sha1Hash = table.Column<byte[]>(type: isSqlite ? "BLOB" : "binary(20)", fixedLength: true, maxLength: 20, nullable: false),
                     Sha256Hash = table.Column<byte[]>(type: isSqlite ? "BLOB" : "binary(32)", fixedLength: true, maxLength: 32, nullable: false),
-                    PerceptualHash = table.Column<byte[]>(type: isSqlite ? "BLOB" : "binary(20)", nullable: true),
+                    PerceptualHash = table.Column<byte[]>(type: isSqlite ? "BLOB" : "binary(40)", nullable: true),
                     StreamHash = table.Column<byte[]>(type: isSqlite ? "BLOB" : "binary(16)", fixedLength: true, maxLength: 16, nullable: true),
                     Extension = table.Column<string>(type: isSqlite ? "TEXT" : "varchar(4)", maxLength: 4, nullable: false)
 						.MarkUtf8(ActiveProvider),
