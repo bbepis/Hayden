@@ -473,7 +473,7 @@ namespace Hayden.Consumers
 					var hashes = new List<(ulong PostId, uint PostHash)>();
 
 					var postQuery =
-						dbContext.Posts.Where(x => x.BoardId == boardId && x.ThreadId == threadInfo.ThreadId)
+						dbContext.Posts.Where(x => x.BoardId == boardId && x.ThreadId == threadInfo.ThreadId && !x.IsDeleted)
 							//.Join(dbContext.FileMappings, dbPost => new { dbPost.BoardId, dbPost.PostId }, dbFileMapping => new { dbFileMapping.BoardId, dbFileMapping.PostId }, (post, mapping) => new { post, mapping });
 							.SelectMany(x => dbContext.FileMappings.Where(y => y.BoardId == boardId && y.PostId == x.PostId).DefaultIfEmpty(), (post, mapping) => new { post, mapping });
 
