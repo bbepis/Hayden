@@ -1,10 +1,10 @@
 <script lang="ts">
     import { onMount } from "svelte";
     import PageSelector from "../component/PageSelector.svelte";
+    import PostUploader from "../component/PostUploader.svelte";
     import Thread from "../component/Thread.svelte";
     import { Api } from "../data/api";
     import type { BoardPageModel } from "../data/data";
-    import { Utility } from "../data/utility";
 
     let dataPromise: Promise<BoardPageModel>;
 
@@ -28,91 +28,13 @@
         var model = await dataPromise;
 
         maxPage = Math.ceil(model.totalThreadCount / 10);
-
-        setTimeout(() => {
-            (<any>window).hcaptcha.render("post-captcha", {
-                theme: "dark",
-                callback: (response) => { formCaptcha = response },
-                "expired-callback": () => { formCaptcha = null },
-                "close-callback": () => { formCaptcha = null },
-                "error-callback": () => { formCaptcha = null },
-            });
-        }, 500)
     }
 
     loadData();
 
-    
-    let formName: string = null;
-    let formText: string = null;
-    let formCaptcha: string = null;
-    let formSubject: string = null;
-    let formFiles: FileList = null;
-    let isPosting = false;
-
-    let postErrorMessage: string = null;
-
-    async function Post() {
-        if ((formText === "" || formText === null) && (formFiles === null || formFiles.length === 0))
-            return;
-
-        if (formCaptcha == null)
-            return;
-
-        if (isPosting)
-            return;
-
-        isPosting = true;
-
-        const postObject = {
-            name: formName,
-            text: formText,
-            subject: formSubject,
-            file: formFiles !== null ? formFiles[0] : null,
-            captcha: formCaptcha,
-            board: board
-        };
-
-        try {
-            const response = await Utility.PostForm("/makethread", postObject);
-
-            console.log(response);
-
-            if (response.ok)
-            {
-                let obj = await response.json();
-                document.location.href = `/${board}/thread/${obj.threadId}`;
-            }
-            else {
-                var obj = await response.json();
-                
-                if (obj["message"] !== undefined)
-                    postErrorMessage = obj["message"];
-            }
-        }
-        catch (e) {
-            console.log(e);
-        }
-
-        isPosting = false;
-    }
-
 </script>
 
 <style>
-    #reply-box {
-        width: 600px;
-        /* background-color: #444; */
-        background-color: var(--post-background-color);
-        /* color: white; */
-        color: var(--text-color);
-        border-color: var(--post-border-color) !important;
-    }
-
-    .input-row {
-        padding: 5px 0px;
-    }
-
     .board-title {
         font-size: 30px;
         text-align: center;
@@ -129,39 +51,7 @@
     </div>
 
     {#if data.boardInfo.isReadOnly === false}
-        <div id="reply-box" class="rounded border mb-5 container">
-            {#if postErrorMessage !== null}
-                <div class="row input-row">
-                    <div class="col-12" style="color:red;">{postErrorMessage}</div>
-                </div>
-            {/if}
-            <div style="text-align: center">Create a new thread</div>
-            <div class="row input-row">
-                <div class="col-3">Name</div>
-                <div class="col-9"><input class="w-100" type="text" bind:value={formName} /></div>
-            </div>
-            <div class="row input-row">
-                <div class="col-3">Subject</div>
-                <div class="col-9"><input class="w-100" type="text" bind:value={formSubject} /></div>
-            </div>
-            <div class="row input-row">
-                <div class="col-3">Comment</div>
-                <div class="col-9"><textarea class="w-100" bind:value={formText}></textarea></div>
-            </div>
-            <div class="row input-row">
-                <div class="col-3">File</div>
-                <div class="col-9"><input type="file" bind:files={formFiles} /></div>
-            </div>
-            <div class="row input-row">
-                <div class="col-3">Captcha</div>
-                <div class="col-9">
-                    <div id="post-captcha" class="h-captcha" data-sitekey={Utility.infoObject.hCaptchaSiteKey}></div>
-                </div>
-            </div>
-            <div class="row input-row">
-                <button on:click={Post} class="mx-3 form-control btn btn-outline-secondary">Create Thread</button>
-            </div>
-        </div>
+        <PostUploader isThreadUploader={true} board={board} />
     {/if}
 
     {#each data.threads as thread ({a: thread.board.id, b: thread.threadId}) }
