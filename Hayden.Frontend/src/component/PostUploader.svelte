@@ -82,6 +82,17 @@
             return;
 
         if (formCaptcha == null) return;
+        if (Utility.infoObject.maxGlobalUploadSize
+            && formFiles && formFiles.length !== 0
+            && formFiles[0].size >= Utility.infoObject.maxGlobalUploadSize)
+        {
+            const fileSizeMB = (Utility.infoObject.maxGlobalUploadSize / (1024 * 1024));
+            const fileSizeString = fileSizeMB.toLocaleString(undefined, {
+                maximumFractionDigits: 1
+            });
+            postErrorMessage = `Filesize must be less than ${fileSizeString} MB`;
+            return;
+        }
 
         if (isPosting) return;
 

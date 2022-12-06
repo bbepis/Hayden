@@ -2,6 +2,7 @@ export class InfoObject {
     apiEndpoint: string;
     rawEndpoint: string;
     hCaptchaSiteKey: string | null;
+    maxGlobalUploadSize: number | null;
 }
 
 export class BoardModel {

@@ -8,6 +8,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Hayden.Consumers.HaydenMysql.DB;
 using Hayden.MediaInfo;
+using Hayden.WebServer.Routing;
 using Hayden.WebServer.Services.Captcha;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -31,7 +32,7 @@ namespace Hayden.WebServer.Controllers.Api
 			public ulong threadId { get; set; }
 		}
 
-		[RequestSizeLimit((int)(4.1 * 1024 * 1024))]
+		[ConfigRequestSizeFilter]
 		[HttpPost("makepost")]
 		public async Task<IActionResult> MakePost(
 			[FromServices] HaydenDbContext dbContext,
@@ -148,7 +149,7 @@ namespace Hayden.WebServer.Controllers.Api
 			public string captcha { get; set; }
 		}
 
-		[RequestSizeLimit((int)(4.1 * 1024 * 1024))]
+		[ConfigRequestSizeFilter]
 		[HttpPost("makethread")]
 		public async Task<IActionResult> MakeThread(
 			[FromServices] HaydenDbContext dbContext,

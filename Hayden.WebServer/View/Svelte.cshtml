@@ -26,7 +26,8 @@
         var info = {
             apiEndpoint: "/api",
             rawEndpoint: "",
-            hCaptchaSiteKey: "@(Config.Value.Captcha.HCaptchaTesting ? HCaptchaProvider.DummySiteKey : Config.Value.Captcha.HCaptchaSiteKey)"
+            hCaptchaSiteKey: "@(Config.Value.Captcha.HCaptchaTesting ? HCaptchaProvider.DummySiteKey : Config.Value.Captcha.HCaptchaSiteKey)",
+            maxGlobalUploadSize: @(Config.Value.Settings.MaxFileUploadSizeMB == null ? "null" : (Config.Value.Settings.MaxFileUploadSizeMB * 1024 * 1024))
         }
     </script>
 </head>

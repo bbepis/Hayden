@@ -8,6 +8,8 @@ namespace Hayden.WebServer
 
 		public ServerCaptchaConfig Captcha { get; set; }
 
+		public ServerSettingsConfig Settings { get; set; }
+
 		public bool ApiMode { get; set; }
 	}
 
@@ -25,5 +27,10 @@ namespace Hayden.WebServer
 		public string HCaptchaSiteKey { get; set; }
 		public string HCaptchaSecret { get; set; }
 		public bool HCaptchaTesting { get; set; }
+	}
+
+	public class ServerSettingsConfig
+	{
+		public double? MaxFileUploadSizeMB { get; set; }
 	}
 }
