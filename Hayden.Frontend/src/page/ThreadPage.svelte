@@ -44,7 +44,11 @@
         <Thread {thread} jumpToHash={true} />
 
         {#if thread.board.isReadOnly === false && thread.archived === false}
-            <PostUploader isThreadUploader={false} board={board} threadId={threadId} />
+            <PostUploader
+                isThreadUploader={false}
+                board={board}
+                threadId={threadId}
+                on:success={() => Refresh()} />
         {/if}
 
         {#if isRefreshing}
