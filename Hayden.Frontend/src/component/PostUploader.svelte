@@ -55,8 +55,6 @@
 
         const response = await Utility.PostForm("/makepost", postObject);
 
-        console.log(response);
-
         if (response.ok) {
             (<any>window).hcaptcha.reset();
 
@@ -72,16 +70,27 @@
     }
 
     async function Post() {
-        if (isThreadUploader && (formFiles === null || formFiles.length === 0))
+        if (
+            isThreadUploader &&
+            (formFiles === null || formFiles.length === 0)
+        ) {
+            postErrorMessage = "You must have an attached file.";
             return;
+        }
 
         if (
             (formText === "" || formText === null) &&
             (formFiles === null || formFiles.length === 0)
-        )
-            return;
+        ) {
+            if (isThreadUploader) {
+                postErrorMessage = "You must have an attached file.";
+            } else {
+                postErrorMessage = "You must have text or an attached file.";
+            }
 
-        if (formCaptcha == null) return;
+            return;
+        }
+
         if (Utility.infoObject.maxGlobalUploadSize
             && formFiles && formFiles.length !== 0
             && formFiles[0].size >= Utility.infoObject.maxGlobalUploadSize)
@@ -94,11 +103,18 @@
             return;
         }
 
+        if (formCaptcha == null) {
+            postErrorMessage = "Invalid captcha";
+            return;
+        }
+
         if (isPosting) return;
 
         isPosting = true;
 
         try {
+            postErrorMessage = "Uploading...";
+
             let uploadResponse;
 
             if (isThreadUploader) {
@@ -107,13 +123,14 @@
                 uploadResponse = await UploadPost();
             }
 
-            if (uploadResponse.message) {
+            if (uploadResponse !== undefined && !(uploadResponse.message === undefined || uploadResponse.message === null || uploadResponse.message === "")) {
                 postErrorMessage = uploadResponse.message;
 
                 dispatch("error", {
                     message: postErrorMessage,
                 });
             } else {
+                postErrorMessage = null;
                 dispatch("success");
             }
         } catch (e) {
