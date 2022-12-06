@@ -8,9 +8,9 @@ namespace Hayden.WebServer.Controllers.Api
 	[Route("api")]
 	public partial class ApiController : Controller
 	{
-		protected IOptions<Config> Config { get; set; }
+		protected IOptions<ServerConfig> Config { get; set; }
 
-		public ApiController(IOptions<Config> config)
+		public ApiController(IOptions<ServerConfig> config)
 		{
 			Config = config;
 		}

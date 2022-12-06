@@ -18,7 +18,7 @@ namespace Hayden.WebServer.Routing
 
 		public override void OnActionExecuting(ActionExecutingContext context)
 		{
-			var config = context.HttpContext.RequestServices.GetService<IOptions<Config>>().Value;
+			var config = context.HttpContext.RequestServices.GetService<IOptions<ServerConfig>>().Value;
 
 			if (config.ApiMode && !ApiMode)
 			{

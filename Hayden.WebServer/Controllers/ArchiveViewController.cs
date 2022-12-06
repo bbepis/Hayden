@@ -17,9 +17,9 @@ namespace Hayden.WebServer.Controllers
 	[Route("")]
 	public class ArchiveViewController : Controller
 	{
-		protected IOptions<Config> Config { get; set; }
+		protected IOptions<ServerConfig> Config { get; set; }
 
-		public ArchiveViewController(IOptions<Config> config)
+		public ArchiveViewController(IOptions<ServerConfig> config)
 		{
 			Config = config;
 		}

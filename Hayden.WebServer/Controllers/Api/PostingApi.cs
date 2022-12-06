@@ -329,10 +329,10 @@ namespace Hayden.WebServer.Controllers.Api
 			using (var sha1 = SHA1.Create())
 				sha1Hash = sha1.ComputeHash(fileData);
 
-			var destinationFilename = Common.CalculateFilename(Config.Value.FileLocation, boardInfo.ShortName,
+			var destinationFilename = Common.CalculateFilename(Config.Value.Data.FileLocation, boardInfo.ShortName,
 				Common.MediaType.Image, sha256Hash, extension);
 
-			var thumbnailFilename = Common.CalculateFilename(Config.Value.FileLocation, boardInfo.ShortName,
+			var thumbnailFilename = Common.CalculateFilename(Config.Value.Data.FileLocation, boardInfo.ShortName,
 				Common.MediaType.Thumbnail, sha256Hash, "jpg");
 
 			if (!System.IO.File.Exists(destinationFilename))

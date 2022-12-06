@@ -9,7 +9,7 @@ namespace Hayden.WebServer.View
 		public DBPost Post { get; set; }
 		public (DBFileMapping mapping, DBFile file)[] FileMappings { get; set; }
 
-		public PostPartialViewModel(DBPost post, string board, (DBFileMapping mapping, DBFile file)[] mappings, Config config)
+		public PostPartialViewModel(DBPost post, string board, (DBFileMapping mapping, DBFile file)[] mappings, ServerConfig config)
 		{
 			Post = post;
 
@@ -25,7 +25,7 @@ namespace Hayden.WebServer.View
 				{
 					string b36Name = Utility.ConvertToBase(mapping.file.Sha256Hash);
 
-					var prefix = config.ImagePrefix ?? "image";
+					var prefix = config.Data.ImagePrefix ?? "image";
 
 					ImageUrls[i] = $"{prefix}/{board}/image/{b36Name}.{mapping.file.Extension}";
 					ThumbnailUrls[i] = $"{prefix}/{board}/thumb/{b36Name}.jpg";
@@ -40,13 +40,13 @@ namespace Hayden.WebServer.View
 			}
 		}
 
-		public static (string imageUrl, string thumbnailUrl) GenerateUrls(DBFile file, string board, Config config)
+		public static (string imageUrl, string thumbnailUrl) GenerateUrls(DBFile file, string board, ServerConfig config)
 		{
 			string b36Name = Utility.ConvertToBase(file.Sha256Hash);
 
 			// https://github.com/dotnet/runtime/issues/36510
-			var prefix = !string.IsNullOrWhiteSpace(config.ImagePrefix)
-				? config.ImagePrefix
+			var prefix = !string.IsNullOrWhiteSpace(config.Data.ImagePrefix)
+				? config.Data.ImagePrefix
 				: "/image";
 
 			var imageUrl = $"{prefix}/{board}/image/{b36Name}.{file.Extension}";

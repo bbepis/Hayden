@@ -1,7 +1,7 @@
 ﻿@using Hayden.WebServer
 @using Hayden.WebServer.Services.Captcha
 @using Microsoft.Extensions.Options
-@inject IOptions<Config> Config;
+@inject IOptions<ServerConfig> Config;
 
 <!DOCTYPE html>
 <html lang="en" class="theme-tomorrow">
@@ -26,7 +26,7 @@
         var info = {
             apiEndpoint: "/api",
             rawEndpoint: "",
-            hCaptchaSiteKey: "@(Config.Value.HCaptchaTesting ? HCaptchaProvider.DummySiteKey : Config.Value.HCaptchaSiteKey)"
+            hCaptchaSiteKey: "@(Config.Value.Captcha.HCaptchaTesting ? HCaptchaProvider.DummySiteKey : Config.Value.Captcha.HCaptchaSiteKey)"
         }
     </script>
 </head>

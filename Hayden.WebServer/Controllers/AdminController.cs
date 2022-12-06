@@ -76,7 +76,7 @@ namespace Hayden.WebServer.Controllers
 				CurrentStatus = "Reading files from database";
 
 				await using var context = provider.GetRequiredService<HaydenDbContext>();
-				var config = provider.GetRequiredService<IOptions<Config>>();
+				var config = provider.GetRequiredService<IOptions<ServerConfig>>();
 
 				var boards = await context.Boards.AsNoTracking().ToDictionaryAsync(x => x.Id);
 
@@ -149,7 +149,7 @@ namespace Hayden.WebServer.Controllers
 						//	System.IO.File.Move(oldFilename, newFilename);
 						//}
 
-						var imageFilename = Common.CalculateFilename(config.Value.FileLocation,
+						var imageFilename = Common.CalculateFilename(config.Value.Data.FileLocation,
 							boards[file.BoardId].ShortName, Common.MediaType.Image, file.Sha256Hash, file.Extension);
 
 						if (System.IO.File.Exists(imageFilename))
@@ -158,7 +158,7 @@ namespace Hayden.WebServer.Controllers
 							context.Update(file);
 						}
 
-						var thumbFilename = Common.CalculateFilename(config.Value.FileLocation,
+						var thumbFilename = Common.CalculateFilename(config.Value.Data.FileLocation,
 							boards[file.BoardId].ShortName, Common.MediaType.Thumbnail, file.Sha256Hash, "jpg");
 
 						if (System.IO.File.Exists(thumbFilename))
@@ -188,7 +188,7 @@ namespace Hayden.WebServer.Controllers
 				CurrentStatus = "Reading file mappings from database";
 
 				await using var context = provider.GetRequiredService<HaydenDbContext>();
-				var config = provider.GetRequiredService<IOptions<Config>>();
+				var config = provider.GetRequiredService<IOptions<ServerConfig>>();
 
 				var boards = await context.Boards.AsNoTracking().ToDictionaryAsync(x => x.Id);
 
@@ -263,17 +263,17 @@ namespace Hayden.WebServer.Controllers
 							if (oldFile == null)
 								throw new Exception("why");
 
-							var oldImageFilename = Common.CalculateFilename(config.Value.FileLocation,
+							var oldImageFilename = Common.CalculateFilename(config.Value.Data.FileLocation,
 								boards[oldFile.BoardId].ShortName,
 								Common.MediaType.Image, oldFile.Sha256Hash, oldFile.Extension);
-							var oldThumbFilename = Common.CalculateFilename(config.Value.FileLocation,
+							var oldThumbFilename = Common.CalculateFilename(config.Value.Data.FileLocation,
 								boards[oldFile.BoardId].ShortName,
 								Common.MediaType.Thumbnail, oldFile.Sha256Hash, "jpg");
 
-							var newImageFilename = Common.CalculateFilename(config.Value.FileLocation,
+							var newImageFilename = Common.CalculateFilename(config.Value.Data.FileLocation,
 								boards[fileMapping.BoardId].ShortName,
 								Common.MediaType.Image, oldFile.Sha256Hash, oldFile.Extension);
-							var newThumbFilename = Common.CalculateFilename(config.Value.FileLocation,
+							var newThumbFilename = Common.CalculateFilename(config.Value.Data.FileLocation,
 								boards[fileMapping.BoardId].ShortName,
 								Common.MediaType.Thumbnail, oldFile.Sha256Hash, "jpg");
 
@@ -284,7 +284,7 @@ namespace Hayden.WebServer.Controllers
 							{
 								if (!System.IO.File.Exists(oldThumbFilename))
 								{
-									var md5Filename = Common.CalculateFilename(config.Value.FileLocation,
+									var md5Filename = Common.CalculateFilename(config.Value.Data.FileLocation,
 										boards[fileMapping.BoardId].ShortName, Common.MediaType.Thumbnail, oldFile.Md5Hash, "jpg");
 
 									System.IO.File.Move(md5Filename, oldThumbFilename);
@@ -353,7 +353,7 @@ namespace Hayden.WebServer.Controllers
 				CurrentStatus = "Reading files from database";
 
 				await using var context = provider.GetRequiredService<HaydenDbContext>();
-				var config = provider.GetRequiredService<IOptions<Config>>();
+				var config = provider.GetRequiredService<IOptions<ServerConfig>>();
 
 				var boards = await context.Boards.AsNoTracking().ToDictionaryAsync(x => x.Id);
 
@@ -401,7 +401,7 @@ namespace Hayden.WebServer.Controllers
 						Progress = current / total;
 						CurrentStatus.SetBox(0, Interlocked.Increment(ref current));
 
-						var filename = Common.CalculateFilename(config.Value.FileLocation,
+						var filename = Common.CalculateFilename(config.Value.Data.FileLocation,
 							boards[file.BoardId].ShortName, Common.MediaType.Image, file.Sha256Hash, file.Extension);
 
 						(DBFile _, bool md5Changed) = await FileImporterTools.UpdateDbFile(filename, provider.GetRequiredService<IMediaInspector>(), file);
@@ -412,7 +412,7 @@ namespace Hayden.WebServer.Controllers
 
 							if (md5Changed)
 							{
-								var newFilename = Common.CalculateFilename(config.Value.FileLocation,
+								var newFilename = Common.CalculateFilename(config.Value.Data.FileLocation,
 									boards[file.BoardId].ShortName, Common.MediaType.Image, file.Sha256Hash,
 									file.Extension);
 

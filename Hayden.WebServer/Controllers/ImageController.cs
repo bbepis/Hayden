@@ -11,9 +11,9 @@ namespace Hayden.WebServer.Controllers
 	[Route("image")]
 	public class ImageController : Controller
 	{
-		protected IOptions<Config> Config { get; set; }
+		protected IOptions<ServerConfig> Config { get; set; }
 
-		public ImageController(IOptions<Config> config)
+		public ImageController(IOptions<ServerConfig> config)
 		{
 			Config = config;
 		}
@@ -25,7 +25,7 @@ namespace Hayden.WebServer.Controllers
 		[Route("{**path}")]
 		public IActionResult ImagePath(string path)
 		{
-			string fullPath = Path.Combine(Config.Value.FileLocation, path.Replace('/', Path.DirectorySeparatorChar));
+			string fullPath = Path.Combine(Config.Value.Data.FileLocation, path.Replace('/', Path.DirectorySeparatorChar));
 
 			if (!System.IO.File.Exists(fullPath))
 				return NotFound();
@@ -47,13 +47,13 @@ namespace Hayden.WebServer.Controllers
 
 			var board = await dbContext.Boards.FindAsync(file.BoardId);
 
-			if (Config.Value.ImagePrefix != null)
+			if (Config.Value.Data.ImagePrefix != null)
 			{
 				var urls = PostPartialViewModel.GenerateUrls(file, board.ShortName, Config.Value);
 				return Redirect(urls.imageUrl);
 			}
 
-			string fullPath = Common.CalculateFilename(Config.Value.FileLocation, board.ShortName,
+			string fullPath = Common.CalculateFilename(Config.Value.Data.FileLocation, board.ShortName,
 				Common.MediaType.Image, file.Sha256Hash, file.Extension);
 
 			if (!System.IO.File.Exists(fullPath))

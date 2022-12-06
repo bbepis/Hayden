@@ -1,7 +1,7 @@
 ﻿@using Hayden.WebServer
 @using Microsoft.Extensions.Options
 @model Hayden.WebServer.View.ThreadPartialViewModel
-@inject IOptions<Config> Config;
+@inject IOptions<ServerConfig> Config;
 
 <div class="thread">
 	@foreach (var post in Model.Posts)

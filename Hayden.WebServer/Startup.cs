@@ -7,6 +7,7 @@ using System;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Threading.Tasks;
+using Hayden.Config;
 using Hayden.Consumers.HaydenMysql.DB;
 using Hayden.WebServer.Controllers.Api;
 using Hayden.WebServer.DB.Elasticsearch;
@@ -32,7 +33,7 @@ namespace Hayden.WebServer
 		public IConfiguration Configuration { get; }
 		public IWebHostEnvironment Environment { get; }
 
-		private Config Config { get; set; }
+		private ServerConfig ServerConfig { get; set; }
 
 		// This method gets called by the runtime. Use this method to add services to the container.
 		public void ConfigureServices(IServiceCollection services)
@@ -43,18 +44,28 @@ namespace Hayden.WebServer
 
 			var section = Configuration.GetSection("config");
 
-			Config = section.Get<Config>();
-			services.Configure<Config>(section);
+			ServerConfig = section.Get<ServerConfig>();
+			services.Configure<ServerConfig>(section);
 
-			string connectionString = section["DBConnectionString"];
-
-			services.AddDbContext<HaydenDbContext>(x =>
-				x.UseMySql(connectionString, ServerVersion.AutoDetect(connectionString),
-					y =>
-					{
-						y.CommandTimeout(86400);
-						y.EnableIndexOptimizedBooleanColumns();
-					}));
+			if (ServerConfig.Data.DBType == DatabaseType.MySql)
+			{
+				services.AddDbContext<HaydenDbContext>(x =>
+					x.UseMySql(ServerConfig.Data.DBConnectionString, ServerVersion.AutoDetect(ServerConfig.Data.DBConnectionString),
+						y =>
+						{
+							y.CommandTimeout(86400);
+							y.EnableIndexOptimizedBooleanColumns();
+						}));
+			}
+			else if (ServerConfig.Data.DBType == DatabaseType.Sqlite)
+			{
+				services.AddDbContext<HaydenDbContext>(x =>
+					x.UseSqlite(ServerConfig.Data.DBConnectionString));
+			}
+			else
+			{
+				throw new Exception("Unknown database type");
+			}
 
 			if (Configuration["Elasticsearch:Url"] != null)
 			{
@@ -87,8 +98,8 @@ namespace Hayden.WebServer
 
 			services.AddSingleton<IMediaInspector, FfprobeMediaInspector>();
 			services.AddSingleton<ICaptchaProvider, HCaptchaProvider>(_ => new HCaptchaProvider(
-				Config.HCaptchaTesting ? HCaptchaProvider.DummySiteKey : Config.HCaptchaSiteKey,
-				Config.HCaptchaTesting ? HCaptchaProvider.DummySecret : Config.HCaptchaSecret));
+				ServerConfig.Captcha.HCaptchaTesting ? HCaptchaProvider.DummySiteKey : ServerConfig.Captcha.HCaptchaSiteKey,
+				ServerConfig.Captcha.HCaptchaTesting ? HCaptchaProvider.DummySecret : ServerConfig.Captcha.HCaptchaSecret));
 
 			services.AddMvc(x => { x.EnableEndpointRouting = false; });
 		}
