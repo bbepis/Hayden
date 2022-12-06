@@ -85,7 +85,7 @@
         {@const file = post.files[0]}
         <div class="file">
             <div class="fileText">
-                <a href={Utility.infoObject.rawEndpoint + '/' + file.imageUrl}
+                <a href={file.imageUrl} tinro-ignore
                     >{file.filename}.{file.extension}</a
                 >
                 ({Utility.ToHumanReadableSize(file.fileSize)}{post
@@ -97,14 +97,14 @@
                 <!-- <img src={post.thumbnailUrl} alt={post.post.mediaFilename}/> -->
                 {#if file.extension === "webm"}
                     <ExpandableVideo
-                        videoUrl={Utility.infoObject.rawEndpoint + '/' + file.imageUrl}
-                        thumbUrl={Utility.infoObject.rawEndpoint + '/' + file.thumbnailUrl}
+                        videoUrl={file.imageUrl}
+                        thumbUrl={file.thumbnailUrl}
                         altText={file.filename}
                     />
                 {:else}
                     <ExpandableImage
-                        fullImageUrl={Utility.infoObject.rawEndpoint + '/' + file.imageUrl}
-                        thumbUrl={Utility.infoObject.rawEndpoint + '/' + file.thumbnailUrl}
+                        fullImageUrl={file.imageUrl}
+                        thumbUrl={file.thumbnailUrl}
                         altText={file.filename}
                     />
                 {/if}
@@ -120,7 +120,7 @@
                             > <span class="dimensionLabel">{file.imageWidth}x{file.imageHeight}</span>
                             <a
                                 class="originalNameLink"
-                                href={Utility.infoObject.rawEndpoint + '/' + file.imageUrl}
+                                href={file.imageUrl}
                                 download="{file.filename}.{file.extension}">{file.filename}.{file.extension}</a
                             ><span class="hideMobile">)</span>
                         </div>
@@ -128,14 +128,14 @@
                         <div />
                         {#if file.extension === "webm"}
                             <ExpandableVideo
-                                videoUrl={Utility.infoObject.rawEndpoint + '/' + file.imageUrl}
-                                thumbUrl={Utility.infoObject.rawEndpoint + '/' + file.thumbnailUrl}
+                                videoUrl={file.imageUrl}
+                                thumbUrl={file.thumbnailUrl}
                                 altText={file.filename}
                             />
                         {:else}
                             <ExpandableImage
-                                fullImageUrl={Utility.infoObject.rawEndpoint + '/' + file.imageUrl}
-                                thumbUrl={Utility.infoObject.rawEndpoint + '/' + file.thumbnailUrl}
+                                fullImageUrl={file.imageUrl}
+                                thumbUrl={file.thumbnailUrl}
                                 altText={file.filename}
                             />
                         {/if}
