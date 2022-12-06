@@ -362,6 +362,9 @@ namespace Hayden.WebServer.Controllers.Api
 					return (0, false, true);
 				}
 
+				Directory.CreateDirectory(Path.GetDirectoryName(destinationFilename));
+				Directory.CreateDirectory(Path.GetDirectoryName(thumbnailFilename));
+
 				await System.IO.File.WriteAllBytesAsync(destinationFilename, fileData);
 				await System.IO.File.WriteAllBytesAsync(thumbnailFilename, thumbStream.ToArray());
 			}
