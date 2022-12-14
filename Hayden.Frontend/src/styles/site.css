@@ -1,20 +1,21 @@
 ﻿:root.theme-yotsuba {
   --text-color: #800000;
-  --text-font: 10px Tahoma, sans-serif;
+  --text-font: 10pt arial, helvetica, sans-serif;
   --page-background-color: #FFFFEE;
   --post-background-color: #f0e0d6;
   --post-border-color: #d9bfb7;
   --nav-text-color: #000000;
   --nav-dropdown-bgcolor: #f0e0d6;
-  --link-text-color: #0029dd;
-  --link-visited-text-color: #9881be;
-  --subject-color: #a321ca;
+  --link-text-color: #0000ee;
+  --link-visited-text-color: #0000ee;
+  --link-hover-color: #ff0000;
+  --subject-color: #cc1105;
   --quote-color: #789922;
 }
 
 :root.theme-tomorrow {
   --text-color: #c5c8c6;
-  --text-font: 14px arial, helvetica, sans-serif;
+  --text-font: 10pt arial, helvetica, sans-serif;
   --page-background-color: #111111;
   --post-background-color: #282a2e;
   --post-border-color: #282a2e;
@@ -22,6 +23,7 @@
   --nav-dropdown-bgcolor: #282a2e;
   --link-text-color: #81a2be;
   --link-visited-text-color: #9881be;
+  --link-hover-color: #5f89ac;
   --subject-color: #b294bb;
   --quote-color: #b5bd68;
 }
@@ -54,7 +56,6 @@ a {
 /* Sticky footer styles
 -------------------------------------------------- */
 html {
-  font: var(--text-font);
   color: var(--text-color);
 }
 
@@ -94,6 +95,7 @@ body {
   margin-bottom: 60px;
   background-color: var(--page-background-color);
   color: var(--text-color);
+  font: var(--text-font);
 }
 
 .container-margin {
@@ -115,8 +117,6 @@ body {
   margin: 4px 0;
   overflow: hidden;
   color: var(--text-color);
-  /* font-family: arial,helvetica,sans-serif; */
-  /*font-size: 10pt;*/
   line-height: normal;
 }
 
@@ -219,7 +219,7 @@ a.quotelink {
 }
 
 a:hover {
-  color: #adc9e0 !important;
+  color: var(--link-hover-color) !important;
 }
 
 span.deadlink {
