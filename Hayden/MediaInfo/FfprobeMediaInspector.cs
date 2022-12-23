@@ -96,11 +96,14 @@ public class FfprobeMediaInspector : IMediaInspector
 	    }
 	}
 
-    public async Task<string> DetermineMediaTypeAsync(Stream inputStream)
+    public async Task<string> DetermineMediaTypeAsync(Stream inputStream, string extension)
     {
         try
         {
-            var result = await Common.RunJsonCommandAsync("ffprobe", $"-v quiet -hide_banner -show_streams -print_format json -", inputStream);
+	        bool forceImageCheck = extension == "gif";
+
+            var result = await Common.RunJsonCommandAsync("ffprobe",
+	            $"{(forceImageCheck ? "-f image2pipe" : "")} -v quiet -hide_banner -show_streams -print_format json -", inputStream);
 
             Console.WriteLine(result?.ToString() ?? "<null>");
 

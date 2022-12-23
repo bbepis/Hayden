@@ -7,5 +7,5 @@ namespace Hayden.MediaInfo;
 public interface IMediaInspector
 {
     Task<DBFile> DetermineMediaInfoAsync(string filename, DBFile file = null);
-    Task<string> DetermineMediaTypeAsync(Stream inputStream);
+    Task<string> DetermineMediaTypeAsync(Stream inputStream, string extension);
 }

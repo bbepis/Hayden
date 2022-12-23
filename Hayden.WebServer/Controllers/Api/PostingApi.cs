@@ -343,7 +343,7 @@ namespace Hayden.WebServer.Controllers.Api
 
 				try
 				{
-					var mediaType = await mediaInspector.DetermineMediaTypeAsync(dataStream);
+					var mediaType = await mediaInspector.DetermineMediaTypeAsync(dataStream, extension);
 
 					if (mediaType != "png" && mediaType != "gif" && mediaType != "mjpeg")
 						return (0, false, true);
