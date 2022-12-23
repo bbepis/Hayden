@@ -10,7 +10,7 @@ Developer documentation is in `ARCHITECTURE.md`.
 
 [**README for running the scraper**](doc/scraper.md)
 
-[**README for running the webserver / imageboard**](doc/scraper.md)
+[**README for running the webserver / imageboard**](doc/webserver.md)
 
 &nbsp;
 
