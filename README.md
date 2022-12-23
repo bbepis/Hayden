@@ -1,3 +1,5 @@
+![logo](hayden-banner.png)
+
 # Hayden
 
 Hayden is a 4chan / altchan archiver written in .NET Core for ultra-low resource usage and high performance.
