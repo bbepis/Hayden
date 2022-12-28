@@ -30,7 +30,7 @@ namespace Hayden.Tests.Consumers
 					return Task.FromResult(dbFile);
 				});
 
-			mockMediaInspector.Setup(x => x.DetermineMediaTypeAsync(It.IsAny<Stream>()))
+			mockMediaInspector.Setup(x => x.DetermineMediaTypeAsync(It.IsAny<Stream>(), It.IsAny<string>()))
 				.Returns<string>(null);
 
             var consumer = new TestHaydenConsumer(new ConsumerConfig
