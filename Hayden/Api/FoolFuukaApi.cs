@@ -7,6 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Web;
 using Hayden.Api;
+using Hayden.Config;
 using Hayden.Consumers.HaydenMysql.DB;
 using Hayden.Contract;
 using Hayden.Models;
@@ -23,11 +24,11 @@ namespace Hayden
 	{
 		public string ImageboardWebsite { get; }
 
-		public FoolFuukaApi(string imageboardWebsite)
+		public FoolFuukaApi(SourceConfig sourceConfig)
 		{
-			ImageboardWebsite = imageboardWebsite;
+			ImageboardWebsite = sourceConfig.ImageboardWebsite;
 
-			if (!imageboardWebsite.EndsWith("/"))
+			if (!ImageboardWebsite.EndsWith("/"))
 				ImageboardWebsite += "/";
 		}
 
