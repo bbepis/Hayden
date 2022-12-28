@@ -31,6 +31,20 @@ namespace Hayden.WebServer
 
 	public class ServerSettingsConfig
 	{
+		public string SiteName { get; set; }
 		public double? MaxFileUploadSizeMB { get; set; }
+
+		public string[] QuoteList { get; set; }
+		public string BannerFilename { get; set; }
+		public NewsItem[] NewsItems { get; set; }
+
+		public string ShiftJisArt { get; set; }
+	}
+
+	public class NewsItem
+	{
+		public string Title { get; set; }
+		public string DateString { get; set; }
+		public string Content { get; set; }
 	}
 }

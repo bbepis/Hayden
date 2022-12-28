@@ -2,12 +2,14 @@
   --text-color: #800000;
   --text-font: 10pt arial, helvetica, sans-serif;
   --page-background-color: #FFFFEE;
+  --box-header-background-color: #ffccaa;
+  --box-background-color: #ffffff;
   --post-background-color: #f0e0d6;
   --post-border-color: #d9bfb7;
   --nav-text-color: #000000;
   --nav-dropdown-bgcolor: #f0e0d6;
-  --link-text-color: #0000ee;
-  --link-visited-text-color: #0000ee;
+  --link-text-color: #0066cc;
+  --link-visited-text-color: #0066cc;
   --link-hover-color: #ff0000;
   --subject-color: #cc1105;
   --quote-color: #789922;
@@ -17,6 +19,8 @@
   --text-color: #c5c8c6;
   --text-font: 10pt arial, helvetica, sans-serif;
   --page-background-color: #111111;
+  --box-header-background-color: #38393b;
+  --box-background-color: #222324;
   --post-background-color: #282a2e;
   --post-border-color: #282a2e;
   --nav-text-color: #81a2be;
@@ -28,11 +32,32 @@
   --quote-color: #b5bd68;
 }
 
+:root.theme-niniba {
+  --text-color: #134E18;
+  --text-font: 10pt arial, helvetica, sans-serif;
+  --page-background-color: #FFFFEE;
+  --box-header-background-color: #A6DC91;
+  --box-background-color: #ffffff;
+  --post-background-color: #d9f8cc;
+  --post-border-color: #bddfaf;
+  --nav-text-color: #000000;
+  --nav-dropdown-bgcolor: #f0e0d6;
+  --link-text-color: #0066cc;
+  --link-visited-text-color: #0066cc;
+  --link-hover-color: #ff0000;
+  --subject-color: #9a3ab8;
+  --quote-color: #789922;
+}
+
 
 a.navbar-brand {
   white-space: normal;
   text-align: center;
   word-break: break-all;
+}
+
+hr {
+  border-top: 1px solid var(--post-border-color);
 }
 
 /* Provide sufficient contrast against white background */

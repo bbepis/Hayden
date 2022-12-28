@@ -39,12 +39,16 @@
 <style>
     .menu {
         width: 150px;
-        background-color: #282a2e;
+        background-color: var(--post-background-color);
     }
 
     .menu-item {
-        border: 1px solid #555;
+        border: 1px solid var(--post-border-color);
         cursor: pointer;
         user-select: none;
+    }
+
+    .menu-item:hover {
+        background-color: var(--box-background-color);
     }
 </style>

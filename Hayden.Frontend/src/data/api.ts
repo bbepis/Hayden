@@ -1,4 +1,4 @@
-import type { BoardPageModel } from "./data";
+import type { BoardModel, BoardPageModel } from "./data";
 import { Utility } from "./utility";
 
 export class Api {
@@ -43,5 +43,10 @@ export class Api {
         const result = await Utility.Post("/user/info");
 
         return await result.json();
+    }
+
+    static async GetBoardInfoAsync(): Promise<BoardModel[]>
+    {
+        return <Promise<BoardModel[]>>Utility.FetchData("/board/all/info");
     }
 }

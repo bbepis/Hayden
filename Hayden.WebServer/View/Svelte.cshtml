@@ -1,17 +1,22 @@
 ﻿@using Hayden.WebServer
 @using Hayden.WebServer.Services.Captcha
 @using Microsoft.Extensions.Options
+@using Newtonsoft.Json
+
 @inject IOptions<ServerConfig> Config;
 
+@addTagHelper *, Microsoft.AspNetCore.Mvc.TagHelpers
+
 <!DOCTYPE html>
+<cache expires-after="TimeSpan.FromMinutes(1)">
 <html lang="en" class="theme-tomorrow">
 <head>
     <meta charset='utf-8'>
     <meta name='viewport' content='width=device-width,initial-scale=1'>
 
-    <title>Hayden.Frontend</title>
+    <title>@(Config.Value.Settings.SiteName ?? "Hayden")</title>
 
-    <link rel='icon' type='image/png' href='/favicon.ico'>
+    <link rel='icon' type='image/png' href='/favicon.png'>
 
     <link rel="stylesheet" href="/lib/bootstrap/dist/css/bootstrap.min.css" />
     @*<link rel="stylesheet" href="/css/site.css" />*@
@@ -26,8 +31,13 @@
         var info = {
             apiEndpoint: "/api",
             rawEndpoint: "",
-            hCaptchaSiteKey: "@(Config.Value.Captcha.HCaptchaTesting ? HCaptchaProvider.DummySiteKey : Config.Value.Captcha.HCaptchaSiteKey)",
-            maxGlobalUploadSize: @(Config.Value.Settings.MaxFileUploadSizeMB == null ? "null" : (Config.Value.Settings.MaxFileUploadSizeMB * 1024 * 1024))
+            hCaptchaSiteKey: @Html.Raw(JsonConvert.SerializeObject(Config.Value.Captcha.HCaptchaTesting ? HCaptchaProvider.DummySiteKey : Config.Value.Captcha.HCaptchaSiteKey)),
+            maxGlobalUploadSize: @(Config.Value.Settings.MaxFileUploadSizeMB == null ? "null" : (Config.Value.Settings.MaxFileUploadSizeMB * 1024 * 1024)),
+            siteName: "@(Config.Value.Settings.SiteName ?? "Hayden")",
+            quoteList: @Html.Raw(JsonConvert.SerializeObject(Config.Value.Settings.QuoteList)),
+            bannerFilename: @Html.Raw(JsonConvert.SerializeObject(Config.Value.Settings.BannerFilename)),
+            newsItems: @Html.Raw(JsonConvert.SerializeObject(Config.Value.Settings.NewsItems)),
+            shiftJisArt: @Html.Raw(JsonConvert.SerializeObject(Config.Value.Settings.ShiftJisArt)),
         }
     </script>
 </head>
@@ -36,3 +46,4 @@
 </body>
 
 </html>
+</cache>

@@ -14,13 +14,16 @@
 
         const result = await Api.UserRegisterAsync(formUsername, formPassword, formRegisterCode);
 
-        $moderatorUserStore = result;
-
         if (result) {
             error = null;
+
+            const userInfoResult = await Api.GetUserInfoAsync();
+            $moderatorUserStore = userInfoResult.role;
+
             document.location.href = "/";
         }
         else {
+            $moderatorUserStore = null;
             error = "Invalid login";
         }
     }

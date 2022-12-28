@@ -15,6 +15,8 @@
     let formFiles: FileList = null;
     let isPosting = false;
 
+    let showForm = !isThreadUploader;
+
     let postErrorMessage: string = null;
 
     async function UploadThread(): Promise<{ message?: string }> {
@@ -146,7 +148,7 @@
         };
 
         (<any>window).hcaptcha.render("post-captcha", {
-            theme: "dark",
+            // theme: "dark",
             callback: (response) => {
                 formCaptcha = response;
             },
@@ -157,42 +159,52 @@
     });
 </script>
 
-<div id="reply-box" class="rounded border mb-5 container">
+<div class:hidden={showForm}>
+    <button type="button" class="mx-auto d-block" on:click={() => showForm = true}>Create a thread</button>
+</div>
+
+<div class="reply-box border mb-5 container" class:hidden={!showForm}>
     {#if postErrorMessage !== null}
         <div class="row input-row">
-            <div class="col-12" style="color:red;">{postErrorMessage}</div>
+            <div class="col-12 mt-1" style="color:red;">{postErrorMessage}</div>
         </div>
     {/if}
     {#if isThreadUploader}
-        <div style="text-align: center">Create a new thread</div>
-    {/if}
-    <div class="row input-row">
-        <div class="col-3">Name</div>
-        <div class="col-9">
-            <input class="w-100" type="text" bind:value={formName} />
-        </div>
-    </div>
-    {#if isThreadUploader}
+        <div class="my-1" style="text-align: center">Create a new thread</div>
         <div class="row input-row">
-            <div class="col-3">Subject</div>
-            <div class="col-9">
+            <div class="col-2">Subject</div>
+            <div class="col-8">
                 <input class="w-100" type="text" bind:value={formSubject} />
             </div>
         </div>
+    {:else}
+        <div class="my-1"></div>
     {/if}
     <div class="row input-row">
-        <div class="col-3">Comment</div>
-        <div class="col-9">
+        <div class="col-2">Name</div>
+        <div class="col-8">
+            <input class="w-100" type="text" bind:value={formName} />
+        </div>
+        <div class="col-2 pl-0">
+            <button
+            class="w-100"
+            on:click={Post}
+            >Post</button>
+        </div>
+    </div>
+    <div class="row input-row">
+        <div class="col-2">Comment</div>
+        <div class="col-10">
             <textarea class="w-100" bind:value={formText} />
         </div>
     </div>
     <div class="row input-row">
-        <div class="col-3">File</div>
-        <div class="col-9"><input type="file" bind:files={formFiles} /></div>
+        <div class="col-2">File</div>
+        <div class="col-10"><input type="file" bind:files={formFiles} /></div>
     </div>
     <div class="row input-row">
-        <div class="col-3">Captcha</div>
-        <div class="col-9">
+        <div class="col-2">Captcha</div>
+        <div class="col-10">
             <div
                 id="post-captcha"
                 class="h-captcha"
@@ -200,18 +212,11 @@
             />
         </div>
     </div>
-    <div class="row input-row">
-        <button
-            on:click={Post}
-            class="mx-3 form-control btn btn-outline-secondary"
-            >{isThreadUploader ? "Create Thread" : "Reply"}</button
-        >
-    </div>
 </div>
 
 <style>
-    #reply-box {
-        max-width: 700px;
+    .reply-box {
+        max-width: 468px;
         /* background-color: #444; */
         background-color: var(--post-background-color);
         /* color: white; */
@@ -220,6 +225,15 @@
     }
 
     .input-row {
-        padding: 5px 0px;
+        padding: 1px 0px;
+    }
+
+    button {
+        border-radius: revert;
+        font-family: var(--text-font);
+    }
+
+    .hidden {
+        display: none;
     }
 </style>

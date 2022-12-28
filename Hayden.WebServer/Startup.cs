@@ -4,6 +4,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using System;
+using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Threading.Tasks;
@@ -19,6 +20,7 @@ using Hayden.MediaInfo;
 using Hayden.WebServer.Services.Captcha;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.Extensions.FileProviders;
 
 namespace Hayden.WebServer
 {
@@ -163,6 +165,14 @@ namespace Hayden.WebServer
 			{
 				app.UseHttpsRedirection();
 			}
+
+			string overridePath = Path.GetFullPath("wwwroot-override");
+
+			if (Directory.Exists(overridePath))
+				app.UseStaticFiles(new StaticFileOptions
+				{
+					FileProvider = new PhysicalFileProvider(overridePath)
+				});
 
 			app.UseStaticFiles();
 

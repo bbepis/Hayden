@@ -54,7 +54,7 @@
         <PostUploader isThreadUploader={true} board={board} />
     {/if}
 
-    {#each data.threads as thread ({a: thread.board.id, b: thread.threadId}) }
+    {#each data.threads as thread, index ([thread.board.id, thread.threadId]) }
     
         <br/>
         <hr/>

@@ -43,6 +43,17 @@
     {:else}
         <Thread {thread} jumpToHash={true} />
 
+        <div class="my-2">
+            <button class="reset-btn" on:click={Refresh}>Refresh</button>
+
+            {#if isRefreshing}
+                <div class="ml-2 spinner-border spinner-border-sm" role="status">
+                    <span class="sr-only">Loading...</span>
+                </div>
+                <span>Refreshing...</span>
+            {/if}
+        </div>
+
         {#if thread.board.isReadOnly === false && thread.archived === false}
             <PostUploader
                 isThreadUploader={false}
@@ -50,11 +61,11 @@
                 threadId={threadId}
                 on:success={() => Refresh()} />
         {/if}
-
-        {#if isRefreshing}
-            <p>Refreshing...</p>
-        {/if}
-
-        <button class="btn btn-outline-secondary" on:click={Refresh}>Refresh</button>
     {/if}
 </div>
+
+<style>
+    .reset-btn {
+        border-radius: revert;
+    }
+</style>

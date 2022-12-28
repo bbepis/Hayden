@@ -3,6 +3,17 @@ export class InfoObject {
     rawEndpoint: string;
     hCaptchaSiteKey: string | null;
     maxGlobalUploadSize: number | null;
+    siteName: string;
+    quoteList: string[] | null;
+    bannerFilename: string | null;
+    newsItems: NewsItem[] | null;
+    shiftJisArt: string | null;
+}
+
+export interface NewsItem {
+    Title: string;
+    DateString: string;
+    Content: string;
 }
 
 export class BoardModel {
