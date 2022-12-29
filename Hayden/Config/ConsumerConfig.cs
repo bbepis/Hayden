@@ -40,7 +40,7 @@ namespace Hayden.Config
 		/// <summary>
 		/// (Asagi-specific) How many concurrent database connections should be opened. Ideally one per board.
 		/// </summary>
-		public int SqlConnectionPoolSize { get; set; }
+		public int? SqlConnectionPoolSize { get; set; }
 
 		/// <summary>
 		/// If set to true, the scraper will not use the MD5 hash (if available) to skip downloading media that has already been downloaded. This will safeguard against MD5 conflicts, however will obviously use a lot more bandwidth.

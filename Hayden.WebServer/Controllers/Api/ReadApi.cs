@@ -2,6 +2,7 @@
 using System.Linq;
 using System.Threading.Tasks;
 using Hayden.Consumers.HaydenMysql.DB;
+using Hayden.WebServer.Data;
 using Hayden.WebServer.DB.Elasticsearch;
 using Hayden.WebServer.View;
 using Microsoft.AspNetCore.Http;
@@ -145,90 +146,29 @@ namespace Hayden.WebServer.Controllers.Api
 		}
 
 		[HttpGet("{board}/thread/{threadid}")]
-		public async Task<IActionResult> ThreadIndex(string board, ulong threadid, [FromServices] HaydenDbContext dbContext)
+		public async Task<IActionResult> ThreadIndex(string board, ulong threadid, [FromServices] IDataProvider dataProvider)
 		{
-			var (boardObj, thread, posts, mappings) = await dbContext.GetThreadInfo(threadid, board);
+			var threadData = await dataProvider.GetThread(board, threadid);
 
-			if (thread == null)
+			if (threadData == null)
 				return NotFound();
 
-			return Json(new JsonThreadModel(boardObj, thread, posts.Select(x =>
-				new JsonPostModel(x,
-					mappings.Where(y => y.Item1.PostId == x.PostId)
-						.Select(y =>
-						{
-							var (imageUrl, thumbUrl) = PostPartialViewModel.GenerateUrls(y.Item2, board, Config.Value);
-
-							return new JsonFileModel(y.Item2, y.Item1, imageUrl, thumbUrl);
-						}).ToArray()))
-				.ToArray()));
+			return Json(threadData);
 		}
 
 
 		[HttpGet("board/all/info")]
-		public async Task<IActionResult> AllBoardInfo([FromServices] HaydenDbContext dbContext)
+		public async Task<IActionResult> AllBoardInfo([FromServices] IDataProvider dataProvider)
 		{
-			var boardInfos = await dbContext.Boards.AsNoTracking().ToListAsync();
+			var boardInfos = await dataProvider.GetBoardInfo();
 
 			return Json(boardInfos);
 		}
 
 		[HttpGet("board/{board}/index")]
-		public async Task<IActionResult> BoardIndex([FromServices] HaydenDbContext dbContext, string board, [FromQuery] int? page)
+		public async Task<IActionResult> BoardIndex([FromServices] IDataProvider dataProvider, string board, [FromQuery] int? page)
 		{
-			var boardInfo = await dbContext.Boards.AsNoTracking().Where(x => x.ShortName == board).FirstOrDefaultAsync();
-
-			if (boardInfo == null)
-				return NotFound();
-
-			var query = dbContext.Threads.AsNoTracking()
-				.Where(x => x.BoardId == boardInfo.Id);
-
-			var totalCount = await query.CountAsync();
-
-			var topThreads = await query
-				.OrderByDescending(x => x.LastModified)
-				.Skip(page.HasValue ? ((page.Value - 1) * 10) : 0)
-				.Take(10)
-				.ToArrayAsync();
-
-			// This is incredibly inefficient and slow, but it's prototype code so who cares
-
-			//var array = topThreads.GroupBy(x => x.t.ThreadId)
-			//	.Select(x => x.OrderBy(y => y.p.DateTime).Take(1)
-			//		.Concat(x.Where(y => y.p.PostId != y.p.ThreadId).OrderByDescending(y => y.p.DateTime).Take(3).Reverse()).ToArray())
-			//	.Select(x => new ThreadModel(x.First().t, x.Select(y => new PostPartialViewModel(y.p, Config.Value)).ToArray()))
-			//	.OrderByDescending(x => x.thread.LastModified)
-			//	.ToArray();
-
-			JsonThreadModel[] threadModels = new JsonThreadModel[topThreads.Length];
-
-			for (var i = 0; i < topThreads.Length; i++)
-			{
-				var thread = topThreads[i];
-
-				var (boardObj, threadObj, posts, mappings) = await dbContext.GetThreadInfo(thread.ThreadId, thread.BoardId);
-
-				var limitedPosts = posts.Take(1).Concat(posts.TakeLast(3)).Distinct();
-
-				threadModels[i] = new JsonThreadModel(boardObj, threadObj, limitedPosts.Select(x =>
-						new JsonPostModel(x,
-							mappings.Where(y => y.Item1.PostId == x.PostId)
-								.Select(y =>
-								{
-									var (imageUrl, thumbUrl) = PostPartialViewModel.GenerateUrls(y.Item2, boardObj.ShortName, Config.Value);
-
-									return new JsonFileModel(y.Item2, y.Item1, imageUrl, thumbUrl);
-								}).ToArray()))
-					.ToArray());
-			}
-
-			return Json(new JsonBoardPageModel
-			{
-				totalThreadCount = totalCount,
-				threads = threadModels,
-				boardInfo = boardInfo
-			});
+			return Json(await dataProvider.GetBoardPage(board, page));
 		}
 		
 		public class JsonBoardPageModel
@@ -264,6 +204,8 @@ namespace Hayden.WebServer.Controllers.Api
 
 				this.posts = posts;
 			}
+
+			public JsonThreadModel() { }
 		}
 
 		public class JsonPostModel
@@ -292,6 +234,8 @@ namespace Hayden.WebServer.Controllers.Api
 
 				this.files = files;
 			}
+
+			public JsonPostModel() { }
 		}
 
 		public class JsonFileModel
@@ -338,6 +282,8 @@ namespace Hayden.WebServer.Controllers.Api
 				this.imageUrl = imageUrl;
 				this.thumbnailUrl = thumbnailUrl;
 			}
+
+			public JsonFileModel() { }
 		}
 	}
 }

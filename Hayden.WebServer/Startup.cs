@@ -8,7 +8,6 @@ using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Threading.Tasks;
-using Hayden.Config;
 using Hayden.Consumers.HaydenMysql.DB;
 using Hayden.WebServer.Controllers.Api;
 using Hayden.WebServer.DB.Elasticsearch;
@@ -17,6 +16,7 @@ using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 using Nest;
 using Hayden.MediaInfo;
+using Hayden.WebServer.Data;
 using Hayden.WebServer.Services.Captcha;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication;
@@ -49,26 +49,14 @@ namespace Hayden.WebServer
 			ServerConfig = section.Get<ServerConfig>();
 			services.Configure<ServerConfig>(section);
 
-			if (ServerConfig.Data.DBType == DatabaseType.MySql)
+			switch (ServerConfig.Data.ProviderType)
 			{
-				services.AddDbContext<HaydenDbContext>(x =>
-					x.UseMySql(ServerConfig.Data.DBConnectionString, ServerVersion.AutoDetect(ServerConfig.Data.DBConnectionString),
-						y =>
-						{
-							y.CommandTimeout(86400);
-							y.EnableIndexOptimizedBooleanColumns();
-						}));
+				case "Hayden": services.AddHaydenDataProvider(ServerConfig); break;
+				case "Asagi": services.AddAsagiDataProvider(ServerConfig); break;
+				case null: throw new Exception("Data provider type was null");
+				default: throw new Exception($"Unknown data provider type: {ServerConfig.Data.ProviderType}");
 			}
-			else if (ServerConfig.Data.DBType == DatabaseType.Sqlite)
-			{
-				services.AddDbContext<HaydenDbContext>(x =>
-					x.UseSqlite(ServerConfig.Data.DBConnectionString));
-			}
-			else
-			{
-				throw new Exception("Unknown database type");
-			}
-
+			
 			if (Configuration["Elasticsearch:Url"] != null)
 			{
 				services.AddSingleton<ElasticClient>(x =>
@@ -110,31 +98,8 @@ namespace Hayden.WebServer
 		{
 			using var scope = services.CreateScope();
 
-			await using var dbContext = scope.ServiceProvider.GetRequiredService<HaydenDbContext>();
-
-			try
-			{
-				await dbContext.Database.OpenConnectionAsync();
-			}
-			catch (Exception ex)
-			{
-				Console.WriteLine("Database cannot be connected to, or is not ready");
-				return false;
-			}
-
-			await dbContext.UpgradeOrCreateAsync();
-
-			if (dbContext.Moderators.All(x => x.Role != ModeratorRole.Admin))
-			{
-				var code = Convert.ToHexString(RandomNumberGenerator.GetBytes(8));
-
-				ApiController.RegisterCodes.Add(code, ModeratorRole.Admin);
-
-				Console.WriteLine("No admin account detected. Use this code to register an admin account:");
-				Console.WriteLine(code);
-			}
-
-			return true;
+			var dataProvider = scope.ServiceProvider.GetRequiredService<IDataProvider>();
+			return await dataProvider.PerformInitialization(scope.ServiceProvider);
 		}
 
 		// This method gets called by the runtime. Use this method to configure the HTTP request pipeline.

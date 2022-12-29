@@ -28,7 +28,7 @@ namespace Hayden.Consumers
 		public AsagiThreadConsumer(ConsumerConfig consumerConfig, SourceConfig sourceConfig)
 		{
 			ConsumerConfig = consumerConfig;
-			ConnectionPool = new MySqlConnectionPool(consumerConfig.ConnectionString, consumerConfig.SqlConnectionPoolSize);
+			ConnectionPool = new MySqlConnectionPool(consumerConfig.ConnectionString, consumerConfig.SqlConnectionPoolSize ?? 4);
 			Boards = sourceConfig.Boards.Keys;
 		}
 

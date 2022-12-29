@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Security.Claims;
 using System.Security.Cryptography;
@@ -92,8 +93,16 @@ namespace Hayden.WebServer.Controllers.Api
 		}
 
 		[HttpPost("user/info")]
-		public async Task<IActionResult> GetUserInfoAsync([FromServices] HaydenDbContext dbContext)
+		public async Task<IActionResult> GetUserInfoAsync([FromServices] IServiceProvider services)
 		{
+			var dbContext = services.GetService<HaydenDbContext>();
+			if (dbContext == null) // we aren't using a hayden provider
+				return Json(new
+				{
+					id = (int?)null,
+					role = (int?)null
+				});
+
 			var authenticateResult = await AuthenticateAsync(HttpContext);
 
 			var moderator = authenticateResult.Principal != null

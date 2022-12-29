@@ -19,6 +19,7 @@ namespace Hayden.WebServer
 		public string FileLocation { get; set; }
 
 		public DatabaseType? DBType { get; set; }
+		public string ProviderType { get; set; }
 		public string DBConnectionString { get; set; }
 	}
 
