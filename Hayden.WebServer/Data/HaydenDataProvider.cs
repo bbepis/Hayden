@@ -6,10 +6,13 @@ using System.Threading.Tasks;
 using Hayden.Config;
 using Hayden.Consumers.HaydenMysql.DB;
 using Hayden.WebServer.Controllers.Api;
+using Hayden.WebServer.DB.Elasticsearch;
+using Hayden.WebServer.Services;
 using Hayden.WebServer.View;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using Nest;
 using static Hayden.WebServer.Controllers.Api.ApiController;
 
 namespace Hayden.WebServer.Data
@@ -18,11 +21,13 @@ namespace Hayden.WebServer.Data
 	{
 		private HaydenDbContext dbContext { get; }
 		private IOptions<ServerConfig> config { get; }
+		private ElasticClient esClient { get; }
 
-		public HaydenDataProvider(HaydenDbContext context, IOptions<ServerConfig> config)
+		public HaydenDataProvider(HaydenDbContext context, IOptions<ServerConfig> config, ElasticClient elasticClient)
 		{
 			dbContext = context;
 			this.config = config;
+			esClient = elasticClient;
 		}
 		public bool SupportsWriting => true;
 
@@ -78,6 +83,16 @@ namespace Hayden.WebServer.Data
 				.ToArray());
 		}
 
+		public async Task<JsonThreadModel> GetThread(string board, ulong threadid)
+		{
+			var (boardObj, thread, posts, mappings) = await dbContext.GetThreadInfo(threadid, board);
+
+			if (thread == null)
+				return null;
+
+			return CreateThreadModel(boardObj, thread, posts, mappings);
+		}
+
 		public async Task<JsonBoardPageModel> GetBoardPage(string board, int? page)
 		{
 			var boardInfo = await dbContext.Boards.AsNoTracking().Where(x => x.ShortName == board).FirstOrDefaultAsync();
@@ -125,6 +140,131 @@ namespace Hayden.WebServer.Data
 				boardInfo = boardInfo
 			};
 		}
+
+		public async Task<JsonBoardPageModel> PerformSearch(string searchQuery, int? page)
+		{
+			var searchTerm = searchQuery.ToLowerInvariant().Replace("\\", "\\\\").Replace("*", "\\*").Replace("?", "\\?");
+
+			Func<QueryContainerDescriptor<PostIndex>, QueryContainer> searchDescriptor;
+
+			if (!searchTerm.Contains(" "))
+			{
+				//searchDescriptor = x => /* x.Bool(b => b.Must(bc => bc.Term(y => y.IsOp, true))) && */
+				//	x.Bool(b => b.Must(bc => bc.Bool(bcd => bcd.Should(
+				//	//x.Wildcard(y => y.PostHtmlText, searchTerm),
+				//	//x.Wildcard(y => y.Subject, searchTerm),
+				//	x.Wildcard(y => y.PostRawText, searchTerm)
+				//	))));
+
+				searchDescriptor = x => 
+					x.Match(y => y.Field(o => o.PostRawText).Query(searchTerm));
+			}
+			else
+			{
+				// .Query(x => x.Match(y => y.Field(z => z.FullName).Query(searchTerm))));
+				//searchDescriptor = x => x.MatchPhrase(y => y.Field(z => z).Query(searchTerm));
+				//searchDescriptor = x => x.QueryString(y => y.Fields(z => z.Field(a => a.FullName)).Query(searchTerm));
+
+				//searchDescriptor = x => x.Term(y => y.IsOp, true) && (
+				//	x.MatchPhrase(y => y.Field(z => z.PostRawText).Query(searchTerm))
+				//	//||x.MatchPhrase(y => y.Field(z => z.PostHtmlText).Query(searchTerm))
+				//	//|| x.MatchPhrase(y => y.Field(z => z.Subject).Query(searchTerm))
+				//	);
+
+				searchDescriptor = x =>
+					x.MatchPhrase(y => y.Field(o => o.PostRawText).Query(searchTerm));
+			}
+
+			var searchResult = await esClient.SearchAsync<PostIndex>(x => x
+				.Index(config.Value.Elasticsearch.IndexName)
+				.Size(20)
+				//.Fields(f => f.Fields("threadId", "boardId", "postId")) // Fields(x => x.BoardId, x => x.ThreadId, x => x.PostId)
+				.DocValueFields(f => f.Fields(p => p.BoardId, p => p.ThreadId, p => p.PostId))
+				//.Fields(f => f.Field("*"))
+				.Sort(y => y.Descending(z => z.PostDateUtc))
+				.Query(searchDescriptor));
+
+			if (!searchResult.IsValid)
+				return null;
+
+			var threadIdArray = searchResult.Hits.Select(x => 
+					(BoardId: x.Fields.ValueOf<PostIndex, ushort>(y => y.BoardId),
+					ThreadId: x.Fields.ValueOf<PostIndex, ulong>(y => y.ThreadId),
+					PostId: x.Fields.ValueOf<PostIndex, ulong>(y => y.PostId)
+						))
+					.ToArray();
+
+			if (threadIdArray.Length == 0)
+				return new JsonBoardPageModel
+				{
+					totalThreadCount = searchResult.Hits.Count,
+					threads = Array.Empty<JsonThreadModel>(),
+					boardInfo = null
+				};
+
+
+
+			//var items = dbContext.Posts
+			//	.Join(threadIdArray.Select(x => new { x.BoardId, x.PostId }),
+			//		x => new { x.BoardId, x.PostId }, x => x, (x, _) => x)
+			//	.Join(dbContext.Boards, post => post.BoardId, board => board.Id, (post, board) => new { post, board })
+			//	;
+
+			var firstItem = threadIdArray.First();
+
+			var unionizedPosts =
+				dbContext.Posts.Where(x => x.BoardId == firstItem.BoardId && x.PostId == firstItem.PostId);
+
+			unionizedPosts = threadIdArray.Skip(1)
+				.Aggregate(unionizedPosts, (current, remainingItem) =>
+					current.Union(dbContext.Posts.Where(x => x.BoardId == remainingItem.BoardId && x.PostId == remainingItem.PostId)));
+			
+			var items = from p in unionizedPosts
+				//join t in threadIdArray.Select(x => new { x.BoardId, x.PostId }) on new { p.BoardId, p.PostId } equals t
+				join b in dbContext.Boards on p.BoardId equals b.Id
+				from fm in dbContext.FileMappings.Where(x => x.BoardId == p.BoardId && x.PostId == p.PostId).DefaultIfEmpty()
+				from f in dbContext.Files.Where(x => x.BoardId == fm.BoardId && x.Id == fm.FileId).DefaultIfEmpty()
+				select new { p, b, fm, f };
+
+			var result = await items.AsNoTracking().ToArrayAsync();
+
+			JsonThreadModel[] threadModels = new JsonThreadModel[threadIdArray.Length];
+			int i = 0;
+
+			foreach (var group in result.GroupBy(x => new { x.p.BoardId, x.p.PostId }))
+			{
+				var item = group.First();
+
+				threadModels[i] = new JsonThreadModel
+				{
+					board = item.b,
+					archived = false,
+					deleted = item.p.IsDeleted,
+					lastModified = item.p.DateTime,
+					threadId = item.p.ThreadId,
+					posts = new[]
+					{
+						new JsonPostModel(item.p, group.Where(x => x.fm != null).Select(x =>
+						{
+							if (x.f == null)
+								return new JsonFileModel(null, x.fm, null, null);
+
+							var (imageUrl, thumbUrl) = PostPartialViewModel.GenerateUrls(x.f, item.b.ShortName, config.Value);
+							return new JsonFileModel(x.f, x.fm, imageUrl, thumbUrl);
+						}).ToArray())
+					}
+				};
+
+				i++;
+			}
+
+			return new JsonBoardPageModel
+			{
+				totalThreadCount = searchResult.Hits.Count,
+				threads = threadModels,
+				boardInfo = null
+			};
+		}
 	}
 
 	public static class HaydenDataProviderExtensions
@@ -153,7 +293,7 @@ namespace Hayden.WebServer.Data
 				throw new Exception("Unknown database type");
 			}
 
-			//services.AddHostedService<ESSyncService>();
+			services.AddHostedService<ESSyncService>();
 
 			return services;
 		}
