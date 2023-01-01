@@ -88,13 +88,14 @@ namespace Hayden.Cache
 		/// <inheritdoc/>
 		public async Task WriteDownloadQueue(IReadOnlyCollection<QueuedImageDownload> imageDownloads)
 		{
-			var existingGuids = new List<Guid>(); 
 			using var lockObj = await @lock.LockAsync();
 			
+			var existingGuids = new HashSet<Guid>();
+			var incomingGuids = new HashSet<Guid>(imageDownloads.Select(x => x.Guid));
 
 			await foreach (var item in Context.QueuedImageDownloads.AsNoTracking().AsAsyncEnumerable())
 			{
-				if (!imageDownloads.Contains(item))
+				if (!incomingGuids.Contains(item.Guid))
 				{
 					Context.QueuedImageDownloads.Remove(item);
 				}
