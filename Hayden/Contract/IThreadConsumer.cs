@@ -46,8 +46,10 @@ namespace Hayden.Contract
 		/// <param name="board">The board of the threads.</param>
 		/// <param name="archivedOnly">True to only return threads that have been marked as completed, otherwise false to return all.</param>
 		/// <param name="getMetadata">True to return timestamps alongside the thread numbers, otherwise false to return minimum values.</param>
+		/// <param name="excludeDeletedPosts">True to remove deleted posts from the output, otherwise false to return all posts.</param>
 		/// <returns>A list of threads that are already stored in the consumer.</returns>
-		Task<ICollection<ExistingThreadInfo>> CheckExistingThreads(IEnumerable<ulong> threadIdsToCheck, string board, bool archivedOnly, bool getMetadata = true);
+		Task<ICollection<ExistingThreadInfo>> CheckExistingThreads(IEnumerable<ulong> threadIdsToCheck, string board, bool archivedOnly, bool getMetadata = true,
+			bool excludeDeletedPosts = true);
 
 		/// <summary>
 		/// Calculates a 32-bit hash for a post, using its mutable properties. Used for detecting post changes within a thread.

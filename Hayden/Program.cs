@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using Hayden.Cache;
 using Hayden.Consumers;
 using Hayden.Contract;
+using Hayden.Importer;
 using Hayden.MediaInfo;
 using Hayden.Proxy;
 using Microsoft.Extensions.DependencyInjection;
@@ -86,6 +87,7 @@ namespace Hayden
 				case "Ponychan":      serviceCollection.AddSingleton<IFrontendApi, PonychanApi>(); break;
 				case "ASPNetChan":    serviceCollection.AddSingleton<IFrontendApi, ASPNetChanApi>(); break;
 				case "FoolFuuka":     serviceCollection.AddSingleton<ISearchableFrontendApi, FoolFuukaApi>(); break;
+				case "Fuuka":         serviceCollection.AddSingleton<IImporter, FuukaImporter>(); break;
 				default:              throw new Exception($"Unknown source type: {configFile.Source.Type}");
 			}
 			
@@ -144,7 +146,12 @@ namespace Hayden
 			}
 			else
 			{
-				var boardArchiver = ActivatorUtilities.CreateInstance<BoardArchiver>(serviceProvider);
+				BoardArchiver boardArchiver;
+
+				if (configFile.Hayden.ScraperType == "Import")
+					boardArchiver = ActivatorUtilities.CreateInstance<ImportArchiver>(serviceProvider);
+				else
+					boardArchiver = ActivatorUtilities.CreateInstance<BoardArchiver>(serviceProvider);
 
 				return () => boardArchiver.Execute(tokenSource.Token)
 					.ContinueWith(task =>

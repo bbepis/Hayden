@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.IO.Abstractions;
 using System.Linq;
+using System.Net;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
@@ -14,6 +15,7 @@ using Hayden.Config;
 using Hayden.Contract;
 using Hayden.Models;
 using Hayden.Proxy;
+using Thread = Hayden.Models.Thread;
 
 namespace Hayden
 {
@@ -35,6 +37,9 @@ namespace Hayden
 		protected SortedList<ThreadPointer, TrackedThread> TrackedThreads { get; } = new();
 
 		protected Dictionary<string, BoardRules> BoardRules { get; } = new();
+
+		protected virtual bool LoopArchive => true;
+		protected virtual bool NeedsToDelayThreadApiCall => true;
 
 		/// <summary>
 		/// The minimum amount of time the archiver should wait before checking the boards for any thread updates.
@@ -98,19 +103,24 @@ namespace Hayden
 
 			while (!token.IsCancellationRequested)
 			{
-				var boardThreads = await ReadBoards(firstRun, token);
-				queuedThreads.AddRange(boardThreads);
+				if (firstRun || LoopArchive)
+				{
+					var boardThreads = await ReadBoards(firstRun, token);
+					queuedThreads.AddRange(boardThreads);
+				}
 
-                Program.Log($"{queuedThreads.Count} threads have been queued total");
+				Program.Log($"{queuedThreads.Count} threads have been queued total");
                 queuedThreads.TrimExcess();
 
                 var (requeuedThreads, requeuedImages) = await PerformScrape(firstRun, queuedThreads, queuedImages, token);
-
-
+				
 				queuedThreads = requeuedThreads;
 				queuedImages = requeuedImages;
 
                 firstRun = false;
+
+                if (!LoopArchive)
+	                break;
 			}
 		}
 
@@ -346,9 +356,13 @@ namespace Hayden
                     // Add a timeout for the scrape to 2 minutes, so it doesn't hang forever
                     using var timeoutToken = new CancellationTokenSource(TimeSpan.FromMinutes(2));
 
-                    await AsyncProxyCall(async client =>
+                    await AsyncProxyCall(NeedsToDelayThreadApiCall, async client =>
                     {
-                        var result = await ThreadUpdateTask(timeoutToken.Token, idString, nextThread.Board, nextThread.ThreadId, client);
+	                    string board = nextThread.Board;
+	                    ulong threadNumber = nextThread.ThreadId;
+
+	                    var apiResponse = await RetrieveThreadAsync(nextThread, client, timeoutToken.Token);
+						var result = await ThreadUpdateTask(timeoutToken.Token, idString, board, threadNumber, apiResponse);
 
                         int newCompletedCount = Interlocked.Increment(ref threadCompletedCount);
 
@@ -466,7 +480,7 @@ namespace Hayden
 
             requeuedImages.Clear();
 
-            await StateStore.WriteDownloadQueue(enqueuedImages);
+			await StateStore.WriteDownloadQueue(enqueuedImages);
 
             Program.Log($" --> Cleared queued image cache", true);
 
@@ -487,12 +501,15 @@ namespace Hayden
 		/// Reserve a proxy connection, and perform the action under the context of that proxy.
 		/// </summary>
 		/// <param name="action">The action to perform.</param>
-		private async Task AsyncProxyCall(Func<HttpClientProxy, Task> action)
+		private async Task AsyncProxyCall(bool delay, Func<HttpClientProxy, Task> action)
 		{
 			await using var client = await ProxyProvider.RentHttpClient();
 
-			var threadWaitTask = Task.Delay(ApiCooldownTimespan);
-			
+			Task threadWaitTask = null;
+
+			if (delay)
+				threadWaitTask = Task.Delay(ApiCooldownTimespan);
+
 			try
 			{
 				await action(client.Object);
@@ -502,7 +519,8 @@ namespace Hayden
 				Program.Log($"ERROR: Network operation failed, and was unhandled. Inconsistencies may arise in continued use of program\r\n" + ex.ToString());
 			}
 
-			await threadWaitTask;
+			if (threadWaitTask != null)
+				await threadWaitTask;
 		}
 
 		#endregion
@@ -733,8 +751,12 @@ namespace Hayden
 			return (threads, allThreads);
 		}
 
-		// Cache this instead of having to create a new one every time we want to return an empty array
-		private static readonly QueuedImageDownload[] emptyImageQueue = new QueuedImageDownload[0];
+		protected virtual async Task<ApiResponse<Thread>> RetrieveThreadAsync(ThreadPointer pointer, HttpClientProxy client,
+			CancellationToken token)
+		{
+			//Program.Log($"{workerId,-2}: Polling thread /{board}/{threadNumber}", true);
+			return await FrontendApi.GetThread(pointer.Board, pointer.ThreadId, client.Client, null, token);
+		}
 
 		/// <summary>
 		/// Polls a thread, and passes it to the consumer if the thread has been detected as updated.
@@ -742,18 +764,16 @@ namespace Hayden
 		/// <param name="token">The cancellation token associated with this request.</param>
 		/// <param name="board">The board of the thread.</param>
 		/// <param name="threadNumber">The post number of the thread to poll.</param>
-		/// <param name="client">The <see cref="HttpClientProxy"/> to use for the poll request.</param>
+		/// <param name="apiResponse"></param>
 		/// <returns></returns>
-		private async Task<ThreadUpdateTaskResult> ThreadUpdateTask(CancellationToken token, string workerId, string board, ulong threadNumber, HttpClientProxy client)
+		private async Task<ThreadUpdateTaskResult> ThreadUpdateTask(CancellationToken token, string workerId, string board, ulong threadNumber, ApiResponse<Thread> apiResponse)
 		{
 			try
 			{
-				Program.Log($"{workerId,-2}: Polling thread /{board}/{threadNumber}", true);
-
 				// We should be passing in the last scrape time here, but I don't remember why we don't
 				// I think it's because we only get to this point when we know for sure that the thread has changed?
 				// Or maybe there are properties that *can* change without updating last_modified
-				var response = await FrontendApi.GetThread(board, threadNumber, client.Client, null, token);
+				var response = apiResponse;
 
 				token.ThrowIfCancellationRequested();
 
@@ -773,7 +793,7 @@ namespace Hayden
 								if (!ThreadIdBlacklist.Contains(threadPointer))
 									ThreadIdBlacklist.Add(threadPointer);
 
-							return new ThreadUpdateTaskResult(true, emptyImageQueue, ThreadUpdateStatus.DoNotArchive, 0);
+							return new ThreadUpdateTaskResult(true, Array.Empty<QueuedImageDownload>(), ThreadUpdateStatus.DoNotArchive, 0);
 						}
 
 						Program.Log($"{workerId,-2}: Downloading changes from thread /{board}/{threadNumber}", true);
@@ -797,7 +817,7 @@ namespace Hayden
 							HandleThreadRemoval(threadPointer);
 							await ThreadConsumer.ThreadUntracked(threadNumber, board, true);
 
-							return new ThreadUpdateTaskResult(true, emptyImageQueue, ThreadUpdateStatus.Deleted, 0);
+							return new ThreadUpdateTaskResult(true, Array.Empty<QueuedImageDownload>(), ThreadUpdateStatus.Deleted, 0);
 						}
 
 						// Process the thread data with its assigned TrackedThread instance, then pass the results to the consumer
@@ -815,12 +835,14 @@ namespace Hayden
 								isNewThread = true;
 							}
 
-						var threadUpdateInfo = trackedThread.ProcessThreadUpdates(threadPointer, response.Data);
+						var threadUpdateInfo = trackedThread.ProcessThreadUpdates(threadPointer, response.Data,
+							SourceConfig.ImportAlgorithm == ImportAlgorithm.Optimistic);
+
 						threadUpdateInfo.IsNewThread = isNewThread;
 
 						if (!threadUpdateInfo.HasChanges && !threadUpdateInfo.Thread.IsArchived)
 						{
-							return new ThreadUpdateTaskResult(true, emptyImageQueue, ThreadUpdateStatus.NotModified, 0);
+							return new ThreadUpdateTaskResult(true, Array.Empty<QueuedImageDownload>(), ThreadUpdateStatus.NotModified, 0);
 						}
 						
 						// TODO: handle failures from this call
@@ -844,7 +866,7 @@ namespace Hayden
 
 					case ResponseType.NotModified:
 						// There are no updates for this thread
-						return new ThreadUpdateTaskResult(true, emptyImageQueue, ThreadUpdateStatus.NotModified, 0);
+						return new ThreadUpdateTaskResult(true, Array.Empty<QueuedImageDownload>(), ThreadUpdateStatus.NotModified, 0);
 
 					case ResponseType.NotFound:
 						// This thread returned a 404, indicating a deletion
@@ -854,7 +876,7 @@ namespace Hayden
 						HandleThreadRemoval(new ThreadPointer(board, threadNumber));
 						await ThreadConsumer.ThreadUntracked(threadNumber, board, true);
 
-						return new ThreadUpdateTaskResult(true, emptyImageQueue, ThreadUpdateStatus.Deleted, 0);
+						return new ThreadUpdateTaskResult(true, Array.Empty<QueuedImageDownload>(), ThreadUpdateStatus.Deleted, 0);
 
 					default:
 						throw new ArgumentOutOfRangeException();
@@ -862,9 +884,9 @@ namespace Hayden
 			}
 			catch (Exception exception)
 			{
-				Program.Log($"ERROR: Could not poll or update thread /{board}/{threadNumber}. Will try again next board update\nClient name: {client.Name}\nException: {exception}");
+				Program.Log($"ERROR: Could not poll or update thread /{board}/{threadNumber}. Will try again next board update\nException: {exception}");
 
-				return new ThreadUpdateTaskResult(false, emptyImageQueue, ThreadUpdateStatus.Error, 0);
+				return new ThreadUpdateTaskResult(false, Array.Empty<QueuedImageDownload>(), ThreadUpdateStatus.Error, 0);
 			}
 		}
 

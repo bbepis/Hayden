@@ -498,7 +498,7 @@ namespace Hayden.Consumers
 		}
 
 		/// <inheritdoc/>
-		public async Task<ICollection<ExistingThreadInfo>> CheckExistingThreads(IEnumerable<ulong> threadIdsToCheck, string board, bool archivedOnly, bool getMetadata = true)
+		public async Task<ICollection<ExistingThreadInfo>> CheckExistingThreads(IEnumerable<ulong> threadIdsToCheck, string board, bool archivedOnly, bool getMetadata = true, bool excludeDeletedPosts = true)
 		{
 			int archivedInt = archivedOnly ? 1 : 0;
 
@@ -532,7 +532,7 @@ namespace Hayden.Consumers
 					var rows = rentedConnection.Object
 						.CreateQuery($"SELECT num, comment, spoiler, locked, media_filename " +
 									 $"FROM `{board}` " +
-									 $"WHERE thread_num = @threadid AND deleted = 0")
+									 $"WHERE thread_num = @threadid {(excludeDeletedPosts ? "AND deleted = 0" : "")}")
 						.SetParam("@threadid", (uint)row[0])
 						.ExecuteRowsAsync();
 

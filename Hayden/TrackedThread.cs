@@ -34,7 +34,7 @@ namespace Hayden
 		/// <param name="threadPointer">The thread pointer referring to the polled thread.</param>
 		/// <param name="updatedThread">The new thread to calculate change information from.</param>
 		/// <returns>A <see cref="ThreadUpdateInfo{,}"/> object calculated from <param name="updatedThread">updatedThread</param>.</returns>
-		public virtual ThreadUpdateInfo ProcessThreadUpdates(in ThreadPointer threadPointer, Thread updatedThread)
+		public virtual ThreadUpdateInfo ProcessThreadUpdates(in ThreadPointer threadPointer, Thread updatedThread, bool processModifications = true)
 		{
 			var updateInfo = new ThreadUpdateInfo(threadPointer, updatedThread, false);
 
@@ -46,7 +46,7 @@ namespace Hayden
 					updateInfo.NewPosts.Add(post);
 					PostHashes[post.PostNumber] = HashFunction(post);
 				}
-				else
+				else if (processModifications)
 				{
 					// post already exists; check if it has changed
 
@@ -61,15 +61,16 @@ namespace Hayden
 				}
 			}
 
-			foreach (var postId in PostHashes.Keys.ToArray())
-			{
-				if (updatedThread.Posts.All(x => x.PostNumber != postId))
+			if (processModifications)
+				foreach (var postId in PostHashes.Keys.ToArray())
 				{
-					// post is no longer in the thread; it has been deleted
-					updateInfo.DeletedPosts.Add(postId);
-					PostHashes.Remove(postId);
+					if (updatedThread.Posts.All(x => x.PostNumber != postId))
+					{
+						// post is no longer in the thread; it has been deleted
+						updateInfo.DeletedPosts.Add(postId);
+						PostHashes.Remove(postId);
+					}
 				}
-			}
 
 			PostCount = updatedThread.Posts.Length;
 

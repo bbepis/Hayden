@@ -22,12 +22,6 @@ namespace Hayden.Consumers
 			ArchiveDirectory = config.DownloadLocation;
 		}
 
-		private static readonly JsonSerializer Serializer = new()
-		{
-			NullValueHandling = NullValueHandling.Ignore,
-			Formatting = Formatting.None
-		};
-
 		protected class WrittenThread
 		{
 			public Thread Thread { get; set; }
@@ -51,7 +45,7 @@ namespace Hayden.Consumers
 			using (var streamWriter = new StreamWriter(threadFileStream))
 			using (var jsonWriter = new JsonTextWriter(streamWriter))
 			{
-				Serializer.Serialize(jsonWriter, thread);
+				Common.JsonSerializer.Serialize(jsonWriter, thread);
 			}
 		}
 
@@ -264,7 +258,7 @@ namespace Hayden.Consumers
 			return Task.CompletedTask;
 		}
 
-		public Task<ICollection<ExistingThreadInfo>> CheckExistingThreads(IEnumerable<ulong> threadIdsToCheck, string board, bool archivedOnly, bool getMetadata = true)
+		public Task<ICollection<ExistingThreadInfo>> CheckExistingThreads(IEnumerable<ulong> threadIdsToCheck, string board, bool archivedOnly, bool getMetadata = true, bool excludeDeletedPosts = true)
 		{
 			var boardDirectory = Path.Combine(ArchiveDirectory, board);
 
@@ -313,7 +307,7 @@ namespace Hayden.Consumers
 
 				foreach (var post in writtenThread.Thread.Posts)
 				{
-					if (writtenThread.DeletedPostIds.Contains(post.PostNumber))
+					if (excludeDeletedPosts && writtenThread.DeletedPostIds.Contains(post.PostNumber))
 						// We don't return deleted posts, otherwise Hayden will think the post still exists
 						continue;
 
