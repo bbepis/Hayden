@@ -25,11 +25,8 @@
 	function calculateBackquotes(post: PostModel): number[] {
 		return thread.posts
 			.filter((x) => {
-				if (!x.contentHtml) {
-					return false;
-				}
-
-				return x.contentHtml.indexOf(`&gt;&gt;${post.postId}`) >= 0;
+				return (x.contentHtml && x.contentHtml.indexOf(`&gt;&gt;${post.postId}`) >= 0)
+					|| (x.contentRaw && x.contentRaw.indexOf(`>>${post.postId}`) >= 0);
 			})
 			.map((x) => x.postId);
 	}
