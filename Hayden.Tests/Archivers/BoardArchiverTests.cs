@@ -25,7 +25,9 @@ namespace Hayden.Tests.Archivers
                 ["a"] = new BoardRulesConfig(),
                 ["b"] = new BoardRulesConfig(),
                 ["c"] = new BoardRulesConfig(),
-            }
+            },
+            ApiDelay = 0,
+            BoardScrapeDelay = 0
         };
         private readonly ConsumerConfig ConsumerConfig = new ConsumerConfig();
 

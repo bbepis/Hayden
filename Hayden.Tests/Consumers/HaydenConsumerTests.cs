@@ -40,7 +40,9 @@ namespace Hayden.Tests.Consumers
                 ThumbnailsEnabled = true
             }, new SourceConfig
             {
-				Boards = new Dictionary<string, BoardRulesConfig>()
+				Boards = new Dictionary<string, BoardRulesConfig>(),
+				BoardScrapeDelay = 0,
+				ApiDelay = 0
             }, () => new HaydenDbContext(options), fileSystem, mockMediaInspector.Object);
 
             await consumer.InitializeAsync();
