@@ -891,6 +891,9 @@ namespace Hayden
 				})
 				.ConfigureAwait(false);
 
+			if (response.StatusCode == HttpStatusCode.NotFound)
+				return null;
+
 			response.EnsureSuccessStatusCode();
 
 			var tempFilePath = FileSystem.Path.Combine(ConsumerConfig.DownloadLocation, "hayden", Guid.NewGuid().ToString("N") + ".temp");

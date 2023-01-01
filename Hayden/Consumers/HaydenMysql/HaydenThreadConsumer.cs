@@ -327,9 +327,41 @@ namespace Hayden.Consumers
 			{
 				throw new InvalidOperationException("Queued image download did not have the required properties");
 			}
-			
+
+			await using var dbContext = GetDBContext();
+
+			var existingFileMapping = await dbContext.FileMappings
+				.FirstAsync(x => x.BoardId == boardId
+				                 && x.PostId == postNumber
+				                 && x.Index == media.Index);
+
 			if (imageTempFilename == null)
-				throw new InvalidOperationException("Full image required for hash calculation");
+			{
+				//throw new InvalidOperationException("Full image required for hash calculation");
+				Program.Log("Full image required for hash calculation");
+
+				var metadata = existingFileMapping.AdditionalMetadata != null ? JObject.Parse(existingFileMapping.AdditionalMetadata) : new JObject();
+
+				if (media.Md5Hash != null)
+					metadata["missing_md5hash"] = Convert.ToBase64String(media.Md5Hash);
+
+				if (media.Sha1Hash != null)
+					metadata["missing_sha1hash"] = Convert.ToBase64String(media.Sha1Hash);
+
+				if (media.Sha256Hash != null)
+					metadata["missing_sha256hash"] = Convert.ToBase64String(media.Sha256Hash);
+				
+				metadata["missing_extension"] = media.FileExtension;
+				metadata["missing_size"] = media.FileSize;
+
+				existingFileMapping.AdditionalMetadata = metadata.ToString(Formatting.None);
+
+				dbContext.Update(existingFileMapping);
+				await dbContext.SaveChangesAsync();
+
+				// TODO: thumbnail-only handling
+				return;
+			}
 
 			await using var stream = FileSystem.File.OpenRead(imageTempFilename);
 
@@ -337,8 +369,6 @@ namespace Hayden.Consumers
 			var (md5Hash, sha1Hash, sha256Hash) = Utility.CalculateHashes(stream);
 
 			stream.Close();
-			
-			await using var dbContext = GetDBContext();
 
 			uint fileId;
 
@@ -408,11 +438,6 @@ namespace Hayden.Consumers
 					dbContext.Update(existingFile);
 				}
 			}
-
-			var existingFileMapping = await dbContext.FileMappings
-				.FirstAsync(x => x.BoardId == boardId
-					&& x.PostId == postNumber
-					&& x.Index == media.Index);
 
 			existingFileMapping.FileId = fileId;
 
