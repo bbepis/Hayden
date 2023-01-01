@@ -15,7 +15,15 @@
     export let subject: string = null;
     export let backquotes: number[] = null;
 
-    const time = moment(post.dateTime + "Z");
+    function getDateTime() {
+        if (post.dateTime.endsWith("Z")) {
+            return post.dateTime;
+        }
+        
+        return post.dateTime + "Z";
+    }
+
+    const time = moment(getDateTime());
 
     let showDropdown: boolean = false;
     let menu: HTMLElement;
