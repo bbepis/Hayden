@@ -33,7 +33,7 @@
 			<BoardPage board={boardMeta.params.board} />
 		</Route>
 	</Route>
-	<Route path="/Search"><SearchPage /></Route>
+	<Route path="/search"><SearchPage /></Route>
 	<Route path="/Login"><LoginPage /></Route>
 	<Route path="/Register"><RegisterPage /></Route>
 	<Route path="/Admin"><AdminPage bind:this={adminComponent} /></Route>
