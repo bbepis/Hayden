@@ -237,9 +237,7 @@ namespace Hayden
 
 		[JsonIgnore]
 		public string TimestampedFilenameFull => FileMd5 != null ? TimestampedFilename + FileExtension : null;
-
-		private static readonly JsonSerializer jsonSerializer = JsonSerializer.Create(new JsonSerializerSettings { NullValueHandling = NullValueHandling.Ignore });
-
+		
 		public Post ConvertToPost(string board)
 		{
 			Media[] media = Array.Empty<Media>();
@@ -276,7 +274,7 @@ namespace Hayden
 				ContentType = ContentType.Yotsuba,
 				Media = media,
 				OriginalObject = this,
-				AdditionalMetadata = JObject.FromObject(new
+				AdditionalMetadata = Common.SerializeObject(new
 				{
 					capcode = Capcode,
 					countryCode = CountryCode,
@@ -285,7 +283,7 @@ namespace Hayden
 					boardFlagName = BoardFlagName,
 					posterID = PosterID,
 					customSpoiler = CustomSpoiler
-				}, jsonSerializer)
+				})
 			};
 		}
 	}

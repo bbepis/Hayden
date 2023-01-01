@@ -9,6 +9,17 @@ namespace Hayden
 {
     public static class Common
     {
+	    public static readonly JsonSerializer JsonSerializer = JsonSerializer.Create(new JsonSerializerSettings
+	    {
+		    NullValueHandling = NullValueHandling.Ignore,
+			Formatting = Formatting.None
+	    });
+
+	    public static JObject SerializeObject(object o)
+	    {
+			return JObject.FromObject(o, JsonSerializer);
+	    }
+
 		public enum MediaType
 		{
             Image,

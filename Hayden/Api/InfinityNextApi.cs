@@ -360,9 +360,7 @@ namespace Hayden
 
 		[JsonProperty("attachments")]
 		public List<InfinityNextAttachment> Attachments { get; set; }
-
-		private static readonly JsonSerializer jsonSerializer = JsonSerializer.Create(new JsonSerializerSettings { NullValueHandling = NullValueHandling.Ignore });
-
+		
 		public Post ConvertToPost()
 		{
 			Media[] media = Array.Empty<Media>();
@@ -403,13 +401,13 @@ namespace Hayden
 				ContentType = ContentType.InfinityNext,
 				Media = media,
 				OriginalObject = this,
-				AdditionalMetadata = JObject.FromObject(new
+				AdditionalMetadata = Common.SerializeObject(new
 				{
 					globalPostId = GlobalPostNumber,
 					posterID = AuthorId,
 					capcode = CapcodeId,
 					flagId = FlagId
-				}, jsonSerializer)
+				})
 			};
 		}
 	}

@@ -278,9 +278,7 @@ namespace Hayden
 
 		[JsonProperty("image")]
 		public MegucaPostImage Image { get; set; }
-
-		private static readonly JsonSerializer jsonSerializer = JsonSerializer.Create(new JsonSerializerSettings { NullValueHandling = NullValueHandling.Ignore });
-
+		
 		public Post ConvertToPost(string board, string imageboardUrlRoot)
 		{
 			Media[] media = Array.Empty<Media>();
@@ -318,10 +316,10 @@ namespace Hayden
 				ContentType = ContentType.Meguca,
 				Media = media,
 				OriginalObject = this,
-				AdditionalMetadata = JObject.FromObject(new
+				AdditionalMetadata = Common.SerializeObject(new
 				{
 					flag = Flag
-				}, jsonSerializer)
+				})
 			};
 		}
 	}

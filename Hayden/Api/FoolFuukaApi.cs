@@ -256,9 +256,7 @@ namespace Hayden
 		public bool? ExtensionIsDeleted { get; set; }
 
 		#endregion
-
-		private static readonly JsonSerializer jsonSerializer = JsonSerializer.Create(new JsonSerializerSettings { NullValueHandling = NullValueHandling.Ignore });
-
+		
 		public Post ConvertToPost()
 		{
 			Media[] media = Array.Empty<Media>();
@@ -299,7 +297,7 @@ namespace Hayden
 				ContentType = ContentType.Yotsuba,
 				Media = media,
 				OriginalObject = this,
-				AdditionalMetadata = JObject.FromObject(new
+				AdditionalMetadata = Common.SerializeObject(new
 				{
 					// capcode = 
 					countryCode = CountryCode,
@@ -308,7 +306,7 @@ namespace Hayden
 					boardCountryName = TrollCountryName,
 					posterID = PosterHash,
 					sticky = Sticky
-				}, jsonSerializer)
+				})
 			};
 		}
 	}

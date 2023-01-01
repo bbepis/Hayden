@@ -165,9 +165,7 @@ namespace Hayden
 
 		[JsonProperty("extra_files")]
 		public List<VichanExtraFile> ExtraFiles { get; set; }
-
-		private static readonly JsonSerializer jsonSerializer = JsonSerializer.Create(new JsonSerializerSettings { NullValueHandling = NullValueHandling.Ignore });
-
+		
 		public Post ConvertToPost(string board, string imageboardUrlRoot)
 		{
 			Media[] media = Array.Empty<Media>();
@@ -233,13 +231,13 @@ namespace Hayden
 				ContentType = ContentType.Vichan,
 				Media = media,
 				OriginalObject = this,
-				AdditionalMetadata = JObject.FromObject(new
+				AdditionalMetadata = Common.SerializeObject(new
 				{
 					capcode = Capcode,
 					countryCode = CountryCode,
 					countryName = CountryName,
 					customSpoiler = CustomSpoiler
-				}, jsonSerializer)
+				})
 			};
 		}
 	}

@@ -153,9 +153,7 @@ namespace Hayden
 
 		[JsonProperty("tn_h")]
 		public ushort? ThumbnailHeight { get; set; }
-
-		private static readonly JsonSerializer jsonSerializer = JsonSerializer.Create(new JsonSerializerSettings { NullValueHandling = NullValueHandling.Ignore });
-
+		
 		private static readonly string[] preservedExtensionTypes =
 		{
 			// https://bitbucket.org/ponychan/ponychan-tinyboard/src/c2ad54a1360f92caae4f560fbb61abe28ed1c43f/core/inc/post/create.php#lines-434
@@ -209,12 +207,12 @@ namespace Hayden
 				ContentType = ContentType.Ponychan,
 				Media = media,
 				OriginalObject = this,
-				AdditionalMetadata = JObject.FromObject(new
+				AdditionalMetadata = Common.SerializeObject(new
 				{
 					capcode = Capcode,
 					ponychan_mature = Mature,
 					ponychan_anonymous = Anonymous
-				}, jsonSerializer)
+				})
 			};
 		}
 	}

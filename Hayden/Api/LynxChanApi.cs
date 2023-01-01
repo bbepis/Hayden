@@ -234,9 +234,7 @@ namespace Hayden
 
 		[JsonProperty("files")]
 		public LynxChanPostFile[] Files { get; set; }
-
-		private static readonly JsonSerializer jsonSerializer = JsonSerializer.Create(new JsonSerializerSettings { NullValueHandling = NullValueHandling.Ignore });
-
+		
 		public Post ConvertToPost(string imageboardUrlRoot)
 		{
 			Media[] media = Array.Empty<Media>();
@@ -272,13 +270,13 @@ namespace Hayden
 				ContentType = ContentType.LynxChan,
 				Media = media,
 				OriginalObject = this,
-				AdditionalMetadata = JObject.FromObject(new
+				AdditionalMetadata = Common.SerializeObject(new
 				{
 					posterId = PosterID,
 					capcode = SignedRole, // i think this is correct?
 					flagCode = FlagCode,
 					flagName = FlagName
-				}, jsonSerializer)
+				})
 			};
 		}
 	}
