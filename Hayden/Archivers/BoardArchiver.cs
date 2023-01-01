@@ -379,10 +379,8 @@ namespace Hayden
                             default:								threadStatus = "?"; break;
                         }
 
-                        if (!success)
+                        if (!result.Success)
                         {
-                            // TODO: investigate why threads that error out don't get requeued properly 
-
                             lock (requeuedThreads)
                                 requeuedThreads.Add(nextThread);
 
