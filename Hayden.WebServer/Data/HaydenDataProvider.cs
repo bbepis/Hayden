@@ -60,19 +60,18 @@ namespace Hayden.WebServer.Data
 			return await dbContext.Boards.AsNoTracking().ToListAsync();
 		}
 
-		public async Task<JsonThreadModel> GetThread(string board, ulong threadid)
+		private JsonThreadModel CreateThreadModel(DBBoard boardObj, DBThread thread, IEnumerable<DBPost> posts,
+			(DBFileMapping, DBFile)[] mappings)
 		{
-			var (boardObj, thread, posts, mappings) = await dbContext.GetThreadInfo(threadid, board);
-
-			if (thread == null)
-				return null;
-
 			return new JsonThreadModel(boardObj, thread, posts.Select(x =>
 					new JsonPostModel(x,
 						mappings.Where(y => y.Item1.PostId == x.PostId)
 							.Select(y =>
 							{
-								var (imageUrl, thumbUrl) = PostPartialViewModel.GenerateUrls(y.Item2, board, config.Value);
+								if (y.Item2 == null)
+									return new JsonFileModel(null, y.Item1, null, null);
+
+								var (imageUrl, thumbUrl) = PostPartialViewModel.GenerateUrls(y.Item2, boardObj.ShortName, config.Value);
 
 								return new JsonFileModel(y.Item2, y.Item1, imageUrl, thumbUrl);
 							}).ToArray()))
@@ -116,16 +115,7 @@ namespace Hayden.WebServer.Data
 
 				var limitedPosts = posts.Take(1).Concat(posts.TakeLast(3)).Distinct();
 
-				threadModels[i] = new JsonThreadModel(boardObj, threadObj, limitedPosts.Select(x =>
-						new JsonPostModel(x,
-							mappings.Where(y => y.Item1.PostId == x.PostId)
-								.Select(y =>
-								{
-									var (imageUrl, thumbUrl) = PostPartialViewModel.GenerateUrls(y.Item2, boardObj.ShortName, config.Value);
-
-									return new JsonFileModel(y.Item2, y.Item1, imageUrl, thumbUrl);
-								}).ToArray()))
-					.ToArray());
+				threadModels[i] = CreateThreadModel(boardObj, threadObj, limitedPosts, mappings);
 			}
 
 			return new JsonBoardPageModel

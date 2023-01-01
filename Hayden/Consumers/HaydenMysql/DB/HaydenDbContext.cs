@@ -215,18 +215,11 @@ namespace Hayden.Consumers.HaydenMysql.DB
 				.OrderBy(x => x.DateTime)
 				.ToArrayAsync();
 
-			var fileMappings = await FileMappings.AsNoTracking()
-				.Join(Posts.AsNoTracking(),
-					mapping => new { mapping.BoardId, mapping.PostId },
-					post => new { post.BoardId, post.PostId },
-					(mapping, post) => new { mapping, post.ThreadId })
-				.Join(Files.AsNoTracking(),
-					mapping => mapping.mapping.FileId,
-					file => file.Id,
-					(mapping, file) => new { mapping.mapping, mapping.ThreadId, file })
-				.Where(x => x.mapping.BoardId == boardObj.Id && x.ThreadId == threadId)
-				.Select(x => new { x.mapping, x.file })
-				.ToArrayAsync();
+			var fileMappings = await (from mapping in FileMappings
+				join post in Posts on new { mapping.BoardId, mapping.PostId } equals new { post.BoardId, post.PostId }
+				from file in Files.Where(f => f.BoardId == mapping.BoardId && f.Id == mapping.FileId).DefaultIfEmpty()
+				where post.BoardId == boardObj.Id && post.ThreadId == threadId
+				select new { mapping, file }).ToArrayAsync();
 
 			return (boardObj, thread, posts, fileMappings.Select(x => (x.mapping, x.file)).ToArray());
 		}
