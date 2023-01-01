@@ -156,7 +156,7 @@ namespace Hayden.WebServer.Controllers.Api
 
 		public class JsonFileModel
 		{
-			public uint fileId { get; set; }
+			public uint? fileId { get; set; }
 
 			public byte[] md5Hash { get; set; }
 			public byte[] sha1Hash { get; set; }
@@ -167,7 +167,7 @@ namespace Hayden.WebServer.Controllers.Api
 			public ushort? imageWidth { get; set; }
 			public ushort? imageHeight { get; set; }
 
-			public uint fileSize { get; set; }
+			public uint? fileSize { get; set; }
 
 			public byte index { get; set; }
 
@@ -181,14 +181,14 @@ namespace Hayden.WebServer.Controllers.Api
 
 			public JsonFileModel(DBFile file, DBFileMapping fileMapping, string imageUrl, string thumbnailUrl)
 			{
-				fileId = file.Id;
-				md5Hash = file.Md5Hash;
-				sha1Hash = file.Sha1Hash;
-				sha256Hash = file.Sha256Hash;
-				extension = file.Extension;
-				imageWidth = file.ImageWidth;
-				imageHeight = file.ImageHeight;
-				fileSize = file.Size;
+				fileId = file?.Id;
+				md5Hash = file?.Md5Hash;
+				sha1Hash = file?.Sha1Hash;
+				sha256Hash = file?.Sha256Hash;
+				extension = file?.Extension;
+				imageWidth = file?.ImageWidth;
+				imageHeight = file?.ImageHeight;
+				fileSize = file?.Size;
 
 				index = fileMapping.Index;
 				filename = fileMapping.Filename;
