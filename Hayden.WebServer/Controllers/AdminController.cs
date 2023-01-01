@@ -794,10 +794,10 @@ namespace Hayden.WebServer.Controllers
 								PostId = x.PostId,
 								ThreadId = x.ThreadId,
 								BoardId = x.BoardId,
-								PostHtmlText = x.ContentHtml,
+								//PostHtmlText = x.ContentHtml,
 								PostRawText = x.ContentRaw,
 								PostDateUtc = x.DateTime,
-								Subject = threadSubjects.TryGetValue((x.BoardId, x.ThreadId), out var subject) ? subject : null,
+								//Subject = threadSubjects.TryGetValue((x.BoardId, x.ThreadId), out var subject) ? subject : null,
 								IsOp = x.ThreadId == x.PostId
 							}));
 

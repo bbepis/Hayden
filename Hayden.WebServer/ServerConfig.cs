@@ -10,6 +10,8 @@ namespace Hayden.WebServer
 
 		public ServerSettingsConfig Settings { get; set; }
 
+		public ServerElasticSearchConfig Elasticsearch { get; set; }
+
 		public bool ApiMode { get; set; }
 	}
 
@@ -40,6 +42,18 @@ namespace Hayden.WebServer
 		public NewsItem[] NewsItems { get; set; }
 
 		public string ShiftJisArt { get; set; }
+	}
+
+	public class ServerElasticSearchConfig
+	{
+		public bool Enabled { get; set; }
+		public bool Debug { get; set; }
+		public string Endpoint { get; set; }
+
+		public string Username { get; set; }
+		public string Password { get; set; }
+
+		public string IndexName { get; set; }
 	}
 
 	public class NewsItem

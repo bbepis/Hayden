@@ -57,17 +57,18 @@ namespace Hayden.WebServer
 				default: throw new Exception($"Unknown data provider type: {ServerConfig.Data.ProviderType}");
 			}
 			
-			if (Configuration["Elasticsearch:Url"] != null)
+			if (ServerConfig.Elasticsearch?.Enabled == true)
 			{
 				services.AddSingleton<ElasticClient>(x =>
 				{
-					var settings = new ConnectionSettings(new Uri(Configuration["Elasticsearch:Url"]))
-						.DefaultMappingFor<PostIndex>(map => map.IndexName(PostIndex.IndexName));
+					var settings = new ConnectionSettings(new Uri(ServerConfig.Elasticsearch.Endpoint));
+						//.DefaultMappingFor<PostIndex>(map => map.IndexName(PostIndex.IndexName))
 
-					if (bool.Parse(Configuration["Elasticsearch:Debug"]))
-					{
+					if (ServerConfig.Elasticsearch.Username != null)
+						settings.BasicAuthentication(ServerConfig.Elasticsearch.Username, ServerConfig.Elasticsearch.Password);
+
+					if (ServerConfig.Elasticsearch.Debug)
 						settings.EnableDebugMode();
-					}
 
 					return new ElasticClient(settings);
 				});

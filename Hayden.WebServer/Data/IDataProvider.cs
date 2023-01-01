@@ -15,5 +15,6 @@ namespace Hayden.WebServer.Data
 		Task<IList<DBBoard>> GetBoardInfo();
 		Task<ApiController.JsonThreadModel> GetThread(string board, ulong threadid);
 		Task<ApiController.JsonBoardPageModel> GetBoardPage(string board, int? page);
+		Task<ApiController.JsonBoardPageModel> PerformSearch(string searchQuery, int? page);
 	}
 }

@@ -188,6 +188,11 @@ namespace Hayden.WebServer.Data
 				totalThreadCount = totalCount
 			};
 		}
+
+		public Task<ApiController.JsonBoardPageModel> PerformSearch(string searchQuery, int? page)
+		{
+			throw new NotImplementedException("Not supported for asagi data provider");
+		}
 	}
 
 	public static class AsagiDataProviderExtensions
