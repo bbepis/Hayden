@@ -6,6 +6,7 @@ using Hayden.Contract;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Newtonsoft.Json;
+using Nito.AsyncEx;
 
 namespace Hayden.Cache
 {
@@ -58,7 +59,9 @@ namespace Hayden.Cache
                 foreach (var entry in changedEntriesCopy)
                     entry.State = EntityState.Detached;
             }
-        }
+		}
+
+		private AsyncLock @lock { get; } = new();
 
 		protected SqliteConnection Connection { get; set; }
 
@@ -86,6 +89,8 @@ namespace Hayden.Cache
 		public async Task WriteDownloadQueue(IReadOnlyCollection<QueuedImageDownload> imageDownloads)
 		{
 			var existingGuids = new List<Guid>(); 
+			using var lockObj = await @lock.LockAsync();
+			
 
 			await foreach (var item in Context.QueuedImageDownloads.AsNoTracking().AsAsyncEnumerable())
 			{
@@ -116,6 +121,8 @@ namespace Hayden.Cache
 		/// <inheritdoc/>
 		public async Task InsertToDownloadQueue(IReadOnlyCollection<QueuedImageDownload> imageDownloads)
 		{
+			using var lockObj = await @lock.LockAsync();
+
 			Context.AddRange(imageDownloads);
 
 			await Context.SaveChangesAsync();
@@ -125,6 +132,8 @@ namespace Hayden.Cache
 		/// <inheritdoc/>
 		public async Task<IList<QueuedImageDownload>> GetDownloadQueue()
 		{
+			using var lockObj = await @lock.LockAsync();
+
 			return await Context.QueuedImageDownloads.AsNoTracking().ToListAsync();
 		}
 
