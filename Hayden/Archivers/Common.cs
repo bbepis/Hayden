@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Text.RegularExpressions;
 using Hayden.Config;
+using Newtonsoft.Json.Linq;
 
 namespace Hayden
 {
@@ -34,10 +35,28 @@ namespace Hayden
 
 			if (Properties.TryGetValue(key, out var rawValue))
 			{
+				if (rawValue == null)
+				{
+					value = default;
+					return true;
+				}
+
 				if (typeof(T) == rawValue.GetType())
 					value = (T)rawValue;
+				else if (rawValue.GetType() == typeof(JObject))
+					value = ((JObject)rawValue).ToObject<T>();
 				else
-					value = (T)Convert.ChangeType(rawValue, typeof(T));
+				{
+					try
+					{
+						value = (T)Convert.ChangeType(rawValue, typeof(T));
+					}
+					catch
+					{
+						Program.Log($"{rawValue.GetType()} -> {key} : {typeof(T)}");
+						throw;
+					}
+				}
 
 				return true;
 			}
