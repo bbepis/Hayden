@@ -20,7 +20,7 @@ namespace Hayden
 {
 	public class Program
 	{
-		static async Task Main(string[] args)
+		static async Task<int> Main(string[] args)
 		{
 			Console.WriteLine("Hayden v0.9.0");
 			Console.WriteLine("By Bepis");
@@ -28,7 +28,7 @@ namespace Hayden
 			if (args.Length != 1)
 			{
 				Console.WriteLine("Usage: hayden <config file location>");
-				return;
+				return 2;
 			}
 
 			// restrict threadpool size to prevent excessive amounts of unmanaged memory usage
@@ -39,7 +39,7 @@ namespace Hayden
 
 			var tokenSource = new CancellationTokenSource();
 
-			var archivalTask = (await CreateBoardArchiverExecutor(rawConfigFile, tokenSource))();
+			var archivalTask = Task.Run(() => CreateBoardArchiverExecutor(rawConfigFile, tokenSource));
 
 			var terminateTask = WaitForTerminateAsync();
 			await Task.WhenAny(archivalTask, terminateTask).ConfigureAwait(false);
@@ -49,10 +49,10 @@ namespace Hayden
 			if (!tokenSource.IsCancellationRequested)
 				tokenSource.Cancel();
 
-			await archivalTask.ConfigureAwait(false);
+			return await archivalTask.ConfigureAwait(false);
 		}
 
-		private static async Task<Func<Task>> CreateBoardArchiverExecutor(JObject rawConfigFile, CancellationTokenSource tokenSource)
+		private static async Task<int> CreateBoardArchiverExecutor(JObject rawConfigFile, CancellationTokenSource tokenSource)
 		{
 			var serviceCollection = new ServiceCollection();
 
@@ -130,19 +130,12 @@ namespace Hayden
 			Log("Initialized.");
 			Log("Press Q to stop archival.");
 
+			Task archiveTask;
+
 			if (configFile.Hayden.ScraperType == "Search")
 			{
 				var searchArchiver = ActivatorUtilities.CreateInstance<SearchArchiver>(serviceProvider);
-
-				return () => searchArchiver.Execute(tokenSource.Token)
-					.ContinueWith(task =>
-					{
-						if (task.IsFaulted)
-						{
-							Log("!! FATAL EXCEPTION !!");
-							Log(task.Exception.ToString());
-						}
-					});
+				archiveTask = searchArchiver.Execute(tokenSource.Token);
 			}
 			else
 			{
@@ -153,15 +146,21 @@ namespace Hayden
 				else
 					boardArchiver = ActivatorUtilities.CreateInstance<BoardArchiver>(serviceProvider);
 
-				return () => boardArchiver.Execute(tokenSource.Token)
-					.ContinueWith(task =>
-					{
-						if (task.IsFaulted)
-						{
-							Log("!! FATAL EXCEPTION !!");
-							Log(task.Exception.ToString());
-						}
-					});
+				archiveTask = boardArchiver.Execute(tokenSource.Token);
+			}
+
+			try
+			{
+				await archiveTask;
+
+				return 0;
+			}
+			catch (Exception ex)
+			{
+				Log("!! FATAL EXCEPTION !!");
+				Log(ex.ToString());
+
+				return 1;
 			}
 		}
 
