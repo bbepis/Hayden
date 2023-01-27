@@ -5,6 +5,7 @@
     import Thread from "../component/Thread.svelte";
     import { Api } from "../data/api";
     import type { BoardPageModel } from "../data/data";
+	import { router } from 'tinro';
 
     let dataPromise: Promise<BoardPageModel>;
 
@@ -14,12 +15,16 @@
     let maxPage = initialCurrentPage;
 
     async function navigatePage(page: number) {
+        let newUrl;
+
         if (page === 1) {
-            document.location.href = `/board/${board}/`;
+            newUrl = `/board/${board}/`;
         }
         else {
-            document.location.href = `/board/${board}/page/${page}/`;
+            newUrl = `/board/${board}/page/${page}/`;
         }
+
+        router.goto(newUrl);
     }
 
     async function loadData() {
