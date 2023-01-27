@@ -37,6 +37,8 @@ namespace Hayden.WebServer
 		public string SiteName { get; set; }
 		public double? MaxFileUploadSizeMB { get; set; }
 
+		public bool SearchEnabled { get; set; }
+
 		public string[] QuoteList { get; set; }
 		public string BannerFilename { get; set; }
 		public NewsItem[] NewsItems { get; set; }

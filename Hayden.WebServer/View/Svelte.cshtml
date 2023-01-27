@@ -38,6 +38,7 @@
             bannerFilename: @Html.Raw(JsonConvert.SerializeObject(Config.Value.Settings.BannerFilename)),
             newsItems: @Html.Raw(JsonConvert.SerializeObject(Config.Value.Settings.NewsItems)),
             shiftJisArt: @Html.Raw(JsonConvert.SerializeObject(Config.Value.Settings.ShiftJisArt)),
+            searchEnabled: @(Config.Value.Settings.SearchEnabled.ToString().ToLower()),
         }
     </script>
 </head>

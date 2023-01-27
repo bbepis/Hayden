@@ -8,6 +8,7 @@ export class InfoObject {
     bannerFilename: string | null;
     newsItems: NewsItem[] | null;
     shiftJisArt: string | null;
+    searchEnabled: boolean;
 }
 
 export interface NewsItem {

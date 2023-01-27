@@ -1,5 +1,5 @@
 <script lang="ts">
-    import type { BoardModel } from "./data/data";
+    import type { BoardModel, InfoObject } from "./data/data";
     import { Utility } from "./data/utility";
     import { moderatorUserStore, boardInfoStore, theme as themeStore } from "./data/stores"
     import { Api } from "./data/api";
@@ -124,9 +124,11 @@
                     <!-- <li class="nav-item">
                         <a class="nav-link" href="/Search">Search</a>
                     </li> -->
-                    <li class="ml-auto">
-                        <SearchBar />
-                    </li>
+                    {#if Utility.infoObject.searchEnabled}
+                        <li class="ml-auto">
+                            <SearchBar />
+                        </li>
+                    {/if}
                 </ul>
             </div>
         </div>
