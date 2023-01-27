@@ -47,7 +47,7 @@ namespace Hayden.Contract
 
 	public interface ISearchableFrontendApi : IFrontendApi
 	{
-		Task<(ulong? total, IAsyncEnumerable<(ulong threadId, string board)> enumerable)> PerformSearch(SearchQuery query, HttpClient client, CancellationToken cancellationToken = default);
+		Task<(ulong? total, IAsyncEnumerable<ThreadPointer> enumerable)> PerformSearch(SearchQuery query, HttpClient client, CancellationToken cancellationToken = default);
 	}
 
 	public class SearchQuery

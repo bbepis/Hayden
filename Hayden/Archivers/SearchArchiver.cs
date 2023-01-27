@@ -39,7 +39,7 @@ namespace Hayden
 		/// </summary>
 		public TimeSpan ApiCooldownTimespan { get; set; }
 
-		public SearchArchiver(SourceConfig sourceConfig, ConsumerConfig consumerConfig, SearchQuery searchQuery, 
+		public SearchArchiver(SourceConfig sourceConfig, ConsumerConfig consumerConfig, 
 			ISearchableFrontendApi frontendApi, IThreadConsumer threadConsumer,
 			IStateStore stateStore = null, ProxyProvider proxyProvider = null)
 		{
@@ -69,14 +69,14 @@ namespace Hayden
 			ConcurrentQueue<QueuedImageDownload> enqueuedImages = new ConcurrentQueue<QueuedImageDownload>();
 			List<QueuedImageDownload> requeuedImages = new List<QueuedImageDownload>();
 
-			var (totalSearchCount, searchEnumerable) = await FrontendApi.PerformSearch(new SearchQuery() { Board = "trash", TextQuery = "bleached" }, imageDownloadClient.Client, token);
+			var (totalSearchCount, searchEnumerable) = await FrontendApi.PerformSearch(new SearchQuery { Board = "g", TextQuery = "home server" }, imageDownloadClient.Client, token);
 			var searchEnumerator = searchEnumerable.GetAsyncEnumerator(token);
 
 			var totalSearchCountString = totalSearchCount != null ? $"~{totalSearchCount}" : "?";
 
 			var semaphore = new SemaphoreSlim(1);
 
-			async ValueTask<(ulong threadId, string board)?> EnumerateNextPost()
+			async ValueTask<ThreadPointer?> EnumerateNextPost()
 			{
 				try
 				{
@@ -213,9 +213,9 @@ namespace Hayden
 						// Exit if there are no threads available
 						return false;
 
-					var nextThread = new ThreadPointer(enumerationResult.Value.board, enumerationResult.Value.threadId);
+					var nextThread = enumerationResult.Value;
 
-					workerStatuses[id] = $"Scraping thread /{enumerationResult.Value.board}/{enumerationResult.Value.threadId}";
+					workerStatuses[id] = $"Scraping thread /{nextThread.Board}/{nextThread.ThreadId}";
 
 					bool outerSuccess = true;
 

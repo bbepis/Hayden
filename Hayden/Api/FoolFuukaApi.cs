@@ -80,7 +80,7 @@ namespace Hayden
 			throw new InvalidOperationException("Not supported");
 		}
 
-		public async Task<(ulong? total, IAsyncEnumerable<(ulong threadId, string board)> enumerable)> PerformSearch(SearchQuery query, HttpClient client, CancellationToken cancellationToken = default)
+		public async Task<(ulong? total, IAsyncEnumerable<ThreadPointer> enumerable)> PerformSearch(SearchQuery query, HttpClient client, CancellationToken cancellationToken = default)
 		{
 			var uriBuilder = new UriBuilder($"{ImageboardWebsite}_/api/chan/search/");
 
@@ -102,7 +102,7 @@ namespace Hayden
 			if (rawSearchResponse.ResponseType != ResponseType.Ok || rawSearchResponse.Data.obj.posts.Length == 0)
 				throw new Exception("Failed to perform search");
 			
-			async IAsyncEnumerable<(ulong threadId, string board)> InnerSearch(IEnumerable<FoolFuukaPostWithBoard> firstSearch)
+			async IAsyncEnumerable<ThreadPointer> InnerSearch(IEnumerable<FoolFuukaPostWithBoard> firstSearch)
 			{
 				// needs to be moved to config
 				var blacklistedThreads = new ulong[] { };
@@ -112,7 +112,7 @@ namespace Hayden
 					if (blacklistedThreads.Contains(post.PostNumber))
 						continue;
 
-					yield return (post.PostNumber, post.board.shortname);
+					yield return new ThreadPointer(post.board.shortname, post.PostNumber);
 				}
 
 				int page = 2;
@@ -133,7 +133,7 @@ namespace Hayden
 						if (blacklistedThreads.Contains(post.PostNumber))
 							continue;
 
-						yield return (post.PostNumber, post.board.shortname);
+						yield return new ThreadPointer(post.board.shortname, post.PostNumber);
 					}
 				}
 			}
