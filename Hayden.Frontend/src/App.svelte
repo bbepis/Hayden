@@ -24,7 +24,9 @@
 	<Route path="/:board/thread/:threadid" let:meta><ThreadPage board={meta.params.board} threadId={Number(meta.params.threadid)} /></Route>
 	<Route path="/board/:board/*" firstmatch let:meta={boardMeta}>
 		<Route path="/page/:page" let:meta>
-			<BoardPage board={boardMeta.params.board} initialCurrentPage={Utility.TryCastInt(meta.params.page) ?? 1} />
+			{#key Utility.TryCastInt(meta.params.page) ?? 1}
+				<BoardPage board={boardMeta.params.board} initialCurrentPage={Utility.TryCastInt(meta.params.page) ?? 1} />
+			{/key}
 		</Route>
 		<Route path="/page/:page/*" let:meta>
 			<BoardPage board={boardMeta.params.board} initialCurrentPage={Utility.TryCastInt(meta.params.page) ?? 1} />
