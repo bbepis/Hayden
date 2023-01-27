@@ -97,6 +97,11 @@ class Build : NukeBuild
 			if (File.Exists(devConfigFile))
 				DeleteFile(devConfigFile);
 
+			var webLibFolder = outputFolder / "wwwroot" / "lib";
+
+			if (Directory.Exists(webLibFolder))
+				DeleteDirectory(webLibFolder);
+
 			if (package)
 			{
 				if (File.Exists(outputZip))
