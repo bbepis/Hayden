@@ -21,19 +21,20 @@ namespace Hayden.WebServer.Data
 	{
 		private HaydenDbContext dbContext { get; }
 		private IOptions<ServerConfig> config { get; }
-		private ElasticClient esClient { get; }
+		private ElasticClient esClient { get; set; }
 
-		public HaydenDataProvider(HaydenDbContext context, IOptions<ServerConfig> config, ElasticClient elasticClient)
+		public HaydenDataProvider(HaydenDbContext context, IOptions<ServerConfig> config)
 		{
 			dbContext = context;
 			this.config = config;
-			esClient = elasticClient;
 		}
+
 		public bool SupportsWriting => true;
 
 		public async Task<bool> PerformInitialization(IServiceProvider services)
 		{
 			await using var dbContext = services.GetRequiredService<HaydenDbContext>();
+			esClient = services.GetService<ElasticClient>();
 
 			try
 			{
@@ -143,6 +144,9 @@ namespace Hayden.WebServer.Data
 
 		public async Task<JsonBoardPageModel> PerformSearch(string searchQuery, int? page)
 		{
+			if (esClient == null || !config.Value.Elasticsearch.Enabled)
+				return null;
+
 			var searchTerm = searchQuery.ToLowerInvariant().Replace("\\", "\\\\").Replace("*", "\\*").Replace("?", "\\?");
 
 			Func<QueryContainerDescriptor<PostIndex>, QueryContainer> searchDescriptor;
