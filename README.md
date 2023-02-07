@@ -50,6 +50,13 @@ Developer documentation is in `ARCHITECTURE.md`.
 
 ----
 
+## Frontend screenshots
+
+<img src="https://i.imgur.com/QNb7Du2.png" width="500" />
+<img src="https://i.imgur.com/3VMau57.png" width="500" />
+<img src="https://i.imgur.com/D3iXzZb.png" width="500" />
+<img src="https://i.imgur.com/Ju6xssq.png" width="500" />
+
 &nbsp;
 
 ## FAQ
