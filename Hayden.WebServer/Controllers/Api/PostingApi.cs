@@ -368,12 +368,12 @@ namespace Hayden.WebServer.Controllers.Api
                         if (tempFile.ImageWidth > tempFile.ImageHeight)
                         {
                             width = 125;
-                            height = (int)((tempFile.ImageWidth / tempFile.ImageHeight) * 125);
+                            height = (int)((tempFile.ImageHeight / tempFile.ImageWidth) * 125);
                         }
                         else
                         {
                             height = 125;
-                            width = (int)((tempFile.ImageHeight / tempFile.ImageWidth) * 125);
+                            width = (int)((tempFile.ImageWidth / tempFile.ImageHeight) * 125);
                         }
 
                         await Common.RunStreamCommandAsync("ffmpeg",
