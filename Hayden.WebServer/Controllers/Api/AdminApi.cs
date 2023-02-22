@@ -43,7 +43,7 @@ namespace Hayden.WebServer.Controllers.Api
 
 	                var fullFilename = Common.CalculateFilename(Config.Value.Data.FileLocation, board.ShortName, Common.MediaType.Image,
 		                file.Sha256Hash, file.Extension);
-	                var thumbFilename = Common.CalculateFilename(Config.Value.Data.FileLocation, board.ShortName, Common.MediaType.Image,
+	                var thumbFilename = Common.CalculateFilename(Config.Value.Data.FileLocation, board.ShortName, Common.MediaType.Thumbnail,
 		                file.Sha256Hash, file.Extension);
 
 					System.IO.File.Delete(fullFilename);
