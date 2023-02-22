@@ -9,6 +9,7 @@ using Shipwreck.Phash;
 using Shipwreck.Phash.Imaging;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
+using System.Linq;
 
 namespace Hayden.MediaInfo;
 
@@ -22,16 +23,29 @@ public class FfprobeMediaInspector : IMediaInspector
         {
             var result = await Common.RunJsonCommandAsync("ffprobe", $"-v quiet -hide_banner -show_streams -print_format json \"{filename}\"");
 
-            file.ImageWidth = result["streams"][0].Value<ushort>("width");
-            file.ImageHeight = result["streams"][0].Value<ushort>("height");
+            var streamsArray = result["streams"] as JArray;
+            if (streamsArray == null || streamsArray.Count == 0)
+            {
+                file.ImageWidth = null;
+                file.ImageHeight = null;
+                file.PerceptualHash = null;
+                file.StreamHash = null;
+                return file;
+            }
 
-            if (filename.EndsWith(".gif", StringComparison.OrdinalIgnoreCase)
+            var videoStream = streamsArray.FirstOrDefault(x => x.Value<string>("codec_type") == "video");
+
+            file.ImageWidth = videoStream?.Value<ushort>("width");
+            file.ImageHeight = videoStream?.Value<ushort>("height");
+
+            if (videoStream != null &&
+                (filename.EndsWith(".gif", StringComparison.OrdinalIgnoreCase)
                 || filename.EndsWith(".webp", StringComparison.OrdinalIgnoreCase)
                 || filename.EndsWith(".png", StringComparison.OrdinalIgnoreCase)
                 || filename.EndsWith(".tiff", StringComparison.OrdinalIgnoreCase)
                 || filename.EndsWith(".jpg", StringComparison.OrdinalIgnoreCase)
                 || filename.EndsWith(".jpeg", StringComparison.OrdinalIgnoreCase)
-                || filename.EndsWith(".bmp", StringComparison.OrdinalIgnoreCase))
+                || filename.EndsWith(".bmp", StringComparison.OrdinalIgnoreCase)))
             {
 	            file.PerceptualHash = GetPHash(filename);
             }
@@ -96,7 +110,7 @@ public class FfprobeMediaInspector : IMediaInspector
 	    }
 	}
 
-    public async Task<string> DetermineMediaTypeAsync(Stream inputStream, string extension)
+    public async Task<MediaStream[]> DetermineMediaTypeAsync(Stream inputStream, string extension)
     {
         try
         {
@@ -105,18 +119,22 @@ public class FfprobeMediaInspector : IMediaInspector
             var result = await Common.RunJsonCommandAsync("ffprobe",
 	            $"{(forceImageCheck ? "-f image2pipe" : "")} -v quiet -hide_banner -show_streams -print_format json -", inputStream);
 
-            Console.WriteLine(result?.ToString() ?? "<null>");
+            //Console.WriteLine(result?.ToString() ?? "<null>");
 
             var streamsArray = result["streams"] as JArray;
 
-            if (streamsArray == null || streamsArray.Count != 1)
+            if (streamsArray == null || streamsArray.Count == 0)
                 return null;
 
-            return streamsArray[0].Value<string>("codec_name");
+            return streamsArray.Select(x => new MediaStream
+            {
+                CodecName = x.Value<string>("codec_name"),
+                CodecType = Enum.TryParse<CodecType>(x.Value<string>("codec_type"), true, out var codecType) ? codecType : CodecType.Other
+            }).ToArray();
         }
         catch (MagickException ex)
         {
-            Console.WriteLine(ex.ToString());
+            //Console.WriteLine(ex.ToString());
             return null;
         }
     }

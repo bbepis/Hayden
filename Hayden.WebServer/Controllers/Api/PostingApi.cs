@@ -1,11 +1,13 @@
 ﻿using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Net;
 using System.Security.Cryptography;
 using System.Threading;
 using System.Threading.Tasks;
+using AngleSharp.Text;
 using Hayden.Consumers.HaydenMysql.DB;
 using Hayden.MediaInfo;
 using Hayden.WebServer.Routing;
@@ -45,7 +47,7 @@ namespace Hayden.WebServer.Controllers.Api
 
 			if (string.IsNullOrWhiteSpace(form.text) && form.file == null)
 				return BadRequest(new { message = "You must have text or an attached file." });
-			
+
 			var banResult = await CheckBanAsync(dbContext);
 			if (banResult != null)
 				return banResult;
@@ -53,20 +55,20 @@ namespace Hayden.WebServer.Controllers.Api
 			if (!await captchaProvider.VerifyCaptchaAsync(form.captcha))
 				return BadRequest(new { message = "Invalid captcha" });
 
-            if (HttpContext.Connection.RemoteIpAddress != null
-                && LastPostTimes.TryGetValue(HttpContext.Connection.RemoteIpAddress, out var lastPostTime))
-            {
-                var lastTimePosting = DateTimeOffset.Now - lastPostTime;
+			if (HttpContext.Connection.RemoteIpAddress != null
+				&& LastPostTimes.TryGetValue(HttpContext.Connection.RemoteIpAddress, out var lastPostTime))
+			{
+				var lastTimePosting = DateTimeOffset.Now - lastPostTime;
 
-                if (lastTimePosting < TimeSpan.FromSeconds(60))
-                {
-	                var timeRemaining = TimeSpan.FromSeconds(60) - lastTimePosting;
+				if (lastTimePosting < TimeSpan.FromSeconds(60))
+				{
+					var timeRemaining = TimeSpan.FromSeconds(60) - lastTimePosting;
 
 					return UnprocessableEntity(new { message = $"Please wait {timeRemaining.TotalSeconds:N0} seconds before posting" });
-                }
-            }
+				}
+			}
 
-            var threadInfo = await dbContext.GetThreadInfo(form.threadId, form.board, true);
+			var threadInfo = await dbContext.GetThreadInfo(form.threadId, form.board, true);
 
 			if (threadInfo.Item2 == null)
 				return UnprocessableEntity(new { message = "Thread does not exist" });
@@ -132,11 +134,11 @@ namespace Hayden.WebServer.Controllers.Api
 			finally
 			{
 				PostSemaphore.Release();
-            }
+			}
 
-            LastPostTimes[HttpContext.Connection.RemoteIpAddress] = DateTimeOffset.Now;
+			LastPostTimes[HttpContext.Connection.RemoteIpAddress] = DateTimeOffset.Now;
 
-            return NoContent();
+			return NoContent();
 		}
 
 		public class NewThreadForm
@@ -158,35 +160,35 @@ namespace Hayden.WebServer.Controllers.Api
 			[FromForm] NewThreadForm form)
 		{
 			if (form == null || form.board == null)
-                return BadRequest(new { message = "Request is malformed" });
+				return BadRequest(new { message = "Request is malformed" });
 
-            if (form.file == null)
+			if (form.file == null)
 				return BadRequest(new { message = "You must have an attached file." });
 
-            var board = await dbContext.Boards.FirstOrDefaultAsync(x => x.ShortName == form.board);
+			var board = await dbContext.Boards.FirstOrDefaultAsync(x => x.ShortName == form.board);
 
 			if (board == null)
-                return BadRequest(new { message = "Board does not exist" });
+				return BadRequest(new { message = "Board does not exist" });
 
-            var banResult = await CheckBanAsync(dbContext);
+			var banResult = await CheckBanAsync(dbContext);
 			if (banResult != null)
 				return banResult;
 
 			if (!await captchaProvider.VerifyCaptchaAsync(form.captcha))
 				return BadRequest(new { message = "Invalid captcha" });
 
-            if (HttpContext.Connection.RemoteIpAddress != null
+			if (HttpContext.Connection.RemoteIpAddress != null
 				&& LastPostTimes.TryGetValue(HttpContext.Connection.RemoteIpAddress, out var lastPostTime))
 			{
 				var lastTimePosting = DateTimeOffset.Now - lastPostTime;
 
-                if (lastTimePosting < TimeSpan.FromSeconds(60))
+				if (lastTimePosting < TimeSpan.FromSeconds(60))
 				{
 					return UnprocessableEntity(new { message = $"Please wait {lastTimePosting.TotalSeconds:N0} seconds before posting" });
-                }
-            }
+				}
+			}
 
-            (var result, var fileId) = await ProcessUploadedFileInternal(dbContext, mediaInspector, form.file, board);
+			(var result, var fileId) = await ProcessUploadedFileInternal(dbContext, mediaInspector, form.file, board);
 
 			if (result != null)
 				return result;
@@ -199,7 +201,7 @@ namespace Hayden.WebServer.Controllers.Api
 			{
 				var lastPost = await dbContext.Posts.Where(x => x.BoardId == board.Id)
 					.OrderByDescending(x => x.PostId)
-					.FirstOrDefaultAsync();		  
+					.FirstOrDefaultAsync();
 
 				nextPostId = (lastPost?.PostId ?? 0) + 1;
 
@@ -258,7 +260,7 @@ namespace Hayden.WebServer.Controllers.Api
 			LastPostTimes[HttpContext.Connection.RemoteIpAddress] = DateTimeOffset.Now;
 
 
-            return Json(new { threadId = nextPostId });
+			return Json(new { threadId = nextPostId });
 		}
 
 		#region Helpers
@@ -285,7 +287,7 @@ namespace Hayden.WebServer.Controllers.Api
 		{
 			var extension = Path.GetExtension(file.FileName).TrimStart('.').ToLower();
 
-			if (extension != "png" && extension != "jpg" && extension != "jpeg" && extension != "gif")
+			if (extension != "png" && extension != "jpg" && extension != "jpeg" && extension != "gif" && extension != "webm")
 				return (UnprocessableEntity(new { message = "File type not allowed" }), 0);
 
 			(uint fileId, var fileBanned, bool badFile) = await ProcessUploadedFileInternal(dbContext, mediaInspector, file, boardInfo, extension);
@@ -340,28 +342,61 @@ namespace Hayden.WebServer.Controllers.Api
 			{
 				using var dataStream = new MemoryStream(fileData);
 				using var thumbStream = new MemoryStream();
+                string tempWrittenFile = null;
 
-				try
-				{
-					var mediaType = await mediaInspector.DetermineMediaTypeAsync(dataStream, extension);
+                try
+                {
+                    var mediaStreams = await mediaInspector.DetermineMediaTypeAsync(dataStream, extension);
 
-					if (mediaType != "png" && mediaType != "gif" && mediaType != "mjpeg")
-						return (0, false, true);
+                    if (!ValidateFile(extension, mediaStreams))
+                        return (0, false, true);
 
-					dataStream.Position = 0;
+                    dataStream.Position = 0;
 
-					if (OperatingSystem.IsWindows())
-						await Common.RunStreamCommandAsync("magick",
-							$"convert - -resize 125x125> -background grey -flatten jpg:-", dataStream, thumbStream);
-					else
-						await Common.RunStreamCommandAsync("convert",
-							$"- -resize 125x125> -background grey -flatten jpg:-", dataStream, thumbStream);
-				}
-				//catch (MagickException ex)
-				catch (Exception ex)
-				{
-					return (0, false, true);
-				}
+                    if (extension == "webm") // needs to be updated to check all video codecs
+                    {
+                        int width, height;
+
+                        // this really needs to be refactored so it doesn't require this call.
+                        // this entire thing here is disgusting
+                        tempWrittenFile = Path.GetTempFileName();
+                        await System.IO.File.WriteAllBytesAsync(tempWrittenFile, fileData);
+
+
+                        var tempFile = await mediaInspector.DetermineMediaInfoAsync(tempWrittenFile, dbFile);
+
+                        if (tempFile.ImageWidth > tempFile.ImageHeight)
+                        {
+                            width = 125;
+                            height = (int)((tempFile.ImageWidth / tempFile.ImageHeight) * 125);
+                        }
+                        else
+                        {
+                            height = 125;
+                            width = (int)((tempFile.ImageHeight / tempFile.ImageWidth) * 125);
+                        }
+
+                        await Common.RunStreamCommandAsync("ffmpeg",
+                            $"-i - -frames:v 1 -vf scale={width}x{height} -c:v mjpeg -f image2pipe -", dataStream,
+                            thumbStream);
+                    }
+                    else if (OperatingSystem.IsWindows())
+                        await Common.RunStreamCommandAsync("magick",
+                            $"convert - -resize 125x125> -background grey -flatten jpg:-", dataStream, thumbStream);
+                    else
+                        await Common.RunStreamCommandAsync("convert",
+                            $"- -resize 125x125> -background grey -flatten jpg:-", dataStream, thumbStream);
+                }
+                //catch (MagickException ex)
+                catch (Exception ex)
+                {
+                    return (0, false, true);
+                }
+                finally
+                {
+					if (tempWrittenFile != null)
+						System.IO.File.Delete(tempWrittenFile);
+                }
 
 				Directory.CreateDirectory(Path.GetDirectoryName(destinationFilename));
 				Directory.CreateDirectory(Path.GetDirectoryName(thumbnailFilename));
@@ -396,6 +431,37 @@ namespace Hayden.WebServer.Controllers.Api
 
 			return (dbFile.Id, false, false);
 		}
+
+		public static bool ValidateFile(string extension, MediaStream[] mediaStreams)
+		{
+			if (!AllowedCodecs.TryGetValue(extension, out var streamInfo))
+				return false;
+
+			if (streamInfo.maxVideoStreams.HasValue && mediaStreams.Count(x => x.CodecType == CodecType.Video) > streamInfo.maxVideoStreams.Value)
+				return false;
+
+            if (streamInfo.maxAudioStreams.HasValue && mediaStreams.Count(x => x.CodecType == CodecType.Audio) > streamInfo.maxAudioStreams.Value)
+                return false;
+
+			if (mediaStreams.Where(x => x.CodecType == CodecType.Video).Any(x => !streamInfo.allowedVideoCodecs.Contains(x.CodecName)))
+				return false;
+
+			if (mediaStreams.Where(x => x.CodecType == CodecType.Audio).Any(x => !streamInfo.allowedAudioCodecs.Contains(x.CodecName)))
+				return false;
+
+			return true;
+        }
+
+		public static readonly Dictionary<string, (int? maxVideoStreams, int? maxAudioStreams, string[] allowedVideoCodecs, string[] allowedAudioCodecs)> AllowedCodecs = new()
+		{
+			["png"] = (1, 0, new[] { "png" }, new string[0]),
+            ["jpeg"] = (1, 0, new[] { "mjpeg" }, new string[0]),
+            ["jpg"] = (1, 0, new[] { "mjpeg" }, new string[0]),
+            ["gif"] = (1, 0, new[] { "gif" }, new string[0]),
+            ["webp"] = (1, 0, new[] { "webp" }, new string[0]),
+            ["webm"] = (1, 1, new[] { "vp8", "vp9" }, new[] { "vorbis", "opus" }),
+            //["mp4"] = (1, 1, new[] { "libx264" }, new[] { "vorbis", "opus" }),
+        };
 
 		#endregion
 	}
