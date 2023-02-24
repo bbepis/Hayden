@@ -86,7 +86,7 @@ namespace Hayden
 				case "InfinityNext":  serviceCollection.AddSingleton<IFrontendApi, InfinityNextApi>(); break;
 				case "Ponychan":      serviceCollection.AddSingleton<IFrontendApi, PonychanApi>(); break;
 				case "ASPNetChan":    serviceCollection.AddSingleton<IFrontendApi, ASPNetChanApi>(); break;
-				case "FoolFuuka":     serviceCollection.AddSingleton<ISearchableFrontendApi, FoolFuukaApi>(); break;
+				case "FoolFuuka":     serviceCollection.AddSingletonMulti<IFrontendApi, ISearchableFrontendApi, FoolFuukaApi>(); break;
 				case "Fuuka":         serviceCollection.AddSingleton<IImporter, FuukaImporter>(); break;
 				default:              throw new Exception($"Unknown source type: {configFile.Source.Type}");
 			}

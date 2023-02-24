@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Hayden
 {
@@ -33,5 +34,17 @@ namespace Hayden
 				}
 			}));
 		}
+
+        public static IServiceCollection AddSingletonMulti<T1, T2, TImplementation>(this IServiceCollection services)
+		    where TImplementation : class, T1, T2
+			where T1 : class
+            where T2 : class
+        {
+            services.AddSingleton<TImplementation>();
+			services.AddSingleton<T1>(provider => provider.GetRequiredService<TImplementation>());
+            services.AddSingleton<T2>(provider => provider.GetRequiredService<TImplementation>());
+
+            return services;
+        }
 	}
 }
