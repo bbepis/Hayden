@@ -51,6 +51,11 @@ namespace Hayden.Config
 		/// If set to true, the scraper will not use the SHA1 hash (if available) to skip downloading media that has already been downloaded. This will safeguard against MD5 conflicts, however will obviously use a lot more bandwidth.
 		/// </summary>
 		public bool IgnoreSha1Hash { get; set; }
+
+		/// <summary>
+		/// The consolidation mode to use when dealing with multiple sources of truth.
+		/// </summary>
+		public ConsolidationMode ConsolidationMode { get; set; } = ConsolidationMode.Authoritative;
 	}
 
 	public enum DatabaseType
@@ -58,5 +63,17 @@ namespace Hayden.Config
 		None,
 		MySql,
 		Sqlite
+	}
+
+	public enum ConsolidationMode
+	{
+		/// <summary>
+		/// Assume that the post source is the authoritative source of truth. Will overwrite local data with what is provided by the source
+		/// </summary>
+		Authoritative,
+		/// <summary>
+		/// Assume that the post source is inaccurate and as such should not be used to overwrite existing data. Will only be used to add new data
+		/// </summary>
+		Pessimistic
 	}
 }

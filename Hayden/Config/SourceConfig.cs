@@ -23,8 +23,6 @@ namespace Hayden.Config
 		/// </summary>
 		public string DbConnectionString { get; set; }
 
-		public ImportAlgorithm ImportAlgorithm { get; set; } = ImportAlgorithm.Optimistic;
-
 		/// <summary>
 		/// An array of boards to be archived.
 		/// </summary>
@@ -62,11 +60,6 @@ namespace Hayden.Config
 		/// The regex filter for either the thread subject or OP post content.
 		/// </summary>
 		public string AnyFilter { get; set; }
-	}
 
-	public enum ImportAlgorithm
-	{
-		Optimistic,
-		Pessimistic
 	}
 }

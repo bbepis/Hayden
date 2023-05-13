@@ -251,64 +251,66 @@ namespace Hayden.Consumers
 
 			await dbContext.SaveChangesAsync();
 
-			foreach (var post in threadUpdateInfo.UpdatedPosts)
-			{
-				Program.Log($"[DB] Post /{board}/{post.PostNumber} has been modified", true);
-
-				var dbPost = await dbContext.Posts.FirstAsync(x => x.BoardId == boardId && x.PostId == post.PostNumber);
-				var dbPostMappings = await dbContext.FileMappings.Where(x => x.BoardId == boardId && x.PostId == post.PostNumber).ToArrayAsync();
-				
-				//if (post.Comment != dbPost.ContentHtml)
-				if ((dbPost.ContentRaw != null && post.ContentRaw != dbPost.ContentRaw) || (dbPost.ContentRaw == null && post.ContentRendered != dbPost.ContentHtml))
+			if (ConsumerConfig.ConsolidationMode == ConsolidationMode.Authoritative)
+				foreach (var post in threadUpdateInfo.UpdatedPosts)
 				{
-					// this needs to be made more efficient
-					// this also doesn't cooperate well with deadlinks (why the fuck is that passed through the api html render?)
+					Program.Log($"[DB] Post /{board}/{post.PostNumber} has been modified", true);
 
-					var jsonAdditionalMetadata = !string.IsNullOrWhiteSpace(dbPost.AdditionalMetadata)
-						? JObject.Parse(dbPost.AdditionalMetadata)
-						: new JObject();
-
-					const string jsonKey = "content_modifications";
-
-					var modificationsArray = jsonAdditionalMetadata.GetValue(jsonKey) as JArray ??
-											 new JArray();
-
-					modificationsArray.Add(JToken.FromObject(new
-					{
-						time = DateTimeOffset.UtcNow,
-						old_content_raw = dbPost.ContentRaw,
-						old_content_html = dbPost.ContentHtml,
-						new_content_raw = post.ContentRaw,
-						new_content_html = post.ContentRendered
-					}));
-
-					jsonAdditionalMetadata[jsonKey] = modificationsArray;
-					dbPost.AdditionalMetadata = jsonAdditionalMetadata.ToString(Formatting.None);
+					var dbPost = await dbContext.Posts.FirstAsync(x => x.BoardId == boardId && x.PostId == post.PostNumber);
+					var dbPostMappings = await dbContext.FileMappings.Where(x => x.BoardId == boardId && x.PostId == post.PostNumber).ToArrayAsync();
 					
-					dbPost.ContentHtml = post.ContentRendered.TrimAndNullify();
-					dbPost.ContentRaw = post.ContentRaw.TrimAndNullify();
+					//if (post.Comment != dbPost.ContentHtml)
+					if ((dbPost.ContentRaw != null && post.ContentRaw != dbPost.ContentRaw) || (dbPost.ContentRaw == null && post.ContentRendered != dbPost.ContentHtml))
+					{
+						// this needs to be made more efficient
+						// this also doesn't cooperate well with deadlinks (why the fuck is that passed through the api html render?)
+
+						var jsonAdditionalMetadata = !string.IsNullOrWhiteSpace(dbPost.AdditionalMetadata)
+							? JObject.Parse(dbPost.AdditionalMetadata)
+							: new JObject();
+
+						const string jsonKey = "content_modifications";
+
+						var modificationsArray = jsonAdditionalMetadata.GetValue(jsonKey) as JArray ??
+												 new JArray();
+
+						modificationsArray.Add(JToken.FromObject(new
+						{
+							time = DateTimeOffset.UtcNow,
+							old_content_raw = dbPost.ContentRaw,
+							old_content_html = dbPost.ContentHtml,
+							new_content_raw = post.ContentRaw,
+							new_content_html = post.ContentRendered
+						}));
+
+						jsonAdditionalMetadata[jsonKey] = modificationsArray;
+						dbPost.AdditionalMetadata = jsonAdditionalMetadata.ToString(Formatting.None);
+						
+						dbPost.ContentHtml = post.ContentRendered.TrimAndNullify();
+						dbPost.ContentRaw = post.ContentRaw.TrimAndNullify();
+					}
+
+					dbPost.IsDeleted = false;
+
+					foreach (var dbPostMapping in dbPostMappings)
+					{
+						if (post.Media == null
+							|| post.Media.Length == 0
+							|| post.Media.Any(x => x.Filename == dbPostMapping.Filename && x.IsDeleted)
+							|| post.Media.All(x => x.Filename != dbPostMapping.Filename))
+							dbPostMapping.IsDeleted = true;
+					}
 				}
 
-				dbPost.IsDeleted = false;
-
-				foreach (var dbPostMapping in dbPostMappings)
+			if (ConsumerConfig.ConsolidationMode == ConsolidationMode.Authoritative)
+				foreach (var postNumber in threadUpdateInfo.DeletedPosts)
 				{
-					if (post.Media == null
-					    || post.Media.Length == 0
-					    || post.Media.Any(x => x.Filename == dbPostMapping.Filename && x.IsDeleted)
-					    || post.Media.All(x => x.Filename != dbPostMapping.Filename))
-						dbPostMapping.IsDeleted = true;
+					Program.Log($"[DB] Post /{board}/{postNumber} has been deleted", true);
+
+					var dbPost = await dbContext.Posts.FirstAsync(x => x.BoardId == boardId && x.PostId == postNumber);
+
+					dbPost.IsDeleted = true;
 				}
-			}
-
-			foreach (var postNumber in threadUpdateInfo.DeletedPosts)
-			{
-				Program.Log($"[DB] Post /{board}/{postNumber} has been deleted", true);
-
-				var dbPost = await dbContext.Posts.FirstAsync(x => x.BoardId == boardId && x.PostId == postNumber);
-
-				dbPost.IsDeleted = true;
-			}
 
 			await dbContext.SaveChangesAsync();
 
