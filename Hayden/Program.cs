@@ -155,6 +155,10 @@ namespace Hayden
 
 				return 0;
 			}
+			catch (TaskCanceledException)
+			{
+				return 1;
+			}
 			catch (Exception ex)
 			{
 				Log("!! FATAL EXCEPTION !!");
