@@ -35,7 +35,10 @@ namespace Hayden.WebServer.DB.Elasticsearch
 		[Date(Name = "postDateUtc", Index = false, Store = false, DocValues = true)]
 		public DateTime PostDateUtc { get; set; }
 
-		[Boolean(Name = "isOp", Index = true, Store = false, DocValues = true)]
+		[Boolean(Name = "isOp", Index = false, Store = false, DocValues = true)]
 		public bool IsOp { get; set; }
-	}
+
+        [Boolean(Name = "isDeleted", Index = false, Store = false, DocValues = true)]
+        public bool IsDeleted { get; set; }
+    }
 }
