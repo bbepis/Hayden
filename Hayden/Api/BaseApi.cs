@@ -6,7 +6,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using AngleSharp;
 using AngleSharp.Html.Dom;
-using AngleSharp.Html.Parser;
 using Hayden.Contract;
 using Hayden.Models;
 using Newtonsoft.Json;
@@ -102,8 +101,6 @@ namespace Hayden.Api
 			return new ApiResponse<IHtmlDocument>(ResponseType.Ok, (IHtmlDocument)document);
 		}
 
-		public abstract bool SupportsArchive { get; }
-
 		public virtual async Task<ApiResponse<Thread>> GetThread(string board, ulong threadNumber, HttpClient client,
 			DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default)
 		{
@@ -115,7 +112,10 @@ namespace Hayden.Api
 			return new ApiResponse<Thread>(response.ResponseType, ConvertThread(response.Data, board));
 		}
 
+		public abstract bool SupportsArchive { get; }
+
 		public abstract Task<ApiResponse<PageThread[]>> GetBoard(string board, HttpClient client, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default);
+		
 		public abstract Task<ApiResponse<ulong[]>> GetArchive(string board, HttpClient client, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default);
 
 		protected abstract Task<ApiResponse<TThread>> GetThreadInternal(string board, ulong threadNumber, HttpClient client, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default);

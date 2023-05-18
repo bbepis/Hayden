@@ -42,6 +42,11 @@ namespace Hayden.Config
 		/// True if downloading from the archive, false if not.
 		/// </summary>
 		public bool ReadArchive { get; set; }
+
+		/// <summary>
+		/// True if only performing a single scan from the source, otherwise false to infinitely scan the source for updates.
+		/// </summary>
+		public bool SingleScan { get; set; }
 	}
 
 	public class BoardRulesConfig

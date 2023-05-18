@@ -42,6 +42,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\Hayden.WebServer\Hayden.WebServer.csproj" />
     <ProjectReference Include="..\Hayden\Hayden.csproj" />
   </ItemGroup>
 

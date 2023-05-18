@@ -12,9 +12,12 @@ using System.Threading.Tasks;
 using Hayden.Api;
 using Hayden.Cache;
 using Hayden.Config;
+using Hayden.Consumers.HaydenMysql.DB;
 using Hayden.Contract;
 using Hayden.Models;
 using Hayden.Proxy;
+using Nito.AsyncEx;
+using Polly.Timeout;
 using Thread = Hayden.Models.Thread;
 
 namespace Hayden
@@ -38,7 +41,8 @@ namespace Hayden
 
 		protected Dictionary<string, BoardRules> BoardRules { get; } = new();
 
-		protected virtual bool LoopArchive => true;
+		protected virtual bool LoopArchive { get; }
+
 		protected virtual bool NeedsToDelayThreadApiCall => true;
 
 		/// <summary>
@@ -51,10 +55,10 @@ namespace Hayden
 		/// </summary>
 		public TimeSpan ApiCooldownTimespan { get; set; }
 
-        /// <summary>
+		/// <summary>
 		/// Keeps track of the last time we scraped a board, and therefore determines which threads we should scrape.
 		/// </summary>
-        protected SortedList<string, DateTimeOffset> LastBoardCheckTimes;
+		protected SortedList<string, DateTimeOffset> LastBoardCheckTimes;
 
 
 		/// <summary>
@@ -63,7 +67,7 @@ namespace Hayden
 		protected HttpClientProxy ImageDownloadClient;
 
 
-        public BoardArchiver(SourceConfig sourceConfig, ConsumerConfig consumerConfig, IFrontendApi frontendApi,
+		public BoardArchiver(SourceConfig sourceConfig, ConsumerConfig consumerConfig, IFrontendApi frontendApi,
 			IThreadConsumer threadConsumer, IFileSystem fileSystem, IStateStore stateStore = null, ProxyProvider proxyProvider = null)
 		{
 			SourceConfig = sourceConfig;
@@ -85,7 +89,9 @@ namespace Hayden
 
 			LastBoardCheckTimes = new SortedList<string, DateTimeOffset>(SourceConfig.Boards.Count);
 			ImageDownloadClient = new HttpClientProxy(ProxyProvider.CreateNewClient(), "baseconnection/image");
-        }
+
+			LoopArchive = !sourceConfig.SingleScan;
+		}
 
 		/// <summary>
 		/// Performs the main archival loop.
@@ -98,400 +104,387 @@ namespace Hayden
 			// We only loop if cancellation has not been requested (i.e. "Q" has not been pressed)
 			// Every time you see "token" mentioned, its performing a check
 
-			var queuedThreads = new List<ThreadPointer>();
+			MaybeAsyncEnumerable<ThreadPointer> queuedThreads = null;
 			var queuedImages = new List<QueuedImageDownload>();
 
 			while (!token.IsCancellationRequested)
 			{
 				if (firstRun || LoopArchive)
 				{
-					var boardThreads = await ReadBoards(firstRun, token);
-					queuedThreads.AddRange(boardThreads);
+					queuedThreads = await ReadBoards(firstRun, token);
 				}
-
-				Program.Log($"{queuedThreads.Count} threads have been queued total");
-                queuedThreads.TrimExcess();
-
-                var (requeuedThreads, requeuedImages) = await PerformScrape(firstRun, queuedThreads, queuedImages, token);
 				
-				queuedThreads = requeuedThreads;
+				if (queuedThreads.IsListBacked)
+					Program.Log($"{queuedThreads.Count} threads have been queued total");
+
+				var (requeuedThreads, requeuedImages) = await PerformScrape(firstRun, queuedThreads, queuedImages, token);
+				
+				queuedThreads = new MaybeAsyncEnumerable<ThreadPointer>(requeuedThreads);
 				queuedImages = requeuedImages;
 
-                firstRun = false;
+				firstRun = false;
 
-                if (!LoopArchive)
-	                break;
+				if (!LoopArchive && queuedThreads.Count == 0 && queuedImages.Count == 0)
+					break;
 			}
 		}
 
-		protected virtual async Task<List<ThreadPointer>> ReadBoards(bool firstRun, CancellationToken token)
+		protected virtual async Task<MaybeAsyncEnumerable<ThreadPointer>> ReadBoards(bool firstRun, CancellationToken token)
 		{
-			var threadQueue = new List<ThreadPointer>();
-            int currentBoardCount = 0;
+			var threadQueue = new List<MaybeAsyncEnumerable<ThreadPointer>>();
+			int currentBoardCount = 0;
 
-            // For each board (maximum of 8 concurrently), retrieve a list of threads that need to be scraped
-            await SourceConfig.Boards.Keys.ForEachAsync(8, async board =>
+			// For each board (maximum of 8 concurrently), retrieve a list of threads that need to be scraped
+			await SourceConfig.Boards.Keys.ForEachAsync(8, async board =>
 			{
-                token.ThrowIfCancellationRequested();
+				token.ThrowIfCancellationRequested();
 
-                DateTimeOffset lastDateTimeCheck;
+				DateTimeOffset lastDateTimeCheck;
 
-                lock (LastBoardCheckTimes)
-                    if (!LastBoardCheckTimes.TryGetValue(board, out lastDateTimeCheck))
-                        lastDateTimeCheck = DateTimeOffset.MinValue;
+				lock (LastBoardCheckTimes)
+					if (!LastBoardCheckTimes.TryGetValue(board, out lastDateTimeCheck))
+						lastDateTimeCheck = DateTimeOffset.MinValue;
 
-                // Set this time now before we do the network calls, as it's safer and we won't miss any threads that update in-between
-                DateTimeOffset beforeCheckTime = DateTimeOffset.Now;
+				// Set this time now before we do the network calls, as it's safer and we won't miss any threads that update in-between
+				DateTimeOffset beforeCheckTime = DateTimeOffset.Now;
 
 				// Get a list of threads to be scraped
-                var (modifiedThreads, allThreads) = await GetBoardThreads(token, board, lastDateTimeCheck, firstRun);
+				var threads = await GetBoardThreads(token, board, lastDateTimeCheck, firstRun);
 
-                lock (threadQueue)
-                    threadQueue.AddRange(modifiedThreads);
+				if (threads != null)
+					lock (threadQueue)
+						threadQueue.Add(threads);
 
-                if (modifiedThreads.Any(pointer => pointer.Board == null))
-                    System.Diagnostics.Debugger.Break();
-
-                // If allThreads is null, then the board hasn't changed since we last checked
-                if (allThreads != null)
-                {
-					// Examine the threads we are tracking to find any that have fallen off.
-					// This is the only way we can find out if a thread has been archived or deleted in this polling model
-
-					// Locking on the tracking sortedlist is not required since all operations at this point in time are read-only
-					// ^ not true, TrackedThreads get changed in GetBoardThreads
-					// TODO: this code causes "Collection was modified after the enumerator was instantiated." issues
-					var missingTrackedThreads = TrackedThreads.Where(x => x.Key.Board == board && !allThreads.Contains(x.Key));
-
-                    foreach (var (pointer, _) in missingTrackedThreads)
-                    {
-                        // This thread is missing from the board listing, but the last time we checked it it was still alive.
-                        // Add it to the re-examination queue
-                        threadQueue.Add(pointer);
-
-                        if (pointer.Board == null)
-                            System.Diagnostics.Debugger.Break();
-                    }
-                }
-
-                if (firstRun && SourceConfig.ReadArchive && FrontendApi.SupportsArchive)
-                {
+				if (firstRun && SourceConfig.ReadArchive && FrontendApi.SupportsArchive)
+				{
 					// Get a list of archived threads to include to be scraped.
 					var archivedThreads = await GetArchivedBoardThreads(token, board, lastDateTimeCheck);
 
-                    lock (threadQueue)
-                        threadQueue.AddRange(archivedThreads);
-                }
+					lock (threadQueue)
+						threadQueue.Add(new MaybeAsyncEnumerable<ThreadPointer>(archivedThreads));
+				}
 
-                lock (LastBoardCheckTimes)
-                {
-                    LastBoardCheckTimes[board] = beforeCheckTime;
+				lock (LastBoardCheckTimes)
+				{
+					LastBoardCheckTimes[board] = beforeCheckTime;
 
-                    if (++currentBoardCount % 5 == 0 || currentBoardCount == SourceConfig.Boards.Count)
-                    {
-                        Program.Log($"{currentBoardCount} / {SourceConfig.Boards.Count} boards polled");
-                    }
-                }
-            });
+					if (++currentBoardCount % 5 == 0 || currentBoardCount == SourceConfig.Boards.Count)
+					{
+						Program.Log($"{currentBoardCount} / {SourceConfig.Boards.Count} boards polled");
+					}
+				}
+			});
 
-			return threadQueue;
-        }
+			if (threadQueue.All(x => x.IsListBacked))
+				return new MaybeAsyncEnumerable<ThreadPointer>(threadQueue.SelectMany(x => x.SourceList).ToList());
+
+			return new MaybeAsyncEnumerable<ThreadPointer>(threadQueue.Aggregate((a, b) => new MaybeAsyncEnumerable<ThreadPointer>(a.Concat(b))));
+		}
 
 		protected virtual async Task<(List<ThreadPointer> requeuedThreads, List<QueuedImageDownload> requeuedImages)> PerformScrape(
-			bool firstRun, List<ThreadPointer> threadQueue, List<QueuedImageDownload> additionalImages, CancellationToken token)
+			bool firstRun, MaybeAsyncEnumerable<ThreadPointer> threadQueue, List<QueuedImageDownload> additionalImages, CancellationToken token)
 		{
-            var enqueuedImages = new ConcurrentQueue<QueuedImageDownload>(additionalImages);
+			var enqueuedImages = new ConcurrentQueue<QueuedImageDownload>(additionalImages);
 
 			var requeuedImages = new List<QueuedImageDownload>();
 
-            if (token.IsCancellationRequested)
+			if (token.IsCancellationRequested)
 				return (null, null);
 
-            // We've finished scraping board listings, now we move onto scraping threads/images
+			// We've finished scraping board listings, now we move onto scraping threads/images
 
-            var beginTime = DateTime.UtcNow;
-            var waitTask = Task.Delay(BoardUpdateTimespan, token);
+			var beginTime = DateTime.UtcNow;
+			var waitTask = Task.Delay(BoardUpdateTimespan, token);
 
 			// The list of threads that have failed, or otherwise need to be requeued.
-            var requeuedThreads = new List<ThreadPointer>();
+			var requeuedThreads = new List<ThreadPointer>();
 
 
-            int threadCompletedCount = 0;
-            int imageCompletedCount = 0;
+			int threadCompletedCount = 0;
+			int imageCompletedCount = 0;
 
-            // Downloads a single image.
-            async Task<int> DownloadEnqueuedImage(HttpClientProxy client, QueuedImageDownload queuedDownload)
-            {
-                if (queuedDownload == null)
-                {
-                    // If the queued image is null then we need to try and dequeue one ourselves
+			// Downloads a single image.
+			async Task<int> DownloadEnqueuedImage(HttpClientProxy client, QueuedImageDownload queuedDownload)
+			{
+				if (queuedDownload == null)
+				{
+					// If the queued image is null then we need to try and dequeue one ourselves
 
-                    if (!enqueuedImages.TryDequeue(out queuedDownload))
-                    {
-                        // There were no images available so return
-                        return imageCompletedCount;
-                    }
-                }
+					if (!enqueuedImages.TryDequeue(out queuedDownload))
+					{
+						// There were no images available so return
+						return imageCompletedCount;
+					}
+				}
 
-                // Ensure that an image download takes at least as long as 100ms
-                // We don't want to download images too fast
-                var waitTask = Task.Delay(100, token);
+				// Ensure that an image download takes at least as long as 100ms
+				// We don't want to download images too fast
+				var waitTask = Task.Delay(100, token);
 
-                string tempFilePath = null, tempThumbPath = null;
+				string tempFilePath = null, tempThumbPath = null;
 
-                try
-                {
-                    // Perform the actual download.
+				try
+				{
+					// Perform the actual download.
 
-                    if (queuedDownload.FullImageUri != null)
-                    {
-                        tempFilePath = await DownloadFileTask(queuedDownload.FullImageUri, client.Client);
-                    }
+					if (queuedDownload.FullImageUri != null)
+					{
+						tempFilePath = await DownloadFileTask(queuedDownload.FullImageUri, client.Client);
+					}
 
-                    if (queuedDownload.ThumbnailImageUri != null)
-                    {
-                        tempThumbPath = await DownloadFileTask(queuedDownload.ThumbnailImageUri, client.Client);
-                    }
+					if (queuedDownload.ThumbnailImageUri != null)
+					{
+						tempThumbPath = await DownloadFileTask(queuedDownload.ThumbnailImageUri, client.Client);
+					}
 
-                    await ThreadConsumer.ProcessFileDownload(queuedDownload, tempFilePath, tempThumbPath);
-                }
-                catch (Exception ex)
-                {
-                    // Errored out. Log it and requeue the image
-                    Program.Log($"ERROR: Could not download image. Will try again next board update\nClient name: {client.Name}\nException: {ex}");
+					await ThreadConsumer.ProcessFileDownload(queuedDownload, tempFilePath, tempThumbPath);
+				}
+				catch (Exception ex)
+				{
+					// Errored out. Log it and requeue the image
+					Program.Log($"ERROR: Could not download image. Will try again next board update\nClient name: {client.Name}\nException: {ex}");
 
-                    lock (requeuedImages)
-                        requeuedImages.Add(queuedDownload);
-                }
-                finally
-                {
-                    if (tempFilePath != null && FileSystem.File.Exists(tempFilePath))
-                        FileSystem.File.Delete(tempFilePath);
+					lock (requeuedImages)
+						requeuedImages.Add(queuedDownload);
+				}
+				finally
+				{
+					if (tempFilePath != null && FileSystem.File.Exists(tempFilePath))
+						FileSystem.File.Delete(tempFilePath);
 
-                    if (tempThumbPath != null && FileSystem.File.Exists(tempThumbPath))
-                        FileSystem.File.Delete(tempThumbPath);
-                }
+					if (tempThumbPath != null && FileSystem.File.Exists(tempThumbPath))
+						FileSystem.File.Delete(tempThumbPath);
+				}
 
-                await waitTask;
+				await waitTask;
 
-                // Increment the downloaded images count and return it
-                return Interlocked.Increment(ref imageCompletedCount);
-            }
+				// Increment the downloaded images count and return it
+				return Interlocked.Increment(ref imageCompletedCount);
+			}
 
-            if (firstRun)
-            {
-                // This is the first board loop, so we want to get a list of all unfinished queued image downloads from the Cache layer
-                // If any exist, they would've been saved from a previous instance of Hayden that did not shut down cleanly.
-                // Hayden would not otherwise detect these downloads, unless the thread they originated from had updated
+			if (firstRun)
+			{
+				// This is the first board loop, so we want to get a list of all unfinished queued image downloads from the Cache layer
+				// If any exist, they would've been saved from a previous instance of Hayden that did not shut down cleanly.
+				// Hayden would not otherwise detect these downloads, unless the thread they originated from had updated
 
-                foreach (var queuedImage in await StateStore.GetDownloadQueue())
-                    enqueuedImages.Enqueue(queuedImage);
+				foreach (var queuedImage in await StateStore.GetDownloadQueue())
+					enqueuedImages.Enqueue(queuedImage);
 
-                Program.Log($"{enqueuedImages.Count} media items loaded from queue cache");
-            }
+				Program.Log($"{enqueuedImages.Count} media items loaded from queue cache");
+			}
 
-            threadQueue = threadQueue
-                .Where(x => x.Board != null && x != default) // Very rarely a null value can slip into here. Not sure why, but just added for safety
-                .ToList();
+			if (threadQueue.IsListBacked)
+			{
+				var tempList = threadQueue.SourceList
+					.Where(x => x.Board != null && x != default) // Very rarely a null value can slip into here. Not sure why, but just added for safety
+					.ToList();
+					 
+				// We create a round-robin queue that each worker task/thread is able to consume.
+				// Round-robin is used specifically since we want to balance out downloaded threads per boards, otherwise it would be downloading a single board at a time
+				threadQueue = new MaybeAsyncEnumerable<ThreadPointer>(
+					tempList.RoundRobin(x => x.Board)
+					.ToList());
+			}
 
-            // We create a round-robin queue that each worker task/thread is able to consume.
-            // Round-robin is used specifically since we want to balance out downloaded threads per boards, otherwise it would be downloading a single board at a time
-            using var roundRobinQueue = threadQueue
-                .RoundRobin(x => x.Board)
-                .GetEnumerator();
+			var asyncLock = new AsyncLock();
 
-            // This is really only used for debugging purposes
-            IDictionary<int, string> workerStatuses = new ConcurrentDictionary<int, string>();
+			await using var threadEnumerator = threadQueue
+				.GetAsyncEnumerator(token);
 
-            // Represents a single worker task. In reality this means a thread is spun up for this task
-            async Task WorkerTask(int id, bool prioritizeImages)
-            {
-                // The worker ID, useful for debugging
-                var idString = id.ToString();
+			// This is really only used for debugging purposes
+			IDictionary<int, string> workerStatuses = new ConcurrentDictionary<int, string>();
 
-                // The next two blocks are function definitions. The actual loop code is below them
+			// Represents a single worker task. In reality this means a thread is spun up for this task
+			async Task WorkerTask(int id, bool prioritizeImages)
+			{
+				// The worker ID, useful for debugging
+				var idString = id.ToString();
 
-                // The unit of work involving checking if any images are available, and downloading a single one.
-                async Task<bool> CheckImages()
-                {
-                    bool success = enqueuedImages.TryDequeue(out var nextImage);
+				// The next two blocks are function definitions. The actual loop code is below them
 
-                    if (!success)
-                        // Exit if no images are available
-                        return false;
+				// The unit of work involving checking if any images are available, and downloading a single one.
+				async Task<bool> CheckImages()
+				{
+					bool success = enqueuedImages.TryDequeue(out var nextImage);
 
-                    workerStatuses[id] = $"Downloading image {nextImage.FullImageUri.AbsoluteUri}";
+					if (!success)
+						// Exit if no images are available
+						return false;
 
-                    int completedCount = await DownloadEnqueuedImage(ImageDownloadClient, nextImage);
+					workerStatuses[id] = $"Downloading image {nextImage.FullImageUri.AbsoluteUri}";
 
-                    if (completedCount % 10 == 0 || enqueuedImages.Count == 0)
-                    {
-                        Program.Log($"{"[Image]",-9} [{completedCount}/{enqueuedImages.Count}]");
-                    }
+					int completedCount = await DownloadEnqueuedImage(ImageDownloadClient, nextImage);
 
-                    return true;
-                }
+					if (completedCount % 10 == 0 || enqueuedImages.Count == 0)
+					{
+						Program.Log($"{"[Image]",-9} [{completedCount}/{enqueuedImages.Count}]");
+					}
 
-                // The unit of work involving checking if any threads are available, and downloading a single one + enqueuing those images.
-                async Task<bool> CheckThreads()
-                {
-                    bool success;
-                    ThreadPointer nextThread;
+					return true;
+				}
 
-                    // Grab the next thread from the round robin queue. Complex because we want to do this in a thread-safe way
-                    lock (roundRobinQueue)
-                    {
-                        success = roundRobinQueue.MoveNext();
-                        nextThread = roundRobinQueue.Current;
-                    }
+				// The unit of work involving checking if any threads are available, and downloading a single one + enqueuing those images.
+				async Task<bool> CheckThreads()
+				{
+					bool success;
+					ThreadPointer nextThread;
 
-                    if (!success)
-                        // Exit if there are no threads available
-                        return false;
+					// Grab the next thread from the round robin queue. Complex because we want to do this in a thread-safe way
+					using (await asyncLock.LockAsync())
+					{
+						success = await threadEnumerator.MoveNextAsync();
+						nextThread = threadEnumerator.Current;
+					}
 
-                    workerStatuses[id] = $"Scraping thread /{nextThread.Board}/{nextThread.ThreadId}";
+					if (!success)
+						// Exit if there are no threads available
+						return false;
 
-                    bool outerSuccess = true;
+					workerStatuses[id] = $"Scraping thread /{nextThread.Board}/{nextThread.ThreadId}";
 
-                    // Add a timeout for the scrape to 2 minutes, so it doesn't hang forever
-                    using var timeoutToken = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+					// Add a timeout for the scrape to 2 minutes, so it doesn't hang forever
+					using var timeoutToken = new CancellationTokenSource(TimeSpan.FromMinutes(2));
 
-                    await AsyncProxyCall(NeedsToDelayThreadApiCall, async client =>
-                    {
-	                    string board = nextThread.Board;
-	                    ulong threadNumber = nextThread.ThreadId;
+					await AsyncProxyCall(NeedsToDelayThreadApiCall, async client =>
+					{
+						string board = nextThread.Board;
+						ulong threadNumber = nextThread.ThreadId;
+						
+						ThreadUpdateTaskResult result;
 
-	                    var apiResponse = await RetrieveThreadAsync(nextThread, client, timeoutToken.Token);
-						var result = await ThreadUpdateTask(timeoutToken.Token, idString, board, threadNumber, apiResponse);
+						try
+						{
+							var apiResponse = await RetrieveThreadAsync(nextThread, client, timeoutToken.Token);
+							result = await ThreadUpdateTask(timeoutToken.Token, idString, board, threadNumber, apiResponse);
+						}
+						catch (Exception ex)
+						{
+							Program.Log($"ERROR: Exception when polling thread: {ex}");
+							result = new ThreadUpdateTaskResult(false, Array.Empty<QueuedImageDownload>(), ThreadUpdateStatus.Error, 0);
+						}
 
-                        int newCompletedCount = Interlocked.Increment(ref threadCompletedCount);
+						int newCompletedCount = Interlocked.Increment(ref threadCompletedCount);
 
-                        string threadStatus;
+						string threadStatus;
 
-                        switch (result.Status)
-                        {
-                            case ThreadUpdateStatus.Ok:				threadStatus = " "; break;
-                            case ThreadUpdateStatus.Archived:		threadStatus = "A"; break;
-                            case ThreadUpdateStatus.Deleted:		threadStatus = "D"; break;
-                            case ThreadUpdateStatus.NotModified:	threadStatus = "N"; break;
-                            case ThreadUpdateStatus.DoNotArchive:	threadStatus = "S"; break;
-                            case ThreadUpdateStatus.Error:			threadStatus = "E"; break;
-                            default:								threadStatus = "?"; break;
-                        }
+						switch (result.Status)
+						{
+							case ThreadUpdateStatus.Ok:				threadStatus = " "; break;
+							case ThreadUpdateStatus.Archived:		threadStatus = "A"; break;
+							case ThreadUpdateStatus.Deleted:		threadStatus = "D"; break;
+							case ThreadUpdateStatus.NotModified:	threadStatus = "N"; break;
+							case ThreadUpdateStatus.DoNotArchive:	threadStatus = "S"; break;
+							case ThreadUpdateStatus.Error:			threadStatus = "E"; break;
+							default:								threadStatus = "?"; break;
+						}
 
-                        if (!result.Success)
-                        {
-                            lock (requeuedThreads)
-                                requeuedThreads.Add(nextThread);
+						if (!result.Success)
+						{
+							lock (requeuedThreads)
+								requeuedThreads.Add(nextThread);
+						}
 
-                            outerSuccess = false;
-                            return;
-                        }
+						// TODO: config option to requeue threads that have not been modified, up to a set amount of retries
 
-                        // TODO: config option to requeue threads that have not been modified, up to a set amount of retries
+						if (result.ImageDownloads.Count > 0)
+						{
+							foreach (var imageDownload in result.ImageDownloads)
+								enqueuedImages.Enqueue(imageDownload);
 
-                        if (result.ImageDownloads.Count > 0)
-                        {
-                            foreach (var imageDownload in result.ImageDownloads)
-                                enqueuedImages.Enqueue(imageDownload);
+							// Add detected images to the cache layer image collection
+							await StateStore.InsertToDownloadQueue(new ReadOnlyCollection<QueuedImageDownload>(result.ImageDownloads));
+						}
 
-                            // Add detected images to the cache layer image collection
-                            await StateStore.InsertToDownloadQueue(new ReadOnlyCollection<QueuedImageDownload>(result.ImageDownloads));
-                        }
+						// Log the status of the scraped thread
+						Program.Log($"{"[Thread]",-9} {$"/{nextThread.Board}/{nextThread.ThreadId}",-17} {threadStatus} {$"+({result.ImageDownloads.Count}/{result.PostCountChange})",-13} [{enqueuedImages.Count}/{newCompletedCount}/{threadQueue.Count?.ToString() ?? "?"}]");
+					});
 
-                        // Log the status of the scraped thread
-                        Program.Log($"{"[Thread]",-9} {$"/{nextThread.Board}/{nextThread.ThreadId}",-17} {threadStatus} {$"+({result.ImageDownloads.Count}/{result.PostCountChange})",-13} [{enqueuedImages.Count}/{newCompletedCount}/{threadQueue.Count}]");
-                    });
+					return true;
+				}
 
-                    return outerSuccess;
-                }
+				// This is our actual loop code for this task/thread.
 
-                // This is our actual loop code for this task/thread.
+				while (true)
+				{
+					workerStatuses[id] = "Idle";
 
-                while (true)
-                {
-                    workerStatuses[id] = "Idle";
-
-                    // Exit if user has requested cancellation
-                    if (token.IsCancellationRequested)
+					// Exit if user has requested cancellation
+					if (token.IsCancellationRequested)
 						break;
+					
+					if (await CheckImages())
+						continue;
 
-					// If this task has been marked to prioritize images, download them immediately
-                    if (prioritizeImages)
-                    {
-                        if (await CheckImages())
-                            continue;
-                    }
+					// Scrape the next enqueued thread, and return back to the start of the loop
+					if (await CheckThreads())
+						continue;
 
-                    // Scrape the next enqueued thread, and return back to the start of the loop
-                    if (await CheckThreads())
-                        continue;
+					// If we're here, then it means that all threads have been scraped and only images remain.
+					// Use our remaining non-marked tasks to help download the rest of the images
+					if (await CheckImages())
+						continue;
 
-                    // If we're here, then it means that all threads have been scraped and only images remain.
-                    // Use our remaining non-marked tasks to help download the rest of the images
-                    if (await CheckImages())
-                        continue;
+					// From the perspective of this worker, all threads and images have been downloaded.
+					break;
+				}
 
-                    // From the perspective of this worker, all threads and images have been downloaded.
-                    break;
-                }
+				// Debug logging
+				Program.Log($"Worker ID {idString} finished", true);
 
-                // Debug logging
-                Program.Log($"Worker ID {idString} finished", true);
+				workerStatuses[id] = "Finished";
 
-                workerStatuses[id] = "Finished";
+				// TODO: fix when introducing serilog
+				//if (Program.HaydenConfig.DebugLogging)
+				//{
+				//	lock (workerStatuses)
+				//		foreach (var kv in workerStatuses)
+				//		{
+				//			Program.Log($"ID {kv.Key,-2} => {kv.Value}", true);
+				//		}
+				//}
+			}
 
-                // TODO: fix when introducing serilog
-                //if (Program.HaydenConfig.DebugLogging)
-                //{
-                //	lock (workerStatuses)
-                //		foreach (var kv in workerStatuses)
-                //		{
-                //			Program.Log($"ID {kv.Key,-2} => {kv.Value}", true);
-                //		}
-                //}
-            }
+			// Spawn each worker task and wait until they've all completed
+			List<Task> workerTasks = new List<Task>();
 
-            // Spawn each worker task and wait until they've all completed
-            List<Task> workerTasks = new List<Task>();
+			int id = 1;
 
-            int id = 1;
+			for (int i = 0; i < ProxyProvider.ProxyCount; i++)
+			{
+				workerTasks.Add(WorkerTask(id++, i % 3 == 0));
+			}
 
-            for (int i = 0; i < ProxyProvider.ProxyCount; i++)
-            {
-                workerTasks.Add(WorkerTask(id++, i % 3 == 0));
-            }
+			await Task.WhenAll(workerTasks);
 
-            await Task.WhenAll(workerTasks);
+			var secondsRemaining = (BoardUpdateTimespan - (DateTime.UtcNow - beginTime)).TotalSeconds;
+			secondsRemaining = Math.Max(secondsRemaining, 0);
 
-            var secondsRemaining = (BoardUpdateTimespan - (DateTime.UtcNow - beginTime)).TotalSeconds;
-            secondsRemaining = Math.Max(secondsRemaining, 0);
+			Program.Log("");
+			Program.Log($"Completed {threadCompletedCount} / {threadQueue.Count ?? threadCompletedCount} threads");
+			Program.Log($"Waiting for next board update interval ({secondsRemaining:0.0}s)");
+			Program.Log("");
 
-            Program.Log("");
-            Program.Log($"Completed {threadCompletedCount} / {threadQueue.Count} threads");
-            Program.Log($"Waiting for next board update interval ({secondsRemaining:0.0}s)");
-            Program.Log("");
+			// Add any images that were previously requeued from failure
+			foreach (var queuedImage in requeuedImages)
+				enqueuedImages.Enqueue(queuedImage);
 
-            // Add any images that were previously requeued from failure
-            foreach (var queuedImage in requeuedImages)
-                enqueuedImages.Enqueue(queuedImage);
-
-            requeuedImages.Clear();
+			requeuedImages.Clear();
 
 			await StateStore.WriteDownloadQueue(enqueuedImages);
 
-            Program.Log($" --> Cleared queued image cache", true);
+			Program.Log($" --> Cleared queued image cache", true);
 
-            firstRun = false;
+			firstRun = false;
 
-            // A bit overkill but force a compacting GC collect here to make sure that the heap doesn't expand too much over time
-            System.Runtime.GCSettings.LargeObjectHeapCompactionMode = System.Runtime.GCLargeObjectHeapCompactionMode.CompactOnce;
-            GC.Collect();
+			// A bit overkill but force a compacting GC collect here to make sure that the heap doesn't expand too much over time
+			System.Runtime.GCSettings.LargeObjectHeapCompactionMode = System.Runtime.GCLargeObjectHeapCompactionMode.CompactOnce;
+			GC.Collect();
 
-            await waitTask;
+			await waitTask;
 
-			return (requeuedThreads, requeuedImages);
-        }
+			return (requeuedThreads, enqueuedImages.ToList());
+		}
 		
 		#region Network
 
@@ -668,78 +661,129 @@ namespace Hayden
 		/// <param name="lastDateTimeCheck">The time to compare the thread's updated time to.</param>
 		/// <param name="firstRun">True if this is the first cycle in the archival loop, otherwise false. Controls whether or not the database is called to find existing threads</param>
 		/// <returns>A list of thread IDs.</returns>
-		public async Task<(IList<ThreadPointer> updatedThreads, IList<ThreadPointer> allThreads)> GetBoardThreads(CancellationToken token, string board, DateTimeOffset lastDateTimeCheck, bool firstRun)
+		public async Task<MaybeAsyncEnumerable<ThreadPointer>> GetBoardThreads(CancellationToken token, string board, DateTimeOffset lastDateTimeCheck, bool firstRun)
 		{
 			var cooldownTask = Task.Delay(ApiCooldownTimespan, token);
 
-			var threads = new List<ThreadPointer>();
-			List<ThreadPointer> allThreads = null;
+			MaybeAsyncEnumerable<ThreadPointer> threads = null;
 
-			var pagesRequest = await NetworkPolicies.GenericRetryPolicy<ApiResponse<PageThread[]>>(12).ExecuteAsync(async (requestToken) =>
+			var pagesRequest = await NetworkPolicies.GenericRetryPolicy<ApiResponse<MaybeAsyncEnumerable<PageThread>>>(12).ExecuteAsync(async (requestToken) =>
 			{
 				requestToken.ThrowIfCancellationRequested();
 				Program.Log($"Requesting threads from board /{board}/...");
 				await using var boardClient = await ProxyProvider.RentHttpClient();
-				return await FrontendApi.GetBoard(board,
+
+				if (FrontendApi is IPaginatedFrontEndApi paginatedApi)
+				{
+					var response = await paginatedApi.GetBoardPaginated(board,
+						boardClient.Object.Client,
+						lastDateTimeCheck,
+						requestToken);
+
+					return new ApiResponse<MaybeAsyncEnumerable<PageThread>>(response.ResponseType,
+						response.Data == null ? null : new MaybeAsyncEnumerable<PageThread>(response.Data));
+				}
+
+				var collectionResponse = await FrontendApi.GetBoard(board,
 					boardClient.Object.Client,
 					lastDateTimeCheck,
 					requestToken);
+
+				return new ApiResponse<MaybeAsyncEnumerable<PageThread>>(collectionResponse.ResponseType,
+					collectionResponse.Data == null ? null : new MaybeAsyncEnumerable<PageThread>(collectionResponse.Data));
 			}, token);
 
 			switch (pagesRequest.ResponseType)
 			{
 				case ResponseType.Ok:
 
-					// Flatten all threads.
-					var threadList = pagesRequest.Data
-						.Where(x => ThreadIdFilter(new ThreadPointer(board, x.ThreadNumber)) // Exclude any that are already blacklisted
-									&& ThreadFilter(x.Subject, x.Html, board)) // and exclude any that don't conform to our filter(s)
-						.ToList();
-
-					if (firstRun && threadList.Count > 0)
-					{
-						// Check for threads that have already been downloaded by the consumer, noting the last time they were downloaded.
-						var existingThreads = await ThreadConsumer.CheckExistingThreads(threadList.Select(x => x.ThreadNumber),
-							board,
-							false,
-							true);
-
-						foreach (var existingThread in existingThreads)
-						{
-							var thread = threadList.First(x => x.ThreadNumber == existingThread.ThreadId);
-
-							// Only remove threads to be downloaded if the downloaded thread is already up-to-date by comparing last post times
-							// This can't be done below as "last post time" is different to "last modified time"
-							if (thread.LastModified <= Utility.GetGMTTimestamp(existingThread.LastPostTime))
-							{
-								threadList.Remove(thread);
-							}
-							
-							// Start tracking the thread
-
-							lock (TrackedThreads)
-								TrackedThreads[new ThreadPointer(board, existingThread.ThreadId)] = 
-									TrackedThread.StartTrackingThread(ThreadConsumer.CalculateHash, existingThread);
-						}
-					}
-
 					uint lastCheckTimestamp = firstRun
 						? 0
 						: Utility.GetGMTTimestamp(lastDateTimeCheck);
 
-					foreach (var thread in threadList)
+					async IAsyncEnumerable<ThreadPointer> ProcessThreadPointers()
 					{
-						// Perform a last modified time check, remove any threads that have not changed since the last time we've checked (passed in via lastCheckTimestamp)
-						if (thread.LastModified > lastCheckTimestamp)
+						var allThreadIds = new HashSet<ulong>();
+
+						// Flatten all threads.
+						var threadList = pagesRequest.Data
+							.Where(x =>
+								ThreadIdFilter(new ThreadPointer(board,
+									x.ThreadNumber)) // Exclude any that are already blacklisted
+								&& ThreadFilter(x.Subject, x.Html, board)); // and exclude any that don't conform to our filter(s)
+						
+						await foreach (var thread in threadList)
 						{
-							threads.Add(new ThreadPointer(board, thread.ThreadNumber));
+							if (firstRun)
+							{
+								// Check for threads that have already been downloaded by the consumer, noting the last time they were downloaded.
+								// TODO: this should be batched to make it not bound to database calls, however it's a bit difficult here
+								var existingThreads = await ThreadConsumer.CheckExistingThreads(new[] {thread.ThreadNumber}, //threadList.Select(x => x.ThreadNumber)
+									board,
+									false,
+									true);
+
+								bool skipThread = false;
+
+								foreach (var existingThread in existingThreads)
+								{
+									// Skip threads that we 100% know haven't been changed since they were archived.
+									// This is much less lenient than the last modified check down below, in a regular loop
+									if (thread.LastModified <= Utility.GetGMTTimestamp(existingThread.LastPostTime) && thread.LastModified > 0)
+									{
+										skipThread = true;
+										break;
+									}
+
+									// Start tracking the thread
+
+									lock (TrackedThreads)
+										TrackedThreads[new ThreadPointer(board, existingThread.ThreadId)] =
+											TrackedThread.StartTrackingThread(ThreadConsumer.CalculateHash, existingThread);
+								}
+
+								if (skipThread)
+									continue;
+							}
+
+							allThreadIds.Add(thread.ThreadNumber);
+
+							// Perform a last modified time check, remove any threads that have not changed since the last time we've checked (passed in via lastCheckTimestamp)
+							if (thread.LastModified <= lastCheckTimestamp && thread.LastModified > 0)
+								continue;
+
+							yield return new ThreadPointer(board, thread.ThreadNumber);
 						}
+						
+						// Examine the threads we are tracking to find any that have fallen off.
+						// This is the only way we can find out if a thread has been archived or deleted in this polling model
+						IEnumerable<KeyValuePair<ThreadPointer, TrackedThread>> missingTrackedThreads;
+
+						lock (TrackedThreads)
+							missingTrackedThreads = TrackedThreads
+								.Where(x => x.Key.Board == board && !allThreadIds.Contains(x.Key.ThreadId))
+								.ToArray();
+
+						// This thread is missing from the board listing, but the last time we checked it it was still alive.
+						// Add it to the re-examination queue
+						foreach (var missingThread in missingTrackedThreads)
+							yield return missingThread.Key;
 					}
 
-					allThreads = threadList.Select(x => new ThreadPointer(board, x.ThreadNumber)).ToList();
+					var threadList = ProcessThreadPointers();
 
-					Program.Log($"Enqueued {threads.Count} threads from board /{board}/ past timestamp {lastCheckTimestamp}");
+					if (pagesRequest.Data.IsListBacked)
+					{
+						var computedThreads = await threadList.ToListAsync();
 
+						Program.Log($"Enqueued {computedThreads.Count} threads from board /{board}/ past timestamp {lastCheckTimestamp}");
+						threads = new MaybeAsyncEnumerable<ThreadPointer>(computedThreads);
+					}
+					else
+					{
+						threads = new MaybeAsyncEnumerable<ThreadPointer>(threadList);
+					}
+					
 					break;
 
 				case ResponseType.NotModified:
@@ -755,7 +799,7 @@ namespace Hayden
 
 			await cooldownTask;
 
-			return (threads, allThreads);
+			return threads;
 		}
 
 		protected virtual async Task<ApiResponse<Thread>> RetrieveThreadAsync(ThreadPointer pointer, HttpClientProxy client,
@@ -807,9 +851,9 @@ namespace Hayden
 
 
 						if (response.Data == null
-						    || response.Data.Posts.Length == 0
-						    || response.Data.Posts.FirstOrDefault() == null
-						    || response.Data.Posts[0].PostNumber == 0)
+							|| response.Data.Posts.Length == 0
+							|| response.Data.Posts.FirstOrDefault() == null
+							|| response.Data.Posts[0].PostNumber == 0)
 						{
 							// This is a very strange edge case.
 							// The 4chan API can return a malformed thread object if the thread has been (incorrectly?) deleted
@@ -831,19 +875,40 @@ namespace Hayden
 
 						TrackedThread trackedThread;
 
-						bool isNewThread = false;
+						bool isNewThread;
 
 						lock (TrackedThreads)
-							if (!TrackedThreads.TryGetValue(threadPointer, out trackedThread))
-							{
-								// this is a brand new thread that hasn't been tracked yet
-								trackedThread = TrackedThread.StartTrackingThread(ThreadConsumer.CalculateHash);
-								TrackedThreads[threadPointer] = trackedThread;
-								isNewThread = true;
-							}
+							isNewThread = !TrackedThreads.TryGetValue(threadPointer, out trackedThread);
 
-						var threadUpdateInfo = trackedThread.ProcessThreadUpdates(threadPointer, response.Data,
-							SourceConfig.ImportAlgorithm == ImportAlgorithm.Optimistic);
+						Program.Log($"{workerId,-2}: Thread /{board}/{threadNumber} is already being tracked? {!isNewThread}", true);
+
+						if (isNewThread)
+						{
+							// this is a brand new thread that hasn't been tracked yet
+							// check if the thread already exists in the database, just to be sure
+
+							var existingThread = await ThreadConsumer.CheckExistingThreads(new[] { threadPointer.ThreadId },
+								threadPointer.Board,
+								false,
+								true);
+
+							if (existingThread.Count > 0)
+							{
+								trackedThread = TrackedThread.StartTrackingThread(ThreadConsumer.CalculateHash, existingThread.First());
+								isNewThread = false;
+							}
+							else
+								trackedThread = TrackedThread.StartTrackingThread(ThreadConsumer.CalculateHash);
+							
+							lock (TrackedThreads)
+								TrackedThreads[threadPointer] = trackedThread;
+						}
+
+						Program.Log($"{workerId,-2}: Thread /{board}/{threadNumber} has been determined as a new thread? {isNewThread}", true);
+
+						var threadUpdateInfo = trackedThread.ProcessThreadUpdates(threadPointer, response.Data);
+
+						Program.Log($"{workerId,-2}: Thread /{board}/{threadNumber}: New {threadUpdateInfo.NewPosts.Count} / updated {threadUpdateInfo.UpdatedPosts.Count} / deleted {threadUpdateInfo.DeletedPosts.Count}", true);
 
 						threadUpdateInfo.IsNewThread = isNewThread;
 
@@ -926,8 +991,8 @@ namespace Hayden
 			response.EnsureSuccessStatusCode();
 
 			var tempFilePath = FileSystem.Path.Combine(ConsumerConfig.DownloadLocation, "hayden", Guid.NewGuid().ToString("N") + ".temp");
-            
-            await using (var webStream = await response.Content.ReadAsStreamAsync())
+			
+			await using (var webStream = await response.Content.ReadAsStreamAsync())
 			await using (var tempFileStream = FileSystem.FileStream.Create(tempFilePath, System.IO.FileMode.CreateNew))
 			{
 				await webStream.CopyToAsync(tempFileStream);

@@ -1,6 +1,9 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.RegularExpressions;
+using System.Threading;
+using System.Threading.Tasks;
 using Hayden.Config;
 using Newtonsoft.Json.Linq;
 
@@ -146,13 +149,13 @@ namespace Hayden
 			return !left.Equals(right);
 		}
 
-        #endregion
+		#endregion
 
-        public override string ToString()
-        {
+		public override string ToString()
+		{
 			return $"/{Board}/{ThreadId}";
-        }
-    }
+		}
+	}
 
 	public enum ThreadUpdateStatus
 	{
@@ -209,5 +212,32 @@ namespace Hayden
 				AnyBlacklist = new Regex(config.AnyBlacklist, RegexOptions.IgnoreCase | RegexOptions.Compiled);
 			}
 		}
+	}
+
+	public class MaybeAsyncEnumerable<T> : IAsyncEnumerable<T>
+	{
+		private IAsyncEnumerable<T> InternalAsyncEnumerable { get; }
+		public IList<T> SourceList { get; }
+
+		public MaybeAsyncEnumerable(IList<T> sourceList)
+		{
+			SourceList = sourceList;
+			InternalAsyncEnumerable = sourceList.ToAsyncEnumerable();
+		}
+
+		public MaybeAsyncEnumerable(IAsyncEnumerable<T> enumerable)
+		{
+			SourceList = null;
+			InternalAsyncEnumerable = enumerable;
+		}
+
+		public IAsyncEnumerator<T> GetAsyncEnumerator(CancellationToken cancellationToken = new())
+		{
+			return InternalAsyncEnumerable.GetAsyncEnumerator(cancellationToken);
+		}
+
+		public int? Count => SourceList?.Count;
+
+		public bool IsListBacked => SourceList != null;
 	}
 }

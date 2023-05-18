@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO.Abstractions;
 using System.IO.Abstractions.TestingHelpers;
@@ -47,7 +47,7 @@ namespace Hayden.Tests.Archivers
 
             var timestamp = (ulong)DateTimeOffset.Now.ToUnixTimeSeconds();
 
-            consumerMock.Setup(x => x.CheckExistingThreads(It.IsAny<IEnumerable<ulong>>(), It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<bool>()))
+            consumerMock.Setup(x => x.CheckExistingThreads(It.IsAny<IEnumerable<ulong>>(), It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<bool>()))
                 .Returns(Task.FromResult<ICollection<ExistingThreadInfo>>(Array.Empty<ExistingThreadInfo>()));
 
             sourceMock.Setup(x => x.GetBoard(It.IsAny<string>(), It.IsAny<HttpClient>(), It.IsAny<DateTimeOffset?>(), It.IsAny<CancellationToken>()))
@@ -87,11 +87,30 @@ namespace Hayden.Tests.Archivers
 
             var threadList = await boardArchiver.ReadBoards(true, cts.Token);
 
-            CollectionAssert.AreEquivalent(ExpectedThreads, threadList);
+            CollectionAssert.AreEquivalent(ExpectedThreads, await threadList.ToListAsync());
 
             threadList = await boardArchiver.ReadBoards(false, cts.Token);
 
-            CollectionAssert.IsEmpty(threadList);
+            CollectionAssert.IsEmpty(await threadList.ToListAsync());
+        }
+
+        [Test, Timeout(10_000)]
+        public async Task EnqueuesThreadsThatArePresumedMissing()
+        {
+            var (consumerMock, sourceMock) = CreateMocks();
+            var fileSystem = new MockFileSystem();
+
+            var cts = new CancellationTokenSource();
+
+            var boardArchiver = new BoardArchiverTestable(SourceConfig, ConsumerConfig, sourceMock.Object, consumerMock.Object, fileSystem);
+
+            var fallenOffThread = new ThreadPointer("a", 999);
+
+            boardArchiver.TrackedThreads.Add(fallenOffThread, TrackedThread.StartTrackingThread(p => 0));
+
+            var threadList = await boardArchiver.ReadBoards(true, cts.Token);
+
+            CollectionAssert.AreEquivalent(ExpectedThreads.Append(fallenOffThread), await threadList.ToListAsync());
         }
 
         [Test, Timeout(10_000)]
@@ -127,11 +146,11 @@ namespace Hayden.Tests.Archivers
 
             var threadList = await boardArchiver.ReadBoards(true, cts.Token);
 
-            CollectionAssert.AreEquivalent(ExpectedThreads, threadList);
+            CollectionAssert.AreEquivalent(ExpectedThreads, await threadList.ToListAsync());
 
             threadList = await boardArchiver.ReadBoards(false, cts.Token);
 
-            CollectionAssert.IsEmpty(threadList);
+            CollectionAssert.IsEmpty(await threadList.ToListAsync());
         }
 
         private class BoardArchiverTestable : BoardArchiver
@@ -143,15 +162,17 @@ namespace Hayden.Tests.Archivers
             {
             }
 
-            public new Task<(List<ThreadPointer> requeuedThreads, List<QueuedImageDownload> requeuedImages)> PerformScrape(bool firstRun, List<ThreadPointer> threadQueue, List<QueuedImageDownload> additionalImages, CancellationToken token)
+            public new Task<(List<ThreadPointer> requeuedThreads, List<QueuedImageDownload> requeuedImages)> PerformScrape(bool firstRun, MaybeAsyncEnumerable<ThreadPointer> threadQueue, List<QueuedImageDownload> additionalImages, CancellationToken token)
             {
                 return base.PerformScrape(firstRun, threadQueue, additionalImages, token);
             }
 
-            public new Task<List<ThreadPointer>> ReadBoards(bool firstRun, CancellationToken token)
+            public new Task<MaybeAsyncEnumerable<ThreadPointer>> ReadBoards(bool firstRun, CancellationToken token)
             {
                 return base.ReadBoards(firstRun, token);
             }
+
+            public new SortedList<ThreadPointer, TrackedThread> TrackedThreads => base.TrackedThreads;
         }
     }
 }
