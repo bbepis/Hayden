@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Security.Cryptography;
@@ -142,12 +142,15 @@ namespace Hayden.WebServer.Data
 			};
 		}
 
-		public async Task<JsonBoardPageModel> PerformSearch(string searchQuery, int? page)
+		public async Task<JsonBoardPageModel> PerformSearch(SearchRequest searchRequest)
 		{
 			if (esClient == null || !config.Value.Elasticsearch.Enabled)
 				return null;
 
-			var searchTerm = searchQuery.ToLowerInvariant().Replace("\\", "\\\\").Replace("*", "\\*").Replace("?", "\\?");
+			var searchTerm = searchRequest.TextQuery.ToLowerInvariant()
+				.Replace("\\", "\\\\")
+				.Replace("*", "\\*")
+				.Replace("?", "\\?");
 
 			Func<QueryContainerDescriptor<PostIndex>, QueryContainer> searchDescriptor;
 
@@ -268,6 +271,26 @@ namespace Hayden.WebServer.Data
 				threads = threadModels,
 				boardInfo = null
 			};
+		}
+
+		public async Task<IEnumerable<PostIndex>> GetIndexEntities(string board, ulong minPostNo)
+		{
+			var boardInfo = await dbContext.Boards.AsNoTracking().Where(x => x.ShortName == board).FirstAsync();
+
+			return dbContext.Posts.AsNoTracking()
+				.Where(x => x.BoardId == boardInfo.Id && x.PostId > minPostNo)
+				.Select(x => new PostIndex
+				{
+					//DocId = x.PostId * 1000 + x.BoardId,
+					BoardId = x.BoardId,
+					PostId = x.PostId,
+					ThreadId = x.ThreadId,
+					IsOp = x.PostId == x.ThreadId,
+					PostDateUtc = x.DateTime,
+					//PostHtmlText = x.ContentHtml,
+					PostRawText = x.ContentRaw ?? x.ContentHtml,
+					//Subject = null
+				});
 		}
 	}
 

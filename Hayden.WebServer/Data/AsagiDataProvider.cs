@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.Data;
@@ -8,27 +8,34 @@ using System.Threading.Tasks;
 using Hayden.Config;
 using Hayden.Consumers.HaydenMysql.DB;
 using Hayden.WebServer.Controllers.Api;
+using Hayden.WebServer.DB.Elasticsearch;
+using Hayden.WebServer.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using MySqlConnector;
-using NodaTime;
+using Nest;
+using Newtonsoft.Json;
 
 namespace Hayden.WebServer.Data
 {
 	public class AsagiDataProvider : IDataProvider
 	{
+		private ElasticClient esClient { get; set; }
 		private AsagiDbContext dbContext { get; }
+		private IOptions<ServerConfig> ServerConfig { get; }
 
 		// TODO: this should not be static
 		private static string[] Boards { get; set; }
 
-		public AsagiDataProvider(AsagiDbContext context)
+		public AsagiDataProvider(AsagiDbContext context, ElasticClient elasticClient, IOptions<ServerConfig> serverConfig)
 		{
+			esClient = elasticClient;
 			dbContext = context;
+			ServerConfig = serverConfig;
 		}
 
-		public bool SupportsWriting => true;
+		public bool SupportsWriting => false;
 
 		private DBBoard CreateBoardInfo(string board)
 		{
@@ -189,9 +196,177 @@ namespace Hayden.WebServer.Data
 			};
 		}
 
-		public Task<ApiController.JsonBoardPageModel> PerformSearch(string searchQuery, int? page)
+		public async Task<ApiController.JsonBoardPageModel> PerformSearch(SearchRequest searchRequest)
 		{
-			throw new NotImplementedException("Not supported for asagi data provider");
+			if (esClient == null || !ServerConfig.Value.Elasticsearch.Enabled)
+				return null;
+
+			var searchTerm = searchRequest.TextQuery.ToLowerInvariant()
+				.Replace("\\", "\\\\")
+				.Replace("*", "\\*")
+				.Replace("?", "\\?");
+
+
+			Func<QueryContainerDescriptor<PostIndex>, QueryContainer> searchDescriptor = x =>
+			{
+				var allQueries = new List<Func<QueryContainerDescriptor<PostIndex>, QueryContainer>>();
+				
+				//if (!string.IsNullOrWhiteSpace(searchRequest.Subject))
+				//	allQueries.Add(y => y.Match(z => z.Field(a => a.)));
+
+				if (searchRequest.IsOp.HasValue)
+					allQueries.Add(y => y.Term(z => z.Field(f => f.IsOp).Value(searchRequest.IsOp.Value)));
+
+				if (searchRequest.Boards != null && searchRequest.Boards.Length > 0)
+					allQueries.Add(y => y.Bool(z => z.Should(searchRequest.Boards.Select<string, Func<QueryContainerDescriptor<PostIndex>, QueryContainer>>(board =>
+					{
+						return a => a.Term(b => b.Field(f => f.BoardId).Value(Boards.FirstIndexOf(j => j == board)));
+					}))));
+
+				if (!searchTerm.Contains(" "))
+				{
+					allQueries.Add(y => y.Match(z => z.Field(o => o.PostRawText).Query(searchTerm)));
+				}
+				else
+				{
+					allQueries.Add(y => y.MatchPhrase(z => z.Field(o => o.PostRawText).Query(searchTerm)));
+				}
+
+				return x.Bool(y => y.Must(allQueries));
+			};
+
+
+			if (!searchTerm.Contains(" "))
+			{
+				//searchDescriptor = x => /* x.Bool(b => b.Must(bc => bc.Term(y => y.IsOp, true))) && */
+				//	x.Bool(b => b.Must(bc => bc.Bool(bcd => bcd.Should(
+				//	//x.Wildcard(y => y.PostHtmlText, searchTerm),
+				//	//x.Wildcard(y => y.Subject, searchTerm),
+				//	x.Wildcard(y => y.PostRawText, searchTerm)
+				//	))));
+
+				
+			}
+			else
+			{
+				// .Query(x => x.Match(y => y.Field(z => z.FullName).Query(searchTerm))));
+				//searchDescriptor = x => x.MatchPhrase(y => y.Field(z => z).Query(searchTerm));
+				//searchDescriptor = x => x.QueryString(y => y.Fields(z => z.Field(a => a.FullName)).Query(searchTerm));
+
+				//searchDescriptor = x => x.Term(y => y.IsOp, true) && (
+				//	x.MatchPhrase(y => y.Field(z => z.PostRawText).Query(searchTerm))
+				//	//||x.MatchPhrase(y => y.Field(z => z.PostHtmlText).Query(searchTerm))
+				//	//|| x.MatchPhrase(y => y.Field(z => z.Subject).Query(searchTerm))
+				//	);
+			}
+
+			var searchResult = await esClient.SearchAsync<PostIndex>(x => x
+				.Index(ServerConfig.Value.Elasticsearch.IndexName)
+				.Size(20)
+				//.Fields(f => f.Fields("threadId", "boardId", "postId")) // Fields(x => x.BoardId, x => x.ThreadId, x => x.PostId)
+				.DocValueFields(f => f.Fields(p => p.BoardId, p => p.ThreadId, p => p.PostId))
+				//.Fields(f => f.Field("*"))
+				.Sort(y => y.Descending(z => z.PostDateUtc))
+				.Query(searchDescriptor));
+
+			if (ServerConfig.Value.Elasticsearch.Debug)
+				Console.WriteLine(searchResult.ApiCall.DebugInformation);
+
+			if (!searchResult.IsValid)
+				return null;
+
+			var threadIdArray = searchResult.Hits.Select(x =>
+					(BoardId: x.Fields.ValueOf<PostIndex, ushort>(y => y.BoardId),
+					ThreadId: x.Fields.ValueOf<PostIndex, ulong>(y => y.ThreadId),
+					PostId: x.Fields.ValueOf<PostIndex, ulong>(y => y.PostId)
+						))
+					.ToArray();
+
+			if (threadIdArray.Length == 0)
+				return new ApiController.JsonBoardPageModel
+				{
+					totalThreadCount = searchResult.Hits.Count,
+					threads = Array.Empty<ApiController.JsonThreadModel>(),
+					boardInfo = null
+				};
+			
+
+			IQueryable<AsagiDbContext.AsagiDbPost> postQuery = null;
+
+			foreach (var post in threadIdArray)
+			{
+				var (posts, _, _) = dbContext.GetSets(Boards[post.BoardId]);
+
+				var newQuery = posts.Where(x => x.num == (uint)post.PostId);
+
+				postQuery = postQuery == null ? newQuery : postQuery.Concat(newQuery);
+			}
+			
+			var result = await postQuery!.AsNoTracking().ToArrayAsync();
+
+			ApiController.JsonThreadModel[] threadModels = new ApiController.JsonThreadModel[threadIdArray.Length];
+			int i = 0;
+
+			foreach (var post in result)
+			{
+				threadModels[i] = new ApiController.JsonThreadModel
+				{
+					board = CreateBoardInfo(Boards[threadIdArray[i].BoardId]), // this might not work
+					archived = post.locked,
+					deleted = post.deleted,
+					lastModified = Utility.ConvertNewYorkTimestamp(post.timestamp).UtcDateTime,
+					threadId = post.thread_num,
+					posts = new[]
+					{
+						new ApiController.JsonPostModel
+						{
+							postId = post.num,
+							author = post.name,
+							contentRaw = post.comment,
+							dateTime = Utility.ConvertNewYorkTimestamp(post.timestamp).UtcDateTime,
+							deleted = post.deleted,
+							files = Array.Empty<ApiController.JsonFileModel>()
+						}
+					}
+				};
+
+				i++;
+			}
+
+			if (threadModels.Any(x => x == null))
+				threadModels = threadModels.Where(x => x != null).ToArray();
+
+			if (ServerConfig.Value.Elasticsearch.Debug)
+				Console.WriteLine(JsonConvert.SerializeObject(threadModels));
+
+			return new ApiController.JsonBoardPageModel
+			{
+				totalThreadCount = searchResult.Hits.Count,
+				threads = threadModels,
+				boardInfo = null
+			};
+		}
+		
+		public async Task<IEnumerable<PostIndex>> GetIndexEntities(string board, ulong minPostNo)
+		{
+			if (!Boards.Contains(board))
+				return null;
+
+			var (posts, images, threads) = dbContext.GetSets(board);
+
+			var boardId = (ushort)Boards.FirstIndexOf(x => x == board);
+
+			return posts.AsNoTracking()
+				.Where(x => x.num > minPostNo)
+				.Select(x => new PostIndex
+		{
+					BoardId = boardId,
+					PostId = x.num,
+					ThreadId = x.thread_num,
+					IsOp = x.op,
+					PostDateUtc = Utility.ConvertNewYorkTimestamp(x.timestamp).UtcDateTime,
+					PostRawText = x.comment,
+				});
 		}
 	}
 
@@ -215,6 +390,8 @@ namespace Hayden.WebServer.Data
 			{
 				throw new Exception("Unsupported database type");
 			}
+
+			services.AddHostedService<ESSyncService>();
 
 			return services;
 		}
@@ -256,7 +433,7 @@ namespace Hayden.WebServer.Data
 					tableNames.Add(tableName);
 			}
 
-			return tableNames.ToArray();
+			return tableNames.OrderBy(x => x).ToArray();
 		}
 
 		protected override void OnModelCreating(ModelBuilder modelBuilder)

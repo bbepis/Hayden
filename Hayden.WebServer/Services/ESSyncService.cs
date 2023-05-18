@@ -1,10 +1,8 @@
-﻿using System;
-using System.Linq;
+using System;
 using System.Threading;
 using System.Threading.Tasks;
-using Hayden.Consumers.HaydenMysql.DB;
+using Hayden.WebServer.Data;
 using Hayden.WebServer.DB.Elasticsearch;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
@@ -14,7 +12,7 @@ namespace Hayden.WebServer.Services
 {
 	public class ESSyncService : BackgroundService
 	{
-		private HaydenDbContext DbContext { get; }
+		private IDataProvider DataProvider { get; }
 		private ElasticClient EsClient { get; }
 		private ServerElasticSearchConfig Config { get; }
 
@@ -22,7 +20,7 @@ namespace Hayden.WebServer.Services
 		{
 			var scope = services.CreateScope();
 
-			DbContext = scope.ServiceProvider.GetRequiredService<HaydenDbContext>();
+			DataProvider = scope.ServiceProvider.GetRequiredService<IDataProvider>();
 			EsClient = scope.ServiceProvider.GetService<ElasticClient>();
 			Config = config.Value.Elasticsearch;
 		}
@@ -83,7 +81,7 @@ namespace Hayden.WebServer.Services
 
 				if (!mapResult.IsValid)
 				{
-					Console.WriteLine(mapResult.ServerError.ToString());
+					Console.WriteLine(mapResult.ServerError?.ToString());
 					Console.WriteLine(mapResult.DebugInformation);
 					return;
 				}
@@ -110,7 +108,7 @@ namespace Hayden.WebServer.Services
 				//		x => (ushort)(long)x.Key,
 				//		x => (ulong)((ValueAggregate)x.Values.First()).Value!);
 
-				var boardList = await DbContext.Boards.AsNoTracking().ToArrayAsync();
+				var boardList = await DataProvider.GetBoardInfo();
 
 				foreach (var board in boardList)
 				{
@@ -120,20 +118,7 @@ namespace Hayden.WebServer.Services
 
 					var minPostNo = (ulong)0;
 
-					var query = DbContext.Posts.AsNoTracking()
-						.Where(x => x.BoardId == board.Id && x.PostId > minPostNo)
-						.Select(x => new PostIndex
-						{
-							//DocId = x.PostId * 1000 + x.BoardId,
-							BoardId = x.BoardId,
-							PostId = x.PostId,
-							ThreadId = x.ThreadId,
-							IsOp = x.PostId == x.ThreadId,
-							PostDateUtc = x.DateTime,
-							//PostHtmlText = x.ContentHtml,
-							PostRawText = x.ContentRaw ?? x.ContentHtml,
-							//Subject = null
-						});
+					var query = await DataProvider.GetIndexEntities(board.ShortName, minPostNo);
 
 					int i = 0;
 					const int batchSize = 3000;
@@ -145,6 +130,9 @@ namespace Hayden.WebServer.Services
 						i += batch.Count;
 
 						Console.WriteLine(i);
+
+						if (stoppingToken.IsCancellationRequested)
+							return;
 					}
 				}
 
