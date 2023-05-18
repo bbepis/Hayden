@@ -1,8 +1,9 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO.Abstractions;
 using System.Linq;
 using System.Threading.Tasks;
+using Elasticsearch.Net;
 using Hayden.Config;
 using Hayden.Consumers.HaydenMysql.DB;
 using Hayden.Contract;
@@ -19,11 +20,11 @@ namespace Hayden.Consumers
 	/// </summary>
 	public class HaydenThreadConsumer : IThreadConsumer
 	{
-		private ConsumerConfig ConsumerConfig { get; }
-		private SourceConfig SourceConfig { get; }
-		private DbContextOptions DbContextOptions { get; set; }
-		private IFileSystem FileSystem { get; set; }
-		private IMediaInspector MediaInspector { get; set; }
+		protected ConsumerConfig ConsumerConfig { get; }
+		protected SourceConfig SourceConfig { get; }
+		protected DbContextOptions DbContextOptions { get; set; }
+		protected IFileSystem FileSystem { get; set; }
+		protected IMediaInspector MediaInspector { get; set; }
 
 		protected Dictionary<string, ushort> BoardIdMappings { get; } = new(StringComparer.OrdinalIgnoreCase);
 
@@ -134,76 +135,104 @@ namespace Hayden.Consumers
 			//	YotsubaFilesystemThreadConsumer.PerformJsonThreadUpdate(threadUpdateInfo, threadFileName);
 			//}
 
-			async Task ProcessImages(Post post)
+			async Task ProcessImages()
 			{
-				if (!ConsumerConfig.FullImagesEnabled && !ConsumerConfig.ThumbnailsEnabled)
-					return; // skip the DB check since we're not even bothering with images
-
-				if (post.Media == null)
-					return;
-
-				foreach (var file in post.Media)
+				foreach (var post in threadUpdateInfo.Thread.Posts)
 				{
-					DBFile existingFile = null;
+					if (post.Media == null)
+						continue;
 
-					if (file.Sha256Hash != null)
+					foreach (var file in post.Media)
 					{
-						existingFile = await dbContext.Files.FirstOrDefaultAsync(x =>
-							x.Sha256Hash == file.Sha256Hash
-							&& x.BoardId == boardId);
+						// TODO: performance could be improved here by batching these requests
+
+						var fileMapping = await dbContext.FileMappings.FirstOrDefaultAsync(x =>
+							x.BoardId == boardId && x.PostId == post.PostNumber && x.Index == file.Index);
+
+						if (fileMapping != null && fileMapping.FileId != null)
+						{
+							var dbFile = await dbContext.Files.FirstAsync(x => x.Id == fileMapping.FileId);
+
+							if (dbFile.FileExists)
+								continue;
+						}
+						
+						DBFile existingFile = null;
+
+						if (file.Sha256Hash != null)
+						{
+							existingFile = await dbContext.Files.FirstOrDefaultAsync(x =>
+								x.Sha256Hash == file.Sha256Hash
+								&& x.BoardId == boardId);
+						}
+
+						if (existingFile == null && file.Sha1Hash != null && !ConsumerConfig.IgnoreSha1Hash)
+						{
+							existingFile = await dbContext.Files.FirstOrDefaultAsync(x =>
+								x.Sha1Hash == file.Sha1Hash
+								&& x.BoardId == boardId);
+						}
+
+						if (existingFile == null && file.Md5Hash != null && !ConsumerConfig.IgnoreMd5Hash)
+						{
+							existingFile = await dbContext.Files.FirstOrDefaultAsync(x =>
+								x.Md5Hash == file.Md5Hash
+								&& x.BoardId == boardId);
+						}
+
+						if (fileMapping == null)
+						{
+							fileMapping = new DBFileMapping
+							{
+								BoardId = boardId,
+								PostId = post.PostNumber,
+								FileId = null,
+								Filename = file.Filename,
+								Index = file.Index,
+								IsDeleted = file.IsDeleted,
+								IsSpoiler = file.IsSpoiler.GetValueOrDefault()
+							};
+
+							dbContext.Add(fileMapping);
+						}
+						else
+						{
+							dbContext.Update(fileMapping);
+						}
+
+						if (existingFile != null)
+						{
+							// We know we have the file. Just attach it
+							fileMapping.FileId = existingFile.Id;
+
+							//if (existingFile.FileExists)
+							continue;
+						}
+
+
+						Uri imageUrl = null, thumbUrl = null;
+
+						if (ConsumerConfig.FullImagesEnabled && file.FileUrl != null)
+							imageUrl = new Uri(file.FileUrl);
+
+						if (ConsumerConfig.ThumbnailsEnabled && file.ThumbnailUrl != null)
+							thumbUrl = new Uri(file.ThumbnailUrl);
+
+						if (imageUrl != null || thumbUrl != null)
+						{
+							imageDownloads.Add(new QueuedImageDownload(imageUrl, thumbUrl, new()
+							{
+								["board"] = board,
+								["boardId"] = boardId,
+								["postNumber"] = post.PostNumber,
+								["media"] = file
+							}));
+						}
+						else
+						{
+							AddMissingMappingMetadata(fileMapping, file);
+						}
 					}
-					
-					if (existingFile == null && file.Sha1Hash != null && !ConsumerConfig.IgnoreSha1Hash)
-					{
-						existingFile = await dbContext.Files.FirstOrDefaultAsync(x =>
-							x.Sha1Hash == file.Sha1Hash
-							&& x.BoardId == boardId);
-					}
-					
-					if (existingFile == null && file.Md5Hash != null && !ConsumerConfig.IgnoreMd5Hash)
-					{
-						existingFile = await dbContext.Files.FirstOrDefaultAsync(x =>
-							x.Md5Hash == file.Md5Hash
-							&& x.BoardId == boardId);
-					}
-
-					var fileMapping = new DBFileMapping
-					{
-						BoardId = boardId,
-						PostId = post.PostNumber,
-						FileId = null,
-						Filename = file.Filename,
-						Index = file.Index,
-						IsDeleted = file.IsDeleted,
-						IsSpoiler = file.IsSpoiler.GetValueOrDefault()
-					};
-
-					dbContext.Add(fileMapping);
-
-					if (existingFile != null)
-					{
-						// We know we have the file. Just attach it
-						fileMapping.FileId = existingFile.Id;
-
-						return;
-					}
-
-
-					Uri imageUrl = null, thumbUrl = null;
-
-					if (ConsumerConfig.FullImagesEnabled && file.FileUrl != null)
-						imageUrl = new Uri(file.FileUrl);
-
-					if (ConsumerConfig.ThumbnailsEnabled && file.ThumbnailUrl != null)
-						thumbUrl = new Uri(file.ThumbnailUrl);
-
-					imageDownloads.Add(new QueuedImageDownload(imageUrl, thumbUrl, new()
-					{
-						["board"] = board,
-						["boardId"] = boardId,
-						["postNumber"] = post.PostNumber,
-						["media"] = file
-					}));
 				}
 			}
 
@@ -225,6 +254,14 @@ namespace Hayden.Consumers
 
 			foreach (var post in threadUpdateInfo.NewPosts)
 			{
+				if (post.IsDeleted == true)
+				{
+					// due to limitations with the thread tracking method, deleted posts don't get processed correctly
+
+					if (await dbContext.Posts.AnyAsync(x => x.BoardId == boardId && x.PostId == post.PostNumber))
+						continue;
+				}
+
 				dbContext.Add(new DBPost
 				{
 					BoardId = boardId,
@@ -244,10 +281,7 @@ namespace Hayden.Consumers
 
 			await dbContext.SaveChangesAsync();
 			
-			foreach (var post in threadUpdateInfo.NewPosts)
-			{
-				await ProcessImages(post);
-			}
+			await ProcessImages();
 
 			await dbContext.SaveChangesAsync();
 
@@ -334,29 +368,15 @@ namespace Hayden.Consumers
 
 			var existingFileMapping = await dbContext.FileMappings
 				.FirstAsync(x => x.BoardId == boardId
-				                 && x.PostId == postNumber
-				                 && x.Index == media.Index);
+								 && x.PostId == postNumber
+								 && x.Index == media.Index);
 
 			if (imageTempFilename == null)
 			{
 				//throw new InvalidOperationException("Full image required for hash calculation");
-				Program.Log("Full image required for hash calculation");
+				//Program.Log("Full image required for hash calculation");
 
-				var metadata = existingFileMapping.AdditionalMetadata != null ? JObject.Parse(existingFileMapping.AdditionalMetadata) : new JObject();
-
-				if (media.Md5Hash != null)
-					metadata["missing_md5hash"] = Convert.ToBase64String(media.Md5Hash);
-
-				if (media.Sha1Hash != null)
-					metadata["missing_sha1hash"] = Convert.ToBase64String(media.Sha1Hash);
-
-				if (media.Sha256Hash != null)
-					metadata["missing_sha256hash"] = Convert.ToBase64String(media.Sha256Hash);
-				
-				metadata["missing_extension"] = media.FileExtension;
-				metadata["missing_size"] = media.FileSize;
-
-				existingFileMapping.AdditionalMetadata = metadata.ToString(Formatting.None);
+				AddMissingMappingMetadata(existingFileMapping, media);
 
 				dbContext.Update(existingFileMapping);
 				await dbContext.SaveChangesAsync();
@@ -376,7 +396,7 @@ namespace Hayden.Consumers
 
 			var existingFile = await dbContext.Files
 				.Where(x => x.Sha256Hash == sha256Hash
-				            && x.BoardId == boardId)
+							&& x.BoardId == boardId)
 				.FirstOrDefaultAsync();
 
 			if (existingFile?.FileBanned == true)
@@ -446,6 +466,27 @@ namespace Hayden.Consumers
 			dbContext.Update(existingFileMapping);
 
 			await dbContext.SaveChangesAsync();
+		}
+
+		private static void AddMissingMappingMetadata(DBFileMapping existingFileMapping, Media media)
+		{
+			var metadata = existingFileMapping.AdditionalMetadata != null
+				? JObject.Parse(existingFileMapping.AdditionalMetadata)
+				: new JObject();
+
+			if (media.Md5Hash != null)
+				metadata["missing_md5hash"] = Convert.ToBase64String(media.Md5Hash);
+
+			if (media.Sha1Hash != null)
+				metadata["missing_sha1hash"] = Convert.ToBase64String(media.Sha1Hash);
+
+			if (media.Sha256Hash != null)
+				metadata["missing_sha256hash"] = Convert.ToBase64String(media.Sha256Hash);
+
+			metadata["missing_extension"] = media.FileExtension;
+			metadata["missing_size"] = media.FileSize;
+
+			existingFileMapping.AdditionalMetadata = metadata.ToString(Formatting.None);
 		}
 
 		/// <inheritdoc/>
