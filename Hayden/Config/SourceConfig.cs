@@ -61,5 +61,9 @@ namespace Hayden.Config
 		/// </summary>
 		public string AnyFilter { get; set; }
 
+		/// <summary>
+		/// The regex blacklist for either the thread subject or OP post content.
+		/// </summary>
+		public string AnyBlacklist { get; set; }
 	}
 }

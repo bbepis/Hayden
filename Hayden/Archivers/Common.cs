@@ -185,6 +185,7 @@ namespace Hayden
 		public Regex ThreadTitleRegex { get; set; }
 		public Regex OPContentRegex { get; set; }
 		public Regex AnyFilter { get; set; }
+		public Regex AnyBlacklist { get; set; }
 
 		public BoardRules(BoardRulesConfig config)
 		{
@@ -201,6 +202,11 @@ namespace Hayden
 			if (!string.IsNullOrWhiteSpace(config.AnyFilter))
 			{
 				AnyFilter = new Regex(config.AnyFilter, RegexOptions.IgnoreCase | RegexOptions.Compiled);
+			}
+
+			if (!string.IsNullOrWhiteSpace(config.AnyBlacklist))
+			{
+				AnyBlacklist = new Regex(config.AnyBlacklist, RegexOptions.IgnoreCase | RegexOptions.Compiled);
 			}
 		}
 	}

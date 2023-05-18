@@ -531,6 +531,15 @@ namespace Hayden
 
 			var result = false;
 
+			if (rules.AnyBlacklist != null)
+			{
+				if (subject != null && rules.AnyBlacklist.IsMatch(subject))
+					return false;
+
+				if (html != null && rules.AnyBlacklist.IsMatch(html))
+					return false;
+			}
+
 			if (rules.ThreadTitleRegex == null
 				&& rules.OPContentRegex == null
 				&& rules.AnyFilter == null)
