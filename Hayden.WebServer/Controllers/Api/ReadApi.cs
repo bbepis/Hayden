@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Linq;
 using System.Threading.Tasks;
 using Hayden.Consumers.HaydenMysql.DB;
@@ -56,9 +56,25 @@ namespace Hayden.WebServer.Controllers.Api
 		}
 
 		[HttpGet("search")]
-		public async Task<IActionResult> Search([FromServices] IDataProvider dataProvider, [FromQuery] string query)
+		public async Task<IActionResult> Search([FromServices] IDataProvider dataProvider,
+			[FromQuery] string query,
+			[FromQuery] string subject,
+			[FromQuery] string boards,
+			[FromQuery] bool? isOp,
+			[FromQuery] string posterId,
+			[FromQuery] string posterName,
+			[FromQuery] int? page)
 		{
-			return Json(await dataProvider.PerformSearch(query, null));
+			return Json(await dataProvider.PerformSearch(new SearchRequest
+			{
+				TextQuery = query,
+				Subject = subject,
+				Boards = string.IsNullOrWhiteSpace(boards) ? null : boards.Split(','),
+				IsOp = isOp,
+				PosterID = posterId,
+				PosterName = posterName,
+				Page = page
+			}));
 		}
 
 		[HttpGet("{board}/thread/{threadid}")]
