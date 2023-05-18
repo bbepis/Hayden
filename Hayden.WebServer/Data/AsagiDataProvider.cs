@@ -52,13 +52,17 @@ namespace Hayden.WebServer.Data
 		private string GetMediaFilename(string board, AsagiDbContext.AsagiDbImage image)
 		{
 			string radixString = Path.Combine(image.media.Substring(0, 4), image.media.Substring(4, 2));
-			return string.Join('/', "/image", board, "image", radixString, image.media); 
+			string prefix = !string.IsNullOrWhiteSpace(ServerConfig.Value.Data.ImagePrefix) ? ServerConfig.Value.Data.ImagePrefix : "/image";
+
+			return string.Join('/', prefix, board, "image", radixString, image.media); 
 		}
 
 		private string GetMediaThumbnail(string board, AsagiDbContext.AsagiDbImage image)
 		{
 			string radixString = Path.Combine(image.media.Substring(0, 4), image.media.Substring(4, 2));
-			return string.Join('/', "/image", board, "thumb", radixString, image.preview_op ?? image.preview_reply); 
+			string prefix = !string.IsNullOrWhiteSpace(ServerConfig.Value.Data.ImagePrefix) ? ServerConfig.Value.Data.ImagePrefix : "/image";
+
+			return string.Join('/', prefix, board, "thumb", radixString, image.preview_op ?? image.preview_reply); 
 		}
 
 		private ApiController.JsonThreadModel CreateThreadModel(string board,
@@ -359,7 +363,7 @@ namespace Hayden.WebServer.Data
 			return posts.AsNoTracking()
 				.Where(x => x.num > minPostNo)
 				.Select(x => new PostIndex
-		{
+				{
 					BoardId = boardId,
 					PostId = x.num,
 					ThreadId = x.thread_num,
