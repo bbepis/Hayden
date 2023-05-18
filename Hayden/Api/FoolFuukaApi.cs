@@ -20,7 +20,7 @@ using Thread = Hayden.Models.Thread;
 
 namespace Hayden
 {
-	public class FoolFuukaApi : BaseApi<FoolFuukaThread>, ISearchableFrontendApi
+	public class FoolFuukaApi : BaseApi<FoolFuukaThread>, ISearchableFrontendApi, IPaginatedFrontEndApi
 	{
 		public string ImageboardWebsite { get; }
 
@@ -72,6 +72,51 @@ namespace Hayden
 		public override Task<ApiResponse<PageThread[]>> GetBoard(string board, HttpClient client, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default)
 		{
 			throw new InvalidOperationException("Not supported");
+		}
+
+		public async Task<ApiResponse<IAsyncEnumerable<PageThread>>> GetBoardPaginated(string board, HttpClient client, DateTimeOffset? modifiedSince = null,
+			CancellationToken cancellationToken = default)
+		{
+			var collectedThreadIds = new HashSet<ulong>();
+
+			int pageNumber = 1;
+
+			var testResponse = await MakeJsonApiCall<JToken>(new Uri($"{ImageboardWebsite}_/api/chan/index/?board={board}&page={pageNumber}"), client, modifiedSince, cancellationToken);
+
+			if (testResponse.ResponseType != ResponseType.Ok)
+				return new ApiResponse<IAsyncEnumerable<PageThread>>(testResponse.ResponseType, null);
+
+			async IAsyncEnumerable<PageThread> InternalGetEnumerable()
+			{
+				while (!cancellationToken.IsCancellationRequested)
+				{
+					var response = await MakeJsonApiCall<JToken>(new Uri($"{ImageboardWebsite}_/api/chan/index/?board={board}&page={pageNumber}"), client, modifiedSince, cancellationToken);
+					
+					if (response.ResponseType != ResponseType.Ok)
+						yield break;
+
+					if (response.Data is JArray)
+						break;
+
+					var data = response.Data.ToObject<Dictionary<string, FoolFuukaIndexPageThread>>();
+
+					if (data == null || data.Count == 0)
+						break;
+
+					foreach (var thread in data.Values)
+					{
+						if (!collectedThreadIds.Contains(thread.op.PostNumber))
+						{
+							yield return new PageThread(thread.op.PostNumber, 0, thread.op.Title, thread.op.SanitizedComment);
+							collectedThreadIds.Add(thread.op.PostNumber);
+						}
+					}
+
+					pageNumber++;
+				}
+			}
+
+			return new ApiResponse<IAsyncEnumerable<PageThread>>(ResponseType.Ok, InternalGetEnumerable());
 		}
 
 		/// <inheritdoc />
@@ -145,6 +190,12 @@ namespace Hayden
 		{
 			public FoolFuukaPost op { get; set; }
 			public Dictionary<string, FoolFuukaPost> posts { get; set; }
+		}
+
+		private class FoolFuukaIndexPageThread
+		{
+			public FoolFuukaPost op { get; set; }
+			public FoolFuukaPost[] posts { get; set; }
 		}
 
 		private class FoolFuukaRawSearch
