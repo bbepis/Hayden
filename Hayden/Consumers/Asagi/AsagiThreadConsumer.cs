@@ -318,7 +318,7 @@ namespace Hayden.Consumers
 					  .SetParam("@num", post.PostNumber)
 					  .SetParam("@thread_num", post.ReplyPostNumber != 0 ? post.ReplyPostNumber : post.PostNumber)
 					  .SetParam("@op", post.ReplyPostNumber == 0 ? 1 : 0)
-					  .SetParam("@timestamp", post.UnixTimestamp)
+					  .SetParam("@timestamp", Utility.GetNewYorkTimestamp(Utility.ConvertGMTTimestamp(post.UnixTimestamp)))
 					  .SetParam("@timestamp_expired", 0)
 					  .SetParam("@preview_orig", post.TimestampedFilename.HasValue ? $"{post.TimestampedFilename}s.jpg" : null)
 					  .SetParam("@preview_w", post.ThumbnailWidth ?? 0)

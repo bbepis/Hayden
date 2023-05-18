@@ -67,7 +67,7 @@ namespace Hayden.WebServer.Data
 				archived = op.locked,
 				deleted = op.deleted,
 				subject = op.title,
-				lastModified = Instant.FromUnixTimeSeconds(threadInfo.time_bump).ToDateTimeUtc(),
+				lastModified = Utility.ConvertNewYorkTimestamp(threadInfo.time_bump).UtcDateTime,
 				posts = posts.Select(post => new ApiController.JsonPostModel
 				{
 					postId = post.p.num,
@@ -75,7 +75,7 @@ namespace Hayden.WebServer.Data
 					contentHtml = null,
 					contentRaw = post.p.comment,
 					deleted = post.p.deleted,
-					dateTime = Instant.FromUnixTimeSeconds(post.p.timestamp).ToDateTimeUtc(),
+					dateTime = Utility.ConvertNewYorkTimestamp(post.p.timestamp).UtcDateTime,
 					files = post.i?.media == null ? Array.Empty<ApiController.JsonFileModel>() : new[]
 					{
 						new ApiController.JsonFileModel
