@@ -5,15 +5,11 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using System;
 using System.IO;
-using System.Linq;
-using System.Security.Cryptography;
 using System.Threading.Tasks;
 using Hayden.Consumers.HaydenMysql.DB;
 using Hayden.WebServer.Controllers.Api;
-using Hayden.WebServer.DB.Elasticsearch;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.HttpOverrides;
-using Microsoft.EntityFrameworkCore;
 using Nest;
 using Hayden.MediaInfo;
 using Hayden.WebServer.Data;
@@ -109,17 +105,17 @@ namespace Hayden.WebServer
 			if (env.IsDevelopment())
 			{
 				ApiController.RegisterCodes.Add("development", ModeratorRole.Developer);
-			}
-
-			if (env.IsDevelopment())
-			{
 				app.UseDeveloperExceptionPage();
 			}
 			else
 			{
 				app.UseExceptionHandler("/Error");
-				// The default HSTS value is 30 days. You may want to change this for production scenarios, see https://aka.ms/aspnetcore-hsts.
-				app.UseHsts();
+
+				if (ServerConfig.EnableHTTPS)
+				{
+					// The default HSTS value is 30 days. You may want to change this for production scenarios, see https://aka.ms/aspnetcore-hsts.
+					app.UseHsts();
+				}
 			}
 
 			app.UseForwardedHeaders(new ForwardedHeadersOptions
@@ -127,7 +123,7 @@ namespace Hayden.WebServer
 				ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
 			});
 
-			if (!env.IsDevelopment())
+			if (!env.IsDevelopment() && ServerConfig.EnableHTTPS)
 			{
 				app.UseHttpsRedirection();
 			}

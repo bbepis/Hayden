@@ -13,6 +13,8 @@ namespace Hayden.WebServer
 		public ServerElasticSearchConfig Elasticsearch { get; set; }
 
 		public bool ApiMode { get; set; }
+
+		public bool EnableHTTPS { get; set; }
 	}
 
 	public class ServerDataConfig
