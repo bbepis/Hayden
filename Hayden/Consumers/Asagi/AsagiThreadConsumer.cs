@@ -338,7 +338,7 @@ namespace Hayden.Consumers
 					  .SetParam("@title", HttpUtility.HtmlDecode(post.Subject)?.Trim())
 					  .SetParam("@comment", CleanComment(post.Comment))
 					  .SetParam("@sticky", post.Sticky == true ? 1 : 0)
-					  .SetParam("@locked", post.Closed == true ? 1 : 0)
+					  .SetParam("@locked", (post.Closed == true) && (post.Archived != true) ? 1 : 0)
 					  .SetParam("@poster_hash", post.PosterID == "Developer" ? "Dev" : post.PosterID)
 					  .SetParam("@poster_country", post.CountryCode)
 					  .SetParam("@exif", GenerateExifColumnData(post))
