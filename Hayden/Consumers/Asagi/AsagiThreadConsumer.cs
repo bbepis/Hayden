@@ -509,7 +509,7 @@ namespace Hayden.Consumers
 			if (getMetadata)
 			{
 				query = $@"
-				SELECT TABLE1.num, MAX(TABLE2.timestamp), TABLE1.timestamp_expired
+				SELECT TABLE1.num, MAX(TABLE2.timestamp), MAX(TABLE1.timestamp_expired)
 				FROM `{board}` TABLE1
 					INNER JOIN `{board}` TABLE2 ON TABLE2.thread_num = TABLE1.num
 				WHERE TABLE1.op = 1
