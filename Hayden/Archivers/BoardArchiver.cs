@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Buffers;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -18,6 +18,7 @@ using Hayden.Models;
 using Hayden.Proxy;
 using Nito.AsyncEx;
 using Polly.Timeout;
+using Serilog;
 using Thread = Hayden.Models.Thread;
 
 namespace Hayden
@@ -115,7 +116,7 @@ namespace Hayden
 				}
 				
 				if (queuedThreads.IsListBacked)
-					Program.Log($"{queuedThreads.Count} threads have been queued total");
+					Log.Information("{queuedThreadsCount} threads have been queued total", queuedThreads.Count);
 
 				var (requeuedThreads, requeuedImages) = await PerformScrape(firstRun, queuedThreads, queuedImages, token);
 				
@@ -170,7 +171,7 @@ namespace Hayden
 
 					if (++currentBoardCount % 5 == 0 || currentBoardCount == SourceConfig.Boards.Count)
 					{
-						Program.Log($"{currentBoardCount} / {SourceConfig.Boards.Count} boards polled");
+						Log.Information("{currentBoardCount} / {SourceConfigBoardsCount} boards polled", currentBoardCount, SourceConfig.Boards.Count);
 					}
 				}
 			});
@@ -242,7 +243,7 @@ namespace Hayden
 				catch (Exception ex)
 				{
 					// Errored out. Log it and requeue the image
-					Program.Log($"ERROR: Could not download image. Will try again next board update\nClient name: {client.Name}\nException: {ex}");
+					Log.Error(ex, "Could not download image. Will try again next board update\nClient name: {clientName}", client.Name);
 
 					lock (requeuedImages)
 						requeuedImages.Add(queuedDownload);
@@ -271,7 +272,7 @@ namespace Hayden
 				foreach (var queuedImage in await StateStore.GetDownloadQueue())
 					enqueuedImages.Enqueue(queuedImage);
 
-				Program.Log($"{enqueuedImages.Count} media items loaded from queue cache");
+				Log.Information("{enqueuedImagesCount} media items loaded from queue cache", enqueuedImages.Count);
 			}
 
 			if (threadQueue.IsListBacked)
@@ -318,7 +319,7 @@ namespace Hayden
 
 					if (completedCount % 10 == 0 || enqueuedImages.Count == 0)
 					{
-						Program.Log($"{"[Image]",-9} [{completedCount}/{enqueuedImages.Count}]");
+						Log.Information($"{"[Image]",-9} [{{completedCount}}/{{enqueuedImagesCount}}]", completedCount, enqueuedImages.Count);
 					}
 
 					return true;
@@ -360,7 +361,7 @@ namespace Hayden
 						}
 						catch (Exception ex)
 						{
-							Program.Log($"ERROR: Exception when polling thread: {ex}");
+							Log.Error(ex, "Exception when polling thread");
 							result = new ThreadUpdateTaskResult(false, Array.Empty<QueuedImageDownload>(), ThreadUpdateStatus.Error, 0);
 						}
 
@@ -397,7 +398,7 @@ namespace Hayden
 						}
 
 						// Log the status of the scraped thread
-						Program.Log($"{"[Thread]",-9} {$"/{nextThread.Board}/{nextThread.ThreadId}",-17} {threadStatus} {$"+({result.ImageDownloads.Count}/{result.PostCountChange})",-13} [{enqueuedImages.Count}/{newCompletedCount}/{threadQueue.Count?.ToString() ?? "?"}]");
+						Log.Information($"{"[Thread]",-9} {$"/{nextThread.Board}/{nextThread.ThreadId}",-17} {threadStatus} {$"+({result.ImageDownloads.Count}/{result.PostCountChange})",-13} [{enqueuedImages.Count}/{newCompletedCount}/{threadQueue.Count?.ToString() ?? "?"}]");
 					});
 
 					return true;
@@ -430,7 +431,7 @@ namespace Hayden
 				}
 
 				// Debug logging
-				Program.Log($"Worker ID {idString} finished", true);
+				Log.Verbose("Worker ID {idString} finished", idString);
 
 				workerStatuses[id] = "Finished";
 
@@ -460,10 +461,10 @@ namespace Hayden
 			var secondsRemaining = (BoardUpdateTimespan - (DateTime.UtcNow - beginTime)).TotalSeconds;
 			secondsRemaining = Math.Max(secondsRemaining, 0);
 
-			Program.Log("");
-			Program.Log($"Completed {threadCompletedCount} / {threadQueue.Count ?? threadCompletedCount} threads");
-			Program.Log($"Waiting for next board update interval ({secondsRemaining:0.0}s)");
-			Program.Log("");
+			Log.Information("");
+			Log.Information($"Completed {threadCompletedCount} / {threadQueue.Count ?? threadCompletedCount} threads");
+			Log.Information($"Waiting for next board update interval ({secondsRemaining:0.0}s)");
+			Log.Information("");
 
 			// Add any images that were previously requeued from failure
 			foreach (var queuedImage in requeuedImages)
@@ -473,7 +474,7 @@ namespace Hayden
 
 			await StateStore.WriteDownloadQueue(enqueuedImages);
 
-			Program.Log($" --> Cleared queued image cache", true);
+			Log.Debug($" --> Cleared queued image cache");
 
 			firstRun = false;
 
@@ -507,7 +508,7 @@ namespace Hayden
 			}
 			catch (Exception ex)
 			{
-				Program.Log($"ERROR: Network operation failed, and was unhandled. Inconsistencies may arise in continued use of program\r\n" + ex.ToString());
+				Log.Error(ex, "Network operation failed, and was unhandled. Inconsistencies may arise in continued use of program");
 			}
 
 			if (threadWaitTask != null)
@@ -599,7 +600,7 @@ namespace Hayden
 
 					var existingArchivedThreads = await ThreadConsumer.CheckExistingThreads(archiveRequest.Data, board, false, true);
 
-					Program.Log($"Found {existingArchivedThreads.Count} existing archived threads for board /{board}/");
+					Log.Information("Found {existingArchivedThreadsCount} existing archived threads for board /{board}/", existingArchivedThreads.Count, board);
 
 					// TODO: this is an optimization that needs a config flag for opting out,
 					// i.e. if you change your filter options you might want to rescan all archived posts
@@ -635,7 +636,7 @@ namespace Hayden
 							TrackedThreads[pointer] = TrackedThread.StartTrackingThread(ThreadConsumer.CalculateHash, maybeLiveThreadInfo);
 					}
 
-					Program.Log($"Enqueued {threadQueue.Count} threads from board archive /{board}/");
+					Log.Information("Enqueued {threadQueueCount} threads from board archive /{board}/", threadQueue.Count, board);
 
 					break;
 
@@ -644,7 +645,7 @@ namespace Hayden
 
 				case ResponseType.NotFound:
 				default:
-					Program.Log($"Unable to index the archive of board /{board}/, is there a connection error?");
+					Log.Warning("Unable to index the archive of board /{board}/, is there a connection error?", board);
 					break;
 			}
 
@@ -670,7 +671,7 @@ namespace Hayden
 			var pagesRequest = await NetworkPolicies.GenericRetryPolicy<ApiResponse<MaybeAsyncEnumerable<PageThread>>>(12).ExecuteAsync(async (requestToken) =>
 			{
 				requestToken.ThrowIfCancellationRequested();
-				Program.Log($"Requesting threads from board /{board}/...");
+				Log.Information("Requesting threads from board /{board}/...", board);
 				await using var boardClient = await ProxyProvider.RentHttpClient();
 
 				if (FrontendApi is IPaginatedFrontEndApi paginatedApi)
@@ -750,7 +751,15 @@ namespace Hayden
 
 							// Perform a last modified time check, remove any threads that have not changed since the last time we've checked (passed in via lastCheckTimestamp)
 							if (thread.LastModified <= lastCheckTimestamp && thread.LastModified > 0)
+							{
+								Log.Verbose("Thread /{board}/{threadId} has not changed (timestamp {timestamp}, last {lastCheckTimestamp}, current {currentTimestamp})",
+									board, thread.ThreadNumber, thread.LastModified, lastCheckTimestamp, Utility.GetGMTTimestamp(DateTimeOffset.Now));
+
 								continue;
+							}
+
+							Log.Verbose("Thread /{board}/{threadId} has changed (timestamp {timestamp}, last {lastCheckTimestamp}, current {currentTimestamp})",
+								board, thread.ThreadNumber, thread.LastModified, lastCheckTimestamp, Utility.GetGMTTimestamp(DateTimeOffset.Now));
 
 							yield return new ThreadPointer(board, thread.ThreadNumber);
 						}
@@ -767,7 +776,12 @@ namespace Hayden
 						// This thread is missing from the board listing, but the last time we checked it it was still alive.
 						// Add it to the re-examination queue
 						foreach (var missingThread in missingTrackedThreads)
+						{
+							Log.Debug("Thread /{board}/{threadId} has been detected as missing",
+								board, missingThread.Key.ThreadId);
+
 							yield return missingThread.Key;
+					}
 					}
 
 					var threadList = ProcessThreadPointers();
@@ -776,7 +790,10 @@ namespace Hayden
 					{
 						var computedThreads = await threadList.ToListAsync();
 
-						Program.Log($"Enqueued {computedThreads.Count} threads from board /{board}/ past timestamp {lastCheckTimestamp}");
+
+						Log.Information("Enqueued {computedThreadsCount} threads from board /{board}/ past timestamp {lastCheckTimestamp}",
+							computedThreads.Count, board, lastCheckTimestamp);
+
 						threads = new MaybeAsyncEnumerable<ThreadPointer>(computedThreads);
 					}
 					else
@@ -787,13 +804,13 @@ namespace Hayden
 					break;
 
 				case ResponseType.NotModified:
-					Program.Log($"Board /{board}/ has not changed");
+					Log.Information($"Board /{board}/ has not changed");
 					// There are no updates for this board
 					break;
 
 				case ResponseType.NotFound:
 				default:
-					Program.Log($"Unable to index board /{board}/, is there a connection error?");
+					Log.Warning($"Unable to index board /{board}/, is there a connection error?");
 					break;
 			}
 
@@ -838,7 +855,7 @@ namespace Hayden
 
 						if (response.Data != null && !ThreadFilter(response.Data.Title, opPost?.ContentRendered ?? opPost?.ContentRaw, board))
 						{
-							Program.Log($"{workerId,-2}: Blacklisting thread /{board}/{threadNumber} due to title filter", true);
+							Log.Debug($"{workerId,-2}: Blacklisting thread /{board}/{threadNumber} due to title filter");
 							
 							lock (ThreadIdBlacklist)
 								if (!ThreadIdBlacklist.Contains(threadPointer))
@@ -847,7 +864,7 @@ namespace Hayden
 							return new ThreadUpdateTaskResult(true, Array.Empty<QueuedImageDownload>(), ThreadUpdateStatus.DoNotArchive, 0);
 						}
 
-						Program.Log($"{workerId,-2}: Downloading changes from thread /{board}/{threadNumber}", true);
+						Log.Debug($"{workerId,-2}: Downloading changes from thread /{board}/{threadNumber}");
 
 
 						if (response.Data == null
@@ -863,7 +880,7 @@ namespace Hayden
 							
 							// If it's returning this then the assumption is that the thread has been deleted
 
-							Program.Log($"{workerId,-2}: Thread /{board}/{threadNumber} is malformed (DMCA?)", true);
+							Log.Warning($"Thread /{board}/{threadNumber} is malformed (DMCA?)");
 
 							HandleThreadRemoval(threadPointer);
 							await ThreadConsumer.ThreadUntracked(threadNumber, board, true);
@@ -904,11 +921,11 @@ namespace Hayden
 								TrackedThreads[threadPointer] = trackedThread;
 						}
 
-						Program.Log($"{workerId,-2}: Thread /{board}/{threadNumber} has been determined as a new thread? {isNewThread}", true);
+						Log.Debug($"/{board}/{threadNumber} new thread? {isNewThread}, previously tracked? {isTracked}");
 
 						var threadUpdateInfo = trackedThread.ProcessThreadUpdates(threadPointer, response.Data);
 
-						Program.Log($"{workerId,-2}: Thread /{board}/{threadNumber}: New {threadUpdateInfo.NewPosts.Count} / updated {threadUpdateInfo.UpdatedPosts.Count} / deleted {threadUpdateInfo.DeletedPosts.Count}", true);
+						Log.Verbose($"{workerId,-2}: Thread /{board}/{threadNumber}: New {threadUpdateInfo.NewPosts.Count} / updated {threadUpdateInfo.UpdatedPosts.Count} / deleted {threadUpdateInfo.DeletedPosts.Count}");
 
 						threadUpdateInfo.IsNewThread = isNewThread;
 
@@ -925,7 +942,7 @@ namespace Hayden
 
 						if (response.Data.IsArchived)
 						{
-							Program.Log($"{workerId,-2}: Thread /{board}/{threadNumber} has been archived", true);
+							Log.Debug($"{workerId,-2}: Thread /{board}/{threadNumber} has been archived");
 
 							HandleThreadRemoval(threadPointer);
 							await ThreadConsumer.ThreadUntracked(threadNumber, board, false);
@@ -943,7 +960,7 @@ namespace Hayden
 					case ResponseType.NotFound:
 						// This thread returned a 404, indicating a deletion
 
-						Program.Log($"{workerId,-2}: Thread /{board}/{threadNumber} has been pruned or deleted", true);
+						Log.Debug($"{workerId,-2}: Thread /{board}/{threadNumber} has been pruned or deleted");
 
 						HandleThreadRemoval(new ThreadPointer(board, threadNumber));
 						await ThreadConsumer.ThreadUntracked(threadNumber, board, true);
@@ -956,7 +973,7 @@ namespace Hayden
 			}
 			catch (Exception exception)
 			{
-				Program.Log($"ERROR: Could not poll or update thread /{board}/{threadNumber}. Will try again next board update\nException: {exception}");
+				Log.Error(exception, $"Could not poll or update thread /{board}/{threadNumber}. Will try again next board update");
 
 				return new ThreadUpdateTaskResult(false, Array.Empty<QueuedImageDownload>(), ThreadUpdateStatus.Error, 0);
 			}
@@ -969,7 +986,7 @@ namespace Hayden
 		/// <param name="httpClient">The client to use for the request.</param>
 		private async Task<string> DownloadFileTask(Uri imageUrl, HttpClient httpClient)
 		{
-			Program.Log($"Downloading image {imageUrl.Segments.Last()}", true);
+			Log.Debug("Downloading image {filename}", imageUrl.Segments.Last());
 			
 			using var response = await NetworkPolicies.HttpApiPolicy.ExecuteAsync(() =>
 				{

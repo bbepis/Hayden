@@ -1,11 +1,11 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using Hayden.Contract;
 using LiteDB;
-using LiteDB.Engine;
+using Serilog;
 
 namespace Hayden.Cache
 {
@@ -15,6 +15,8 @@ namespace Hayden.Cache
 	public class LiteDbStateStore : IStateStore, IDisposable
 	{
 		public LiteDatabase Database { get; private set; }
+
+		private ILogger Logger { get; } = Program.CreateLogger("LiteDB");
 
 		protected Stream Stream { get; set; }
 
@@ -60,7 +62,7 @@ namespace Hayden.Cache
 				}
 			}
 
-			Program.Log("Shrinking state database...", true);
+			Logger.Debug("Shrinking state database...");
 
 			Database.Rebuild();
 

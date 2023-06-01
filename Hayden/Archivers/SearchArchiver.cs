@@ -1,5 +1,4 @@
-﻿using System;
-using System.Buffers;
+using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
@@ -13,6 +12,7 @@ using Hayden.Cache;
 using Hayden.Config;
 using Hayden.Contract;
 using Hayden.Proxy;
+using Serilog;
 
 namespace Hayden
 {
@@ -139,7 +139,7 @@ namespace Hayden
 				catch (Exception ex)
 				{
 					// Errored out. Log it and requeue the image
-					Program.Log($"ERROR: Could not download image. Will try again next board update\nClient name: {client.Name}\nException: {ex}");
+					Log.Error(ex, "Could not download image. Will try again next board update\nClient name: {clientName}", client.Name);
 
 					lock (requeuedImages)
 						requeuedImages.Add(queuedDownload);
@@ -168,7 +168,7 @@ namespace Hayden
 				foreach (var queuedImage in await StateStore.GetDownloadQueue())
 					enqueuedImages.Enqueue(queuedImage);
 
-				Program.Log($"{enqueuedImages.Count} media items loaded from queue cache");
+				Log.Information("{enqueuedImagesCount} media items loaded from queue cache", enqueuedImages.Count);
 			}
 
 			// This is really only used for debugging purposes
@@ -197,7 +197,8 @@ namespace Hayden
 
 					if (completedCount % 10 == 0 || enqueuedImages.Count == 0)
 					{
-						Program.Log($"{"[Image]",-9} [{completedCount}/{enqueuedImages.Count}]");
+						Log.Information($"{"[Image]",-9} [{{completedCount}}/{{enqueuedImagesCount}}]",
+							completedCount, enqueuedImages.Count);
 					}
 
 					return true;
@@ -271,8 +272,7 @@ namespace Hayden
 						}
 
 						// Log the status of the scraped thread
-						Program.Log(
-							$"{"[Thread]",-9} {$"/{nextThread.Board}/{nextThread.ThreadId}",-17} {threadStatus} {$"+({result.ImageDownloads.Count}/{result.PostCountChange})",-13} [{enqueuedImages.Count}/{newCompletedCount}/{totalSearchCountString}]");
+						Log.Information($"{"[Thread]",-9} {$"/{nextThread.Board}/{nextThread.ThreadId}",-17} {threadStatus} {$"+({result.ImageDownloads.Count}/{result.PostCountChange})",-13} [{enqueuedImages.Count}/{newCompletedCount}/{totalSearchCountString}]");
 					});
 
 					return outerSuccess;
@@ -309,7 +309,7 @@ namespace Hayden
 				}
 
 				// Debug logging
-				Program.Log($"Worker ID {idString} finished", true);
+				Log.Debug("Worker ID {idString} finished", idString);
 
 				workerStatuses[id] = "Finished";
 
@@ -336,9 +336,9 @@ namespace Hayden
 
 			await Task.WhenAll(workerTasks);
 
-			Program.Log("");
-			Program.Log($"Completed {threadCompletedCount} threads");
-			Program.Log("");
+			Log.Information("");
+			Log.Information("Completed {threadCompletedCount} threads", threadCompletedCount);
+			Log.Information("");
 
 			// Add any images that were previously requeued from failure
 			foreach (var queuedImage in requeuedImages)
@@ -348,7 +348,7 @@ namespace Hayden
 
 			await StateStore.WriteDownloadQueue(enqueuedImages);
 
-			Program.Log($" --> Cleared queued image cache", true);
+			Log.Debug($" --> Cleared queued image cache");
 		}
 
 		#region Network
@@ -369,7 +369,7 @@ namespace Hayden
 			}
 			catch (Exception ex)
 			{
-				Program.Log($"ERROR: Network operation failed, and was unhandled. Inconsistencies may arise in continued use of program\r\n" + ex.ToString());
+				Log.Error(ex, "Network operation failed, and was unhandled. Inconsistencies may arise in continued use of program");
 			}
 
 			await threadWaitTask;
@@ -378,9 +378,6 @@ namespace Hayden
 		#endregion
 
 		#region Worker
-		
-		// Cache this instead of having to create a new one every time we want to return an empty array
-		private static readonly QueuedImageDownload[] emptyImageQueue = new QueuedImageDownload[0];
 
 		/// <summary>
 		/// Polls a thread, and passes it to the consumer if the thread has been detected as updated.
@@ -397,9 +394,9 @@ namespace Hayden
 				var existing = await ThreadConsumer.CheckExistingThreads(new[] { threadNumber }, board, false);
 
 				if (existing.Count > 0)
-					return new ThreadUpdateTaskResult(true, emptyImageQueue, ThreadUpdateStatus.NotModified, 0);
+					return new ThreadUpdateTaskResult(true, Array.Empty<QueuedImageDownload>(), ThreadUpdateStatus.NotModified, 0);
 
-				Program.Log($"{workerId,-2}: Polling thread /{board}/{threadNumber}", true);
+				Log.Debug($"{workerId,-2}: Polling thread /{board}/{threadNumber}", true);
 				
 				var response = await FrontendApi.GetThread(board, threadNumber, client.Client, null, token);
 
@@ -418,17 +415,17 @@ namespace Hayden
 						{
 							// This is a very strange edge case.
 							// The 4chan API can return a malformed thread object if the thread has been (incorrectly?) deleted
-							
+
 							// For example, this is the JSON returned by post /g/83700099 after it was removed for DMCA infringement:
 							// {"posts":[{"resto":0,"replies":0,"images":0,"unique_ips":1,"semantic_url":null}]}
-							
+
 							// If it's returning this then the assumption is that the thread has been deleted
 
-							Program.Log($"{workerId,-2}: Thread /{board}/{threadNumber} is malformed (DMCA?)", true);
+							Log.Warning($"{workerId,-2}: Thread /{board}/{threadNumber} is malformed (DMCA?)");
 							
 							await ThreadConsumer.ThreadUntracked(threadNumber, board, true);
 
-							return new ThreadUpdateTaskResult(true, emptyImageQueue, ThreadUpdateStatus.Deleted, 0);
+							return new ThreadUpdateTaskResult(true, Array.Empty<QueuedImageDownload>(), ThreadUpdateStatus.Deleted, 0);
 						}
 
 						// Process the thread data with its assigned TrackedThread instance, then pass the results to the consumer
@@ -455,7 +452,7 @@ namespace Hayden
 						{
 							// This should be safe when a thread becomes archived, because that archive bit flip should be counted as a change as well
 
-							return new ThreadUpdateTaskResult(true, emptyImageQueue, ThreadUpdateStatus.NotModified, 0);
+							return new ThreadUpdateTaskResult(true, Array.Empty<QueuedImageDownload>(), ThreadUpdateStatus.NotModified, 0);
 						}
 						
 						// TODO: handle failures from this call
@@ -466,7 +463,7 @@ namespace Hayden
 
 						if (response.Data.IsArchived == true)
 						{
-							Program.Log($"{workerId,-2}: Thread /{board}/{threadNumber} has been archived", true);
+							Log.Debug($"{workerId,-2}: Thread /{board}/{threadNumber} has been archived");
 							
 							await ThreadConsumer.ThreadUntracked(threadNumber, board, false);
 						}
@@ -478,16 +475,16 @@ namespace Hayden
 
 					case ResponseType.NotModified:
 						// There are no updates for this thread
-						return new ThreadUpdateTaskResult(true, emptyImageQueue, ThreadUpdateStatus.NotModified, 0);
+						return new ThreadUpdateTaskResult(true, Array.Empty<QueuedImageDownload>(), ThreadUpdateStatus.NotModified, 0);
 
 					case ResponseType.NotFound:
 						// This thread returned a 404, indicating a deletion
 
-						Program.Log($"{workerId,-2}: Thread /{board}/{threadNumber} has been pruned or deleted", true);
+						Log.Debug($"{workerId,-2}: Thread /{board}/{threadNumber} has been pruned or deleted");
 						
 						await ThreadConsumer.ThreadUntracked(threadNumber, board, true);
 
-						return new ThreadUpdateTaskResult(true, emptyImageQueue, ThreadUpdateStatus.Deleted, 0);
+						return new ThreadUpdateTaskResult(true, Array.Empty<QueuedImageDownload>(), ThreadUpdateStatus.Deleted, 0);
 
 					default:
 						throw new ArgumentOutOfRangeException();
@@ -495,9 +492,9 @@ namespace Hayden
 			}
 			catch (Exception exception)
 			{
-				Program.Log($"ERROR: Could not poll or update thread /{board}/{threadNumber}. Will try again next board update\nClient name: {client.Name}\nException: {exception}");
+				Log.Error(exception, $"Could not poll or update thread /{board}/{threadNumber}. Will try again next board update\nClient name: {client.Name}");
 
-				return new ThreadUpdateTaskResult(false, emptyImageQueue, ThreadUpdateStatus.Error, 0);
+				return new ThreadUpdateTaskResult(false, Array.Empty<QueuedImageDownload>(), ThreadUpdateStatus.Error, 0);
 			}
 		}
 
@@ -508,7 +505,7 @@ namespace Hayden
 		/// <param name="httpClient">The client to use for the request.</param>
 		private async Task<string> DownloadFileTask(Uri imageUrl, HttpClient httpClient)
 		{
-			Program.Log($"Downloading image {imageUrl.Segments.Last()}", true);
+			Log.Debug("Downloading image {filename}", imageUrl.Segments.Last());
 
 			using var response = await NetworkPolicies.HttpApiPolicy.ExecuteAsync(() =>
 				{

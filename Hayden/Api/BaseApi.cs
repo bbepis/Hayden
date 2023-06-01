@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IO;
 using System.Net;
 using System.Net.Http;
@@ -36,7 +36,7 @@ namespace Hayden.Api
 			int callCount = 0;
 			var httpResponse = await NetworkPolicies.HttpApiPolicy.ExecuteAsync((context, requestToken) =>
 			{
-				Program.Log($"HttpApiPolicy call ({callCount}): {uri.AbsoluteUri}", true);
+				NetworkPolicies.Logger.Debug("HttpApiPolicy call ({callCount}): {uriAbsoluteUri}", callCount++, uri.AbsoluteUri);
 
 				using var request = CreateRequest(uri, modifiedSince);
 

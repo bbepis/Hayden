@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Data;
 using System.IO;
@@ -11,6 +11,7 @@ using Hayden.Contract;
 using Hayden.Models;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
+using Serilog;
 
 namespace Hayden.Consumers
 {
@@ -24,6 +25,8 @@ namespace Hayden.Consumers
 		private MySqlConnectionPool ConnectionPool { get; }
 
 		private ICollection<string> Boards { get; }
+
+		private ILogger Logger { get; } = Program.CreateLogger("Asagi");
 		
 		public AsagiThreadConsumer(ConsumerConfig consumerConfig, SourceConfig sourceConfig)
 		{
@@ -61,7 +64,7 @@ namespace Hayden.Consumers
 
 					if (mediaInfo?.Banned == true)
 					{
-						Program.Log($"[Asagi] Post /{board}/{post.PostNumber} contains a banned image; skipping", true);
+						Logger.Debug("Post /{board}/{postNumber} contains a banned image; skipping", board, post.PostNumber);
 						return;
 					}
 
@@ -114,20 +117,22 @@ namespace Hayden.Consumers
 			foreach (var post in newPosts)
 			{
 				await ProcessImages(post);
+
+				Logger.Verbose("Post /{board}/{threadNumber}/{postNumber} inserted", board, threadUpdateInfo.ThreadPointer.ThreadId, post.PostNumber);
 			}
 			
 			await InsertPosts(newPosts, board);
 
 			foreach (var post in threadUpdateInfo.UpdatedPosts)
 			{
-				Program.Log($"[Asagi] Post /{board}/{post.PostNumber} has been modified", true);
+				Logger.Debug("Post /{board}/{threadNumber}/{postNumber} has been modified", board, threadUpdateInfo.ThreadPointer.ThreadId, post.PostNumber);
 
 				await UpdatePost((YotsubaPost)post.OriginalObject, board, false);
 			}
 
 			foreach (var postNumber in threadUpdateInfo.DeletedPosts)
 			{
-				Program.Log($"[Asagi] Post /{board}/{postNumber} has been deleted", true);
+				Logger.Debug("Post /{board}/{threadNumber}/{postNumber} has been deleted", board, threadUpdateInfo.ThreadPointer.ThreadId, postNumber);
 
 				await SetUntracked(postNumber, board, true);
 			}
@@ -264,7 +269,7 @@ namespace Hayden.Consumers
 
 			if (tables.Rows.Count == 0)
 			{
-				Program.Log($"[Asagi] Creating tables for board /{board}/");
+				Logger.Information("Creating tables for board /{board}/", board);
 
 				string formattedQuery = string.Format(CreateTablesQuery, board);
 

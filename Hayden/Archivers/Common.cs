@@ -1,11 +1,11 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading;
-using System.Threading.Tasks;
 using Hayden.Config;
 using Newtonsoft.Json.Linq;
+using Serilog;
 
 namespace Hayden
 {
@@ -56,7 +56,7 @@ namespace Hayden
 					}
 					catch
 					{
-						Program.Log($"{rawValue.GetType()} -> {key} : {typeof(T)}");
+						Log.Error($"Deserialization failed: {rawValue.GetType()} -> {key} : {typeof(T)}");
 						throw;
 					}
 				}

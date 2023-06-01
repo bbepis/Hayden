@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -7,6 +7,7 @@ using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Newtonsoft.Json;
 using Nito.AsyncEx;
+using Serilog;
 
 namespace Hayden.Cache
 {
@@ -63,6 +64,8 @@ namespace Hayden.Cache
 
 		private AsyncLock @lock { get; } = new();
 
+		private ILogger Logger { get; } = Program.CreateLogger("SQLite");
+
 		protected SqliteConnection Connection { get; set; }
 
         protected SqliteStateContext Context { get; set; }
@@ -114,7 +117,7 @@ namespace Hayden.Cache
             await Context.SaveChangesAsync();
 			Context.DetachAllEntities();
 
-            Program.Log("Shrinking state database...", true);
+            Logger.Debug("Shrinking state database...");
 
 			await Context.Database.ExecuteSqlRawAsync("VACUUM;");
 		}

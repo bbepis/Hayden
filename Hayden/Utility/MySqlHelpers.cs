@@ -1,9 +1,10 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Data;
 using System.Threading.Tasks;
 using MySqlConnector;
 using Nito.AsyncEx;
+using Serilog;
 
 namespace Hayden
 {
@@ -38,7 +39,7 @@ namespace Hayden
 			{
 				if (obj.State != ConnectionState.Open)
 				{
-					Program.Log("Reviving SQL connection");
+					Log.Warning("Reviving SQL connection");
 					obj.Open();
 				}
 

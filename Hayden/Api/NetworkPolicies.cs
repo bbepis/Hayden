@@ -1,9 +1,10 @@
-﻿using System;
+using System;
 using System.Net;
 using System.Net.Http;
 using System.Threading.Tasks;
 using Polly;
 using Polly.Timeout;
+using Serilog;
 
 namespace Hayden.Api
 {
@@ -13,6 +14,8 @@ namespace Hayden.Api
 	public static class NetworkPolicies
 	{
 		private static readonly Random random = new Random();
+
+		public static ILogger Logger { get; } = Program.CreateLogger("Network");
 
 		/// <summary>
 		/// The HTTP request policy used for API calls to ensure that requests are reliably performed.
@@ -27,11 +30,18 @@ namespace Hayden.Api
 				.WaitAndRetryAsync(3,
 					retryAttempt => TimeSpan.FromSeconds(Math.Pow(2, retryAttempt)) // exponential back-off: 2, 4, 8 etc
 									+ TimeSpan.FromMilliseconds(random.Next(0, 5000)) // plus some jitter: up to 5 seconds
+					, (result, span) =>
+					{
+						if (result.Exception != null)
+							Logger.Debug(result.Exception, "Network response failed (exception)");
+						else
+							Logger.Debug("Network response failed (code): {statusCode}", result.Result.StatusCode);
+					}
 				)
 				.WrapAsync(
 					Policy.TimeoutAsync(10, TimeoutStrategy.Pessimistic, (context, span, failedTask) =>
 					{
-						Program.Log($"Timeout occurred: {context.OperationKey}", true);
+						Logger.Debug("Timeout occurred: {contextOperationKey}", context.OperationKey);
 						return Task.CompletedTask;
 					})
 				);
@@ -48,11 +58,12 @@ namespace Hayden.Api
 				   .WaitAndRetryAsync(tries,
 					   retryAttempt => TimeSpan.FromSeconds(Math.Pow(2, Math.Min(retryAttempt, 5))) // exponential back-off: 2, 4, 8 etc
 				                                      + TimeSpan.FromMilliseconds(random.Next(0, 5000)) // plus some jitter: up to 5 seconds
+					   , (result, span) => Logger.Debug(result.Exception, "Network response failed (exception)")
 				   )
 				   .WrapAsync(
 					   Policy.TimeoutAsync(10, TimeoutStrategy.Pessimistic, (context, span, failedTask) =>
 					   {
-						   Program.Log($"Timeout occurred: {context.OperationKey}", true);
+						   Logger.Debug(failedTask.Exception, "Timeout occurred: {contextOperationKey}", context.OperationKey);
 						   return Task.CompletedTask;
 					   })
 				   );

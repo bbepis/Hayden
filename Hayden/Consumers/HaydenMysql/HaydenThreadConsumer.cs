@@ -12,6 +12,7 @@ using Hayden.Models;
 using Microsoft.EntityFrameworkCore;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
+using Serilog;
 
 namespace Hayden.Consumers
 {
@@ -25,6 +26,8 @@ namespace Hayden.Consumers
 		protected DbContextOptions DbContextOptions { get; set; }
 		protected IFileSystem FileSystem { get; set; }
 		protected IMediaInspector MediaInspector { get; set; }
+
+		private ILogger Logger { get; } = Program.CreateLogger("HaydenDb");
 
 		protected Dictionary<string, ushort> BoardIdMappings { get; } = new(StringComparer.OrdinalIgnoreCase);
 
@@ -288,7 +291,7 @@ namespace Hayden.Consumers
 			if (ConsumerConfig.ConsolidationMode == ConsolidationMode.Authoritative)
 				foreach (var post in threadUpdateInfo.UpdatedPosts)
 				{
-					Program.Log($"[DB] Post /{board}/{post.PostNumber} has been modified", true);
+					Logger.Debug("Post /{board}/{postNumber} has been modified", board, post.PostNumber);
 
 					var dbPost = await dbContext.Posts.FirstAsync(x => x.BoardId == boardId && x.PostId == post.PostNumber);
 					var dbPostMappings = await dbContext.FileMappings.Where(x => x.BoardId == boardId && x.PostId == post.PostNumber).ToArrayAsync();
@@ -339,7 +342,7 @@ namespace Hayden.Consumers
 			if (ConsumerConfig.ConsolidationMode == ConsolidationMode.Authoritative)
 				foreach (var postNumber in threadUpdateInfo.DeletedPosts)
 				{
-					Program.Log($"[DB] Post /{board}/{postNumber} has been deleted", true);
+					Logger.Debug("Post /{board}/{postNumber} has been deleted", board, postNumber);
 
 					var dbPost = await dbContext.Posts.FirstAsync(x => x.BoardId == boardId && x.PostId == postNumber);
 

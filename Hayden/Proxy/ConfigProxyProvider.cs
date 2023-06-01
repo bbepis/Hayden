@@ -1,10 +1,11 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
+using Hayden.Api;
 using Newtonsoft.Json.Linq;
 
 namespace Hayden.Proxy
@@ -66,7 +67,7 @@ namespace Hayden.Proxy
 					}
 					catch (Exception ex)
 					{
-						Program.Log($"{proxy.Name} failed: {ex}", true);
+						NetworkPolicies.Logger.Debug(ex, "Proxy {proxyName} failed", proxy.Name);
 
 						success = false;
 					}
@@ -77,13 +78,13 @@ namespace Hayden.Proxy
 
 				if (success)
 				{
-					Program.Log($"Proxy '{proxy.Name}' tested successfully");
+					NetworkPolicies.Logger.Information("Proxy '{proxyName}' tested successfully", proxy.Name);
 					ProxyClients.Add(proxy);
 					Interlocked.Increment(ref _proxyCount);
 				}
 				else
 				{
-					Program.Log($"Proxy '{proxy.Name}' failed test, will be ignored");
+					NetworkPolicies.Logger.Warning("Proxy '{proxyName}' failed test, will be ignored", proxy.Name);
 				}
 			}));
 
