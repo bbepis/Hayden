@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Linq;
 using System.Reflection;
 using System.Text.RegularExpressions;
@@ -15,6 +15,7 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using Pomelo.EntityFrameworkCore.MySql.Infrastructure;
+using Serilog;
 
 namespace Hayden.Consumers.HaydenMysql.DB
 {
@@ -25,6 +26,8 @@ namespace Hayden.Consumers.HaydenMysql.DB
 		public virtual DbSet<DBPost> Posts { get; set; }
 		public virtual DbSet<DBFileMapping> FileMappings { get; set; }
 		public virtual DbSet<DBFile> Files { get; set; }
+
+		private ILogger Logger { get; } = Program.CreateLogger("HaydenDB");
 
 		// live imageboard only
 		public virtual DbSet<DBBannedPoster> BannedPosters { get; set; }
@@ -176,18 +179,18 @@ namespace Hayden.Consumers.HaydenMysql.DB
 
 			if (pendingMigrations.Length == 0)
 			{
-				Console.WriteLine("Database is up to date.");
+				Logger.Information("Database is up to date.");
 				return;
 			}
 
-			Console.WriteLine($"{pendingMigrations.Length} database upgrades are pending.");
+			Logger.Information($"{pendingMigrations.Length} database upgrades are pending.");
 			var migrator = Database.GetService<IMigrator>();
 
 			for (int i = 0; i < pendingMigrations.Length; i++)
 			{
 				var migrationName = pendingMigrations[i];
 
-				Console.WriteLine($"[{i + 1}/{pendingMigrations.Length}] Applying migration \"{migrationName}\"");
+				Logger.Information($"[{i + 1}/{pendingMigrations.Length}] Applying migration \"{migrationName}\"");
 
 				var migrationBuilder = new MigrationBuilder(Database.ProviderName);
 				var migration = new InitialCreate();
@@ -196,7 +199,7 @@ namespace Hayden.Consumers.HaydenMysql.DB
 				await migrator.MigrateAsync(migrationName);
 			}
 
-			Console.WriteLine("Database upgrade complete.");
+			Logger.Information("Database upgrade complete.");
 		}
 
 		public async Task<(DBBoard, DBThread, DBPost[], (DBFileMapping, DBFile)[])> GetThreadInfo(ulong threadId, DBBoard boardObj, bool skipPostInfo = false)
