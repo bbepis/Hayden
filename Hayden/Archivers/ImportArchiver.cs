@@ -6,7 +6,7 @@ using System.Threading.Tasks;
 using Hayden.Api;
 using Hayden.Config;
 using Hayden.Contract;
-using Hayden.Importer;
+using Hayden.ImportExport;
 using Hayden.Proxy;
 using Thread = Hayden.Models.Thread;
 

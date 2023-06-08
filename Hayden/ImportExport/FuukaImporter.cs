@@ -12,7 +12,7 @@ using Hayden.Consumers.HaydenMysql.DB;
 using Hayden.Models;
 using Newtonsoft.Json.Linq;
 
-namespace Hayden.Importer
+namespace Hayden.ImportExport
 {
 	public class FuukaImporter : IImporter
 	{
@@ -89,7 +89,7 @@ namespace Hayden.Importer
 				.OrderBy(x => x.num)
 				.ToArrayAsync();
 
-			string radix = $"{(pointer.ThreadId / 100000) % 1000:0000}/{(pointer.ThreadId / 1000) % 100:00}";
+			string radix = $"{pointer.ThreadId / 100000 % 1000:0000}/{pointer.ThreadId / 1000 % 100:00}";
 
 			return new Thread
 			{
@@ -128,7 +128,7 @@ namespace Hayden.Importer
 						},
 					AdditionalMetadata = JObject.FromObject(new
 					{
-						capcode = x.capcode
+						x.capcode
 					})
 				}).ToArray()
 			};

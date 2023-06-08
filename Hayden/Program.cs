@@ -9,7 +9,6 @@ using System.Threading.Tasks;
 using Hayden.Cache;
 using Hayden.Consumers;
 using Hayden.Contract;
-using Hayden.Importer;
 using Hayden.MediaInfo;
 using Hayden.Proxy;
 using Microsoft.Extensions.DependencyInjection;
@@ -21,6 +20,7 @@ using Serilog.Expressions;
 using Serilog.Templates.Themes;
 using Serilog.Templates;
 using Serilog.Events;
+using Hayden.ImportExport;
 
 namespace Hayden;
 
@@ -113,6 +113,7 @@ public class Program
 			case "ASPNetChan":    serviceCollection.AddSingleton<IFrontendApi, ASPNetChanApi>(); break;
 			case "FoolFuuka":     serviceCollection.AddSingletonMulti<IFrontendApi, ISearchableFrontendApi, FoolFuukaApi>(); break;
 			case "Fuuka":         serviceCollection.AddSingleton<IImporter, FuukaImporter>(); break;
+			case "Asagi":         serviceCollection.AddSingleton<IImporter, AsagiImporter>(); break;
 			default:              throw new Exception($"Unknown source type: {configFile.Source.Type}");
 		}
 			

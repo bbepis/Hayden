@@ -2,7 +2,7 @@
 using System.Threading.Tasks;
 using Hayden.Models;
 
-namespace Hayden.Importer;
+namespace Hayden.ImportExport;
 
 public interface IImporter
 {
