@@ -919,9 +919,10 @@ namespace Hayden
 							}
 							else
 								trackedThread = TrackedThread.StartTrackingThread(ThreadConsumer.CalculateHash);
-							
-							lock (TrackedThreads)
-								TrackedThreads[threadPointer] = trackedThread;
+
+							if (!SourceConfig.SingleScan)
+								lock (TrackedThreads)
+									TrackedThreads[threadPointer] = trackedThread;
 						}
 
 						Log.Debug($"/{board}/{threadNumber} new thread? {isNewThread}, previously tracked? {isTracked}");
