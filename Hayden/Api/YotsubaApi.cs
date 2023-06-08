@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
@@ -11,7 +11,6 @@ using Hayden.Consumers.HaydenMysql.DB;
 using Hayden.Models;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
-using NodaTime;
 using Thread = Hayden.Models.Thread;
 
 namespace Hayden
@@ -39,9 +38,7 @@ namespace Hayden
 		/// <inheritdoc />
 		protected override Task<ApiResponse<YotsubaThread>> GetThreadInternal(string board, ulong threadNumber, HttpClient client, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default)
 		{
-			var timestampNow = SystemClock.Instance.GetCurrentInstant().ToUnixTimeSeconds();
-
-			return MakeJsonApiCall<YotsubaThread>(new Uri($"https://a.4cdn.org/{board}/thread/{threadNumber}.json?t={timestampNow}"), client, modifiedSince, cancellationToken);
+			return MakeJsonApiCall<YotsubaThread>(new Uri($"https://a.4cdn.org/{board}/thread/{threadNumber}.json?v={Guid.NewGuid().ToString("N")}"), client, modifiedSince, cancellationToken);
 		}
 
 		protected override Thread ConvertThread(YotsubaThread thread, string board)
@@ -63,9 +60,7 @@ namespace Hayden
 		/// <inheritdoc />
 		public override async Task<ApiResponse<PageThread[]>> GetBoard(string board, HttpClient client, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default)
 		{
-			var timestampNow = SystemClock.Instance.GetCurrentInstant().ToUnixTimeSeconds();
-
-			var result = await MakeJsonApiCall<Page[]>(new Uri($"https://a.4cdn.org/{board}/catalog.json?t={timestampNow}"), client, modifiedSince, cancellationToken);
+			var result = await MakeJsonApiCall<Page[]>(new Uri($"https://a.4cdn.org/{board}/catalog.json?v={Guid.NewGuid().ToString("N")}"), client, modifiedSince, cancellationToken);
 
 			if (result.ResponseType != ResponseType.Ok)
 				return new ApiResponse<PageThread[]>(result.ResponseType, null);
@@ -76,9 +71,7 @@ namespace Hayden
 		/// <inheritdoc />
 		public override Task<ApiResponse<ulong[]>> GetArchive(string board, HttpClient client, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default)
 		{
-			var timestampNow = SystemClock.Instance.GetCurrentInstant().ToUnixTimeSeconds();
-
-			return MakeJsonApiCall<ulong[]>(new Uri($"https://a.4cdn.org/{board}/archive.json?t={timestampNow}"), client, modifiedSince, cancellationToken);
+			return MakeJsonApiCall<ulong[]>(new Uri($"https://a.4cdn.org/{board}/archive.json?v={Guid.NewGuid().ToString("N")}"), client, modifiedSince, cancellationToken);
 		}
 	}
 
