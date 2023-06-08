@@ -28,6 +28,8 @@ namespace Hayden.Proxy
 		{
 			List<HttpClientProxy> proxies = new List<HttpClientProxy>();
 
+			int localCount = 1;
+
 			if (JsonArray != null)
 				foreach (JObject obj in JsonArray)
 				{
@@ -36,15 +38,22 @@ namespace Hayden.Proxy
 					if (string.IsNullOrWhiteSpace(url))
 						throw new Exception("Proxy URL must be specified and not empty.");
 
-					string username = obj["username"]?.Value<string>();
-					string password = obj["password"]?.Value<string>();
+					if (url == "local")
+					{
+						proxies.Add(new HttpClientProxy(CreateNewClient((IWebProxy)null), $"baseconnection/p{localCount++}"));
+					}
+					else
+					{
+						string username = obj["username"]?.Value<string>();
+						string password = obj["password"]?.Value<string>();
 
-					IWebProxy proxy = username != null
-									  ? new WebProxy(url, false, Array.Empty<string>(),
-										  new NetworkCredential(username, password))
-									  : new WebProxy(url);
+						IWebProxy proxy = username != null
+							? new WebProxy(url, false, Array.Empty<string>(),
+								new NetworkCredential(username, password))
+							: new WebProxy(url);
 
-					proxies.Add(new HttpClientProxy(CreateNewClient(proxy), $"{username}@{url}"));
+						proxies.Add(new HttpClientProxy(CreateNewClient(proxy), $"{username}@{url}"));
+					}
 				}
 
 			// add a direct connection client too
