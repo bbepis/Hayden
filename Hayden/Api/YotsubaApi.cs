@@ -269,7 +269,7 @@ namespace Hayden
 				Author = HttpUtility.HtmlDecode(Name)?.TrimAndNullify(),
 				Tripcode = Trip,
 				Email = null,
-				ContentRendered = Comment,
+				//ContentRendered = Comment,
 				ContentRaw = AsagiThreadConsumer.CleanComment(Comment).TrimAndNullify(),
 				ContentType = ContentType.Yotsuba,
 				Media = media,
