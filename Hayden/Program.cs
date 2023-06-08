@@ -1,4 +1,5 @@
 using System;
+using System.CommandLine;
 using System.Globalization;
 using System.IO;
 using System.IO.Abstractions;
@@ -45,17 +46,44 @@ public class Program
 		Log.Information("Hayden v0.9.0");
 		Log.Information("By Bepis");
 
-		if (args.Length != 1)
-		{
-			Console.WriteLine("Usage: hayden <config file location>");
-			return 2;
-		}
-
 		// restrict threadpool size to prevent excessive amounts of unmanaged memory usage
 		ThreadPool.SetMinThreads(Environment.ProcessorCount, Environment.ProcessorCount);
 		ThreadPool.SetMaxThreads(Environment.ProcessorCount * 2, Environment.ProcessorCount * 4);
 
-		var rawConfigFile = JObject.Parse(File.ReadAllText(args[0]));
+		var rootCommand = CreateCommandParser();
+
+		return await rootCommand.InvokeAsync(args);
+	}
+
+	private static RootCommand CreateCommandParser()
+	{
+		var rootCommand = new RootCommand("Hayden all-chan archival software");
+
+		var scrapeCommand = new Command("scrape", "Scrape using a config");
+		var configArg = new Argument<string>("config path", () => "config.json", "The path to the .json config file") { Arity = ArgumentArity.ExactlyOne };
+		scrapeCommand.Add(configArg);
+		scrapeCommand.SetHandler(RunScrape, configArg);
+
+		rootCommand.Add(scrapeCommand);
+		
+		var dumpCommand = new Command("dump", "Dump a database to a standard format");
+		var connectionStringArg = new Argument<string>("connection string", "The path to the .json config file") { Arity = ArgumentArity.ExactlyOne };
+		dumpCommand.Add(connectionStringArg);
+
+		rootCommand.Add(dumpCommand);
+
+		return rootCommand;
+	}
+
+	private static async Task<int> RunScrape(string configPath)
+	{
+		if (!File.Exists(configPath))
+		{
+			Log.Error("Could not find config: {configPath}", configPath);
+			return 2;
+		}
+
+		var rawConfigFile = JObject.Parse(File.ReadAllText(configPath));
 
 		var tokenSource = new CancellationTokenSource();
 
