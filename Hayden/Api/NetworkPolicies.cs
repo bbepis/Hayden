@@ -23,12 +23,13 @@ namespace Hayden.Api
 		public static AsyncPolicy<HttpResponseMessage> HttpApiPolicy { get; } =
 			Policy<HttpResponseMessage>
 				.Handle<HttpRequestException>()
+				.Or<TimeoutRejectedException>()
 				.OrResult(response => response.StatusCode == HttpStatusCode.TooManyRequests
 									  || response.StatusCode == HttpStatusCode.RequestTimeout
 									  || (int)response.StatusCode >= 500)
 				
-				.WaitAndRetryAsync(3,
-					retryAttempt => TimeSpan.FromSeconds(Math.Pow(2, retryAttempt)) // exponential back-off: 2, 4, 8 etc
+				.WaitAndRetryAsync(20,
+					retryAttempt => TimeSpan.FromSeconds(Math.Pow(2, Math.Min(retryAttempt, 4))) // exponential back-off: 2, 4, 8 etc
 									+ TimeSpan.FromMilliseconds(random.Next(0, 5000)) // plus some jitter: up to 5 seconds
 					, (result, span) =>
 					{
@@ -55,6 +56,7 @@ namespace Hayden.Api
 		{
 			return Policy<T>
 				   .Handle<Exception>()
+				   .Or<TimeoutRejectedException>()
 				   .WaitAndRetryAsync(tries,
 					   retryAttempt => TimeSpan.FromSeconds(Math.Pow(2, Math.Min(retryAttempt, 5))) // exponential back-off: 2, 4, 8 etc
 				                                      + TimeSpan.FromMilliseconds(random.Next(0, 5000)) // plus some jitter: up to 5 seconds
