@@ -193,7 +193,8 @@ namespace Hayden.Consumers
 								Filename = file.Filename,
 								Index = file.Index,
 								IsDeleted = file.IsDeleted,
-								IsSpoiler = file.IsSpoiler.GetValueOrDefault()
+								IsSpoiler = file.IsSpoiler.GetValueOrDefault(),
+								AdditionalMetadata = file.AdditionalMetadata?.Serialize()
 							};
 
 							dbContext.Add(fileMapping);
@@ -245,10 +246,13 @@ namespace Hayden.Consumers
 				{
 					BoardId = boardId,
 					ThreadId = threadUpdateInfo.ThreadPointer.ThreadId,
-					IsDeleted = false,
-					IsArchived = false,
+					IsDeleted = threadUpdateInfo.Thread.AdditionalMetadata?.Deleted
+						?? threadUpdateInfo.Thread.Posts.FirstOrDefault(x => x.PostNumber == threadUpdateInfo.ThreadPointer.ThreadId)?.IsDeleted
+						?? false,
+					IsArchived = threadUpdateInfo.Thread.IsArchived,
 					LastModified = DateTime.MinValue,
-					Title = threadUpdateInfo.Thread.Title.TrimAndNullify()
+					Title = threadUpdateInfo.Thread.Title.TrimAndNullify(),
+					AdditionalMetadata = threadUpdateInfo.Thread.AdditionalMetadata?.Serialize()
 				};
 
 				dbContext.Add(dbThread);
@@ -278,7 +282,7 @@ namespace Hayden.Consumers
 					Tripcode = post.Tripcode.TrimAndNullify(),
 					Email = post.Email.TrimAndNullify(),
 					DateTime = post.TimePosted.UtcDateTime,
-					AdditionalMetadata = (post.AdditionalMetadata?.Count ?? 0) == 0 ? null : post.AdditionalMetadata.ToString(Formatting.None)
+					AdditionalMetadata = post.AdditionalMetadata?.Serialize()
 				});
 			}
 

@@ -114,7 +114,7 @@ public class AsagiImporter : IImporter
 					{
 						new Media
 						{
-							Filename = Path.GetFileNameWithoutExtension(x.p.media_filename),
+							Filename = HttpUtility.HtmlDecode(Path.GetFileNameWithoutExtension(x.p.media_filename)),
 							FileExtension = Path.GetExtension(x.p.media_filename),
 							Index = 1,
 							FileSize = x.p.media_size,
@@ -125,16 +125,19 @@ public class AsagiImporter : IImporter
 							//ThumbnailUrl = $"{CdnUrl}data/{pointer.Board}/thumb/{radix}/{x.preview}"
 						}
 					},
-				AdditionalMetadata = JObject.FromObject(new
+				AdditionalMetadata = new()
 				{
-					x.p.capcode,
-					x.p.timestamp_expired,
-					asagi_exif = x.p.exif,
-					x.p.locked,
-					x.p.poster_country,
-					x.p.poster_hash
-				})
-			}).ToArray()
+					Capcode = x.p.capcode == "N" || x.p.capcode == null ? null : x.p.capcode,
+					CountryCode = x.p.poster_country,
+					PosterID = x.p.poster_hash,
+					AsagiExif = !string.IsNullOrWhiteSpace(x.p.exif) ? x.p.exif : null
+				}
+			}).ToArray(),
+			AdditionalMetadata = new()
+			{
+				Locked = threadPosts[0].p.locked,
+				TimeExpired = threadPosts[0].p.timestamp_expired,
+			}
 		};
 	}
 }

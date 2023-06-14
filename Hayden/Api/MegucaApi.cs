@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
@@ -74,9 +74,9 @@ namespace Hayden
 				IsArchived = thread.Locked,
 				OriginalObject = thread,
 				Posts = thread.Posts.Select(x => x.ConvertToPost(board, ImageboardWebsite)).ToArray(),
-				AdditionalMetadata = new JObject
+				AdditionalMetadata = new()
 				{
-					["sticky"] = thread.Sticky
+					Sticky = thread.Sticky
 				}
 			};
 		}
@@ -316,10 +316,10 @@ namespace Hayden
 				ContentType = ContentType.Meguca,
 				Media = media,
 				OriginalObject = this,
-				AdditionalMetadata = Common.SerializeObject(new
+				AdditionalMetadata = new()
 				{
-					flag = Flag
-				})
+					BoardFlagCode = Flag
+				}
 			};
 		}
 	}

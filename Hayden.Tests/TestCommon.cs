@@ -61,9 +61,9 @@ namespace Hayden.Tests
 								IsSpoiler = true,
 								IsDeleted = false,
 								Index = 0,
-								AdditionalMetadata = new JObject()
+								AdditionalMetadata = new()
 								{
-									["test-property"] = true
+									CustomSpoiler = 1
 								}
 							},
 							new Media
@@ -80,9 +80,9 @@ namespace Hayden.Tests
 								IsSpoiler = false,
 								IsDeleted = false,
 								Index = 1,
-								AdditionalMetadata = new JObject()
+								AdditionalMetadata = new()
 								{
-									["test-property"] = false
+									CustomSpoiler = 2
 								}
 							},
 						}

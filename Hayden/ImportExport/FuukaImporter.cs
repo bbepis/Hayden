@@ -115,7 +115,7 @@ namespace Hayden.ImportExport
 						{
 							new Media
 							{
-								Filename = Path.GetFileNameWithoutExtension(x.media),
+								Filename = HttpUtility.HtmlDecode(Path.GetFileNameWithoutExtension(x.media)),
 								FileExtension = Path.GetExtension(x.media),
 								Index = 1,
 								FileSize = x.media_size,
@@ -126,10 +126,10 @@ namespace Hayden.ImportExport
 								ThumbnailUrl = $"{CdnUrl}data/{pointer.Board}/thumb/{radix}/{x.preview}"
 							}
 						},
-					AdditionalMetadata = JObject.FromObject(new
+					AdditionalMetadata = new()
 					{
-						x.capcode
-					})
+						Capcode = x.capcode != null && x.capcode != "N" ? x.capcode : null
+					}
 				}).ToArray()
 			};
 		}

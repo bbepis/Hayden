@@ -50,9 +50,10 @@ namespace Hayden
 				IsArchived = thread.Archived,
 				OriginalObject = thread,
 				Posts = thread.Posts.Select(x => x.ConvertToPost(board)).ToArray(),
-				AdditionalMetadata = new JObject
+				AdditionalMetadata = new()
 				{
-					["sticky"] = thread.OriginalPost.Sticky
+					Sticky = thread.OriginalPost.Sticky.GetValueOrDefault(),
+					Locked = thread.OriginalPost.Closed.GetValueOrDefault()
 				}
 			};
 		}
@@ -251,7 +252,10 @@ namespace Hayden
 						IsSpoiler = SpoilerImage ?? false,
 						Md5Hash = Convert.FromBase64String(FileMd5),
 						OriginalObject = this,
-						AdditionalMetadata = null
+						AdditionalMetadata = new()
+						{
+							CustomSpoiler = CustomSpoiler
+						}
 					}
 				};
 			
@@ -267,16 +271,15 @@ namespace Hayden
 				ContentType = ContentType.Yotsuba,
 				Media = media,
 				OriginalObject = this,
-				AdditionalMetadata = Common.SerializeObject(new
+				AdditionalMetadata = new()
 				{
-					capcode = Capcode,
-					countryCode = CountryCode,
-					countryName = CountryName,
-					boardFlagCode = BoardFlagCode,
-					boardFlagName = BoardFlagName,
-					posterID = PosterID,
-					customSpoiler = CustomSpoiler
-				})
+					Capcode = Capcode,
+					CountryCode = CountryCode,
+					CountryName = CountryName,
+					BoardFlagCode = BoardFlagCode,
+					BoardFlagName = BoardFlagName,
+					PosterID = PosterID
+				}
 			};
 		}
 	}

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -49,7 +49,6 @@ namespace Hayden
 			foreach (var postElement in postElements)
 			{
 				var post = new Post();
-				post.AdditionalMetadata = new JObject();
 				post.ContentType = ContentType.ASPNetChan;
 
 				post.PostNumber = ulong.Parse(postElement.GetAttribute("data-post-no"));
@@ -58,7 +57,7 @@ namespace Hayden
 				var posterId = postElement.GetAttribute("data-poster-id");
 
 				if (!string.IsNullOrWhiteSpace(posterId))
-					post.AdditionalMetadata["posterID"] = posterId;
+					post.AdditionalMetadata.PosterID = posterId;
 
 				var timeElement = postElement.QuerySelector(".post-time > time");
 				post.TimePosted = DateTimeOffset.Parse(timeElement.GetAttribute("datetime"));
@@ -68,11 +67,11 @@ namespace Hayden
 
 				var capcode = postElement.QuerySelector(".poster-capcode").TextContent.TrimAndNullify();
 				if (!string.IsNullOrWhiteSpace(capcode))
-					post.AdditionalMetadata["capcode"] = capcode;
+					post.AdditionalMetadata.Capcode = capcode;
 
 				var flag = postElement.QuerySelector(".poster-flag")?.GetAttribute("title");
 				if (!string.IsNullOrWhiteSpace(flag))
-					post.AdditionalMetadata["flagName"] = flag;
+					post.AdditionalMetadata.BoardFlagCode = flag;
 
 				post.ContentRendered = postElement.QuerySelector(".post-body").InnerHtml.Trim();
 

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -68,9 +68,9 @@ namespace Hayden
 				IsArchived = thread.Locked,
 				OriginalObject = thread,
 				Posts = thread.Posts.Select(x => x.ConvertToPost()).ToArray(),
-				AdditionalMetadata = new JObject
+				AdditionalMetadata = new()
 				{
-					["sticky"] = thread.Stickied
+					Sticky = thread.Stickied
 				}
 			};
 		}
@@ -380,11 +380,11 @@ namespace Hayden
 					IsSpoiler = attachment.IsSpoiler,
 					Sha256Hash = Convert.FromBase64String(attachment.FileInfo.FileSha256Hash),
 					OriginalObject = this,
-					AdditionalMetadata = new JObject
+					AdditionalMetadata = new()
 					{
-						["meta"] = attachment.FileInfo.Meta,
-						["globalAttachmentId"] = attachment.GlobalAttachmentId,
-						["globalFileId"] = attachment.GlobalFileId
+						InfinityNextMetadata = attachment.FileInfo.Meta,
+						InfinityNextAttachmentId = attachment.GlobalAttachmentId,
+						InfinityNextFileId = attachment.GlobalFileId
 					}
 				}).ToArray();
 			}
@@ -401,13 +401,13 @@ namespace Hayden
 				ContentType = ContentType.InfinityNext,
 				Media = media,
 				OriginalObject = this,
-				AdditionalMetadata = Common.SerializeObject(new
+				AdditionalMetadata = new()
 				{
-					globalPostId = GlobalPostNumber,
-					posterID = AuthorId,
-					capcode = CapcodeId,
-					flagId = FlagId
-				})
+					InfinityNextGlobalId = GlobalPostNumber,
+					PosterID = AuthorId,
+					Capcode = CapcodeId,
+					BoardFlagCode = FlagId
+				}
 			};
 		}
 	}

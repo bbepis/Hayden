@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -270,13 +270,13 @@ namespace Hayden
 				ContentType = ContentType.LynxChan,
 				Media = media,
 				OriginalObject = this,
-				AdditionalMetadata = Common.SerializeObject(new
+				AdditionalMetadata = new()
 				{
-					posterId = PosterID,
-					capcode = SignedRole, // i think this is correct?
-					flagCode = FlagCode,
-					flagName = FlagName
-				})
+					PosterID = PosterID,
+					Capcode = SignedRole, // i think this is correct?
+					BoardFlagCode = FlagCode,
+					BoardFlagName = FlagName
+				}
 			};
 		}
 	}

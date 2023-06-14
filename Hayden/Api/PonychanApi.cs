@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -45,9 +45,9 @@ namespace Hayden
 				IsArchived = thread.OriginalPost.Closed ?? false,
 				OriginalObject = thread,
 				Posts = thread.Posts.Select(x => x.ConvertToPost(board, ImageboardWebsite)).ToArray(),
-				AdditionalMetadata = new JObject
+				AdditionalMetadata = new()
 				{
-					["sticky"] = thread.OriginalPost.Sticky
+					Sticky = thread.OriginalPost.Sticky.GetValueOrDefault()
 				}
 			};
 		}
@@ -207,12 +207,12 @@ namespace Hayden
 				ContentType = ContentType.Ponychan,
 				Media = media,
 				OriginalObject = this,
-				AdditionalMetadata = Common.SerializeObject(new
+				AdditionalMetadata = new()
 				{
-					capcode = Capcode,
-					ponychan_mature = Mature,
-					ponychan_anonymous = Anonymous
-				})
+					Capcode = Capcode,
+					PonychanMature = Mature,
+					PonychanAnonymous = Anonymous
+				}
 			};
 		}
 	}

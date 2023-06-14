@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Net;
 using System.Net.Http;
 using System.Text;
@@ -109,8 +109,8 @@ namespace Hayden.Tests.Api
 			var opPost = result.Data.Posts[0];
 
 			Assert.AreEqual(51971506UL, opPost.PostNumber);
-			Assert.IsTrue(result.Data.AdditionalMetadata.Value<bool>("sticky"));
-			Assert.IsTrue(result.Data.IsArchived);
+			Assert.IsTrue(result.Data.AdditionalMetadata.Sticky);
+			Assert.IsTrue(result.Data.AdditionalMetadata.Locked);
 
 			// put more here. i'm lazy
 		}
@@ -195,11 +195,9 @@ namespace Hayden.Tests.Api
 			Assert.AreEqual(ResponseType.Ok, result.ResponseType);
 			Assert.IsNotNull(result.Data);
 
-			Assert.AreEqual(1, result.Data.Length);
+			Assert.AreEqual(2, result.Data.Length);
 
 			var firstThread = result.Data[0];
-			
-			Assert.AreEqual(2, result.Data.Length);
 			Assert.AreEqual(51971506UL, firstThread.ThreadNumber);
 			Assert.AreEqual(1576181967UL, firstThread.LastModified);
 		}

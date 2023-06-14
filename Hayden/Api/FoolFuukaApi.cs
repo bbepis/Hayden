@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -64,7 +64,12 @@ namespace Hayden
 				Title = thread.OriginalPost.Title,
 				IsArchived = thread.Archived,
 				OriginalObject = thread,
-				Posts = thread.Posts.Select(x => x.ConvertToPost()).ToArray()
+				Posts = thread.Posts.Select(x => x.ConvertToPost()).ToArray(),
+				AdditionalMetadata = new()
+				{
+					Sticky = thread.OriginalPost.Sticky.GetValueOrDefault(),
+					Deleted = thread.OriginalPost.Deleted.GetValueOrDefault()
+				}
 			};
 		}
 
@@ -286,6 +291,9 @@ namespace Hayden
 		[JsonProperty("troll_country_name")]
 		public string TrollCountryName { get; set; }
 
+		[JsonProperty("capcode")]
+		public string Capcode { get; set; }
+
 		[JsonConverter(typeof(BoolIntConverter))]
 		[JsonProperty("sticky")]
 		public bool? Sticky { get; set; }
@@ -319,7 +327,7 @@ namespace Hayden
 					{
 						FileUrl = Media.FileUrl,
 						ThumbnailUrl = Media.ThumbnailUrl,
-						Filename = Path.GetFileNameWithoutExtension(Media.OriginalFilename),
+						Filename = HttpUtility.HtmlDecode(Path.GetFileNameWithoutExtension(Media.OriginalFilename)),
 						FileExtension = Path.GetExtension(Media.OriginalFilename),
 						ThumbnailExtension = Path.GetExtension(Media.OriginalFilename),
 						Index = 0,
@@ -328,9 +336,9 @@ namespace Hayden
 						IsSpoiler = Media.IsSpoiler,
 						Md5Hash = Convert.FromBase64String(Media.Md5HashString),
 						OriginalObject = Media,
-						AdditionalMetadata = new JObject
+						AdditionalMetadata = new()
 						{
-							["timestampedFilename"] = Media.TimestampedFilename
+							YotsubaTimestamp = ulong.Parse(Path.GetFileNameWithoutExtension(Media.TimestampedFilename))
 						}
 					}
 				};
@@ -348,16 +356,16 @@ namespace Hayden
 				ContentType = ContentType.Yotsuba,
 				Media = media,
 				OriginalObject = this,
-				AdditionalMetadata = Common.SerializeObject(new
+				AdditionalMetadata = new()
 				{
-					// capcode = 
-					countryCode = CountryCode,
-					countryName = CountryName,
-					boardCountryCode = TrollCountryCode,
-					boardCountryName = TrollCountryName,
-					posterID = PosterHash,
-					sticky = Sticky
-				})
+					Capcode = Capcode != null && Capcode != "N" ? Capcode : null,
+					CountryCode = CountryCode.TrimAndNullify(),
+					CountryName = CountryName?.Trim().Equals("false", StringComparison.OrdinalIgnoreCase) != true ? CountryName.TrimAndNullify() : null,
+					BoardFlagCode = TrollCountryCode.TrimAndNullify(),
+					BoardFlagName = TrollCountryName.TrimAndNullify(),
+					PosterID = PosterHash,
+					AsagiExif = Media?.Exif
+				}
 			};
 		}
 	}
@@ -388,5 +396,8 @@ namespace Hayden
 
 		[JsonProperty("media_size")]
 		public uint FileSize { get; set; }
+
+		[JsonProperty("exif")]
+		public string Exif { get; set; }
 	}
 }

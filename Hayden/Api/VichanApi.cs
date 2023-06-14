@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
@@ -47,9 +47,9 @@ namespace Hayden
 				IsArchived = thread.Archived,
 				OriginalObject = thread,
 				Posts = thread.Posts.Select(x => x.ConvertToPost(board, ImageboardWebsite)).ToArray(),
-				AdditionalMetadata = new JObject
+				AdditionalMetadata = new()
 				{
-					["sticky"] = thread.OriginalPost.Sticky
+					Sticky = thread.OriginalPost.Sticky.GetValueOrDefault()
 				}
 			};
 		}
@@ -212,7 +212,10 @@ namespace Hayden
 						IsSpoiler = null, // Vichan API does not expose this
 						Md5Hash = Convert.FromBase64String(file.FileMd5),
 						OriginalObject = this,
-						AdditionalMetadata = null
+						AdditionalMetadata = new()
+						{
+							CustomSpoiler = CustomSpoiler
+						}
 					}));
 				}
 
@@ -231,13 +234,12 @@ namespace Hayden
 				ContentType = ContentType.Vichan,
 				Media = media,
 				OriginalObject = this,
-				AdditionalMetadata = Common.SerializeObject(new
+				AdditionalMetadata = new()
 				{
-					capcode = Capcode,
-					countryCode = CountryCode,
-					countryName = CountryName,
-					customSpoiler = CustomSpoiler
-				})
+					Capcode = Capcode,
+					CountryCode = CountryCode,
+					CountryName = CountryName
+				}
 			};
 		}
 	}

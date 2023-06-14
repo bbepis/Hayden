@@ -258,7 +258,7 @@ namespace Hayden.Consumers.HaydenMysql.DB
 		}
 
 		private static readonly ValueConverter<JObject, string> JsonValueConverter = new(
-			v => v == null ? null : v.ToString(Formatting.None),
+			v => v == null || v.Count == 0 ? null : v.ToString(Formatting.None),
 			v => v == null ? null : JObject.Parse(v)
 		);
 
