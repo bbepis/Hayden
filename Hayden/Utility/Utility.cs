@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -338,6 +338,32 @@ namespace Hayden
 			var count = 0;
 
 			foreach (var item in source)
+			{
+				if (bucket == null)
+					bucket = new List<TSource>(size);
+
+				bucket.Add(item);
+				count++;
+
+				if (count != size)
+					continue;
+
+				yield return bucket;
+
+				bucket = null;
+				count = 0;
+			}
+
+			if (bucket != null && bucket.Count > 0)
+				yield return bucket.Take(count).ToList();
+		}
+
+		public static async IAsyncEnumerable<List<TSource>> Batch<TSource>(this IAsyncEnumerable<TSource> source, int size)
+		{
+			List<TSource> bucket = null;
+			var count = 0;
+
+			await foreach (var item in source)
 			{
 				if (bucket == null)
 					bucket = new List<TSource>();

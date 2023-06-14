@@ -218,6 +218,7 @@ namespace Hayden
 	{
 		private IAsyncEnumerable<T> InternalAsyncEnumerable { get; }
 		public IList<T> SourceList { get; }
+		private int? SizeHint { get; }
 
 		public MaybeAsyncEnumerable(IList<T> sourceList)
 		{
@@ -225,10 +226,11 @@ namespace Hayden
 			InternalAsyncEnumerable = sourceList.ToAsyncEnumerable();
 		}
 
-		public MaybeAsyncEnumerable(IAsyncEnumerable<T> enumerable)
+		public MaybeAsyncEnumerable(IAsyncEnumerable<T> enumerable, int? sizeHint = null)
 		{
 			SourceList = null;
 			InternalAsyncEnumerable = enumerable;
+			SizeHint = sizeHint;
 		}
 
 		public IAsyncEnumerator<T> GetAsyncEnumerator(CancellationToken cancellationToken = new())
@@ -236,7 +238,7 @@ namespace Hayden
 			return InternalAsyncEnumerable.GetAsyncEnumerator(cancellationToken);
 		}
 
-		public int? Count => SourceList?.Count;
+		public int? Count => SourceList?.Count ?? SizeHint;
 
 		public bool IsListBacked => SourceList != null;
 	}

@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
+using System.Web;
 using Hayden.Config;
 using Hayden.Consumers.Asagi;
 using Hayden.Consumers.HaydenMysql.DB;
@@ -78,7 +79,7 @@ public class AsagiImporter : IImporter
 		var (posts, images, threads) = dbContext.GetSets(pointer.Board);
 
 		var threadPosts = await (from p in posts.AsNoTracking()
-								 where p.thread_num == pointer.ThreadId && p.subnum == 0
+								 where p.thread_num == (uint)pointer.ThreadId && p.subnum == 0
 								 orderby p.num
 								 select new { p }).ToArrayAsync();
 

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using Microsoft.EntityFrameworkCore;
 using MySqlConnector;
 using System.Collections.Generic;
@@ -7,10 +7,10 @@ using System.Data;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
+using System.Web;
 using Hayden.Config;
 using Hayden.Consumers.HaydenMysql.DB;
 using Hayden.Models;
-using Newtonsoft.Json.Linq;
 
 namespace Hayden.ImportExport
 {
@@ -72,7 +72,7 @@ namespace Hayden.ImportExport
 
 			var threadIds = query
 				.Where(x => x.parent == 0 && x.subnum == 0)
-				.Select(x => x.num).Distinct();
+				.Select(x => x.num);
 
 			await foreach (var threadId in threadIds.AsAsyncEnumerable())
 			{

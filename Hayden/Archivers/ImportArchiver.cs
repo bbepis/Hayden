@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+using System;
+using System.Collections.Generic;
 using System.IO.Abstractions;
 using System.Linq;
 using System.Threading;
@@ -8,6 +9,8 @@ using Hayden.Config;
 using Hayden.Contract;
 using Hayden.ImportExport;
 using Hayden.Proxy;
+using Nito.AsyncEx;
+using Serilog;
 using Thread = Hayden.Models.Thread;
 
 namespace Hayden
@@ -19,6 +22,8 @@ namespace Hayden
 		protected override bool LoopArchive => false;
 		protected override bool NeedsToDelayThreadApiCall => false;
 
+		private ILogger Logger { get; } = Program.CreateLogger("Importer");
+
 		public ImportArchiver(IImporter importer, SourceConfig sourceConfig, ConsumerConfig consumerConfig,
 			IThreadConsumer threadConsumer, IFileSystem fileSystem, IStateStore stateStore = null, ProxyProvider proxyProvider = null)
 		: base(sourceConfig, consumerConfig, null, threadConsumer, fileSystem, stateStore, proxyProvider)
@@ -29,44 +34,113 @@ namespace Hayden
 		protected override async Task<MaybeAsyncEnumerable<ThreadPointer>> ReadBoards(bool firstRun, CancellationToken token)
 		{
 			var threadQueue = new List<ThreadPointer>();
+			var stopwatch = new System.Diagnostics.Stopwatch();
+			stopwatch.Start();
 
 			foreach (var board in SourceConfig.Boards.Keys)
+			await foreach (var pointer in Importer.GetThreadList(board).WithCancellation(token))
+				threadQueue.Add(pointer);
+
+			Logger.Debug("Read thread list in {time}", stopwatch.Elapsed);
+
+			if (threadQueue.Count < 10_000) // super memory-inefficient at this size
 			{
-				await foreach (var pointer in Importer.GetThreadList(board).WithCancellation(token))
-					threadQueue.Add(pointer);
-
-				// Check for threads that have already been downloaded by the consumer, noting the last time they were downloaded.
-				var existingThreads = await ThreadConsumer.CheckExistingThreads(threadQueue.Where(x => x.Board == board).Select(x => x.ThreadId),
-					board,
-					false,
-					true,
-					false);
-
-				foreach (var existingThread in existingThreads)
+				foreach (var board in SourceConfig.Boards.Keys)
 				{
-					//var thread = threadQueue.First(x => x.Board == board && x.ThreadId == existingThread.ThreadId);
-
-					//// Only remove threads to be downloaded if the downloaded thread is already up-to-date by comparing last post times
-					//// This can't be done below as "last post time" is different to "last modified time"
-					//if (thread.LastModified <= Utility.GetGMTTimestamp(existingThread.LastPostTime))
-					//{
-					   // threadList.Remove(thread);
-					//}
-
-					// Start tracking the thread
+					// Check for threads that have already been downloaded by the consumer, noting the last time they were downloaded.
+					var existingThreads = await ThreadConsumer.CheckExistingThreads(threadQueue.Where(x => x.Board == board).Select(x => x.ThreadId),
+						board,
+						false,
+						true,
+						false);
 
 					lock (TrackedThreads)
-						TrackedThreads[new ThreadPointer(board, existingThread.ThreadId)] =
-							TrackedThread.StartTrackingThread(ThreadConsumer.CalculateHash, existingThread);
+						foreach (var existingThread in existingThreads)
+						{
+							TrackedThreads[new ThreadPointer(board, existingThread.ThreadId)] =
+								TrackedThread.StartTrackingThread(ThreadConsumer.CalculateHash, existingThread);
+						}
 				}
+
+				return new MaybeAsyncEnumerable<ThreadPointer>(threadQueue);
 			}
-			
-			return new MaybeAsyncEnumerable<ThreadPointer>(threadQueue);
+			else
+			{
+				async IAsyncEnumerable<ThreadPointer> internalEnumerate()
+				{
+					AsyncProducerConsumerQueue<ICollection<ThreadPointer>> pointerQueue = new(1);
+
+					var producerTask = Task.Run(async () =>
+					{
+						foreach (var board in SourceConfig.Boards.Keys)
+						{
+							if (token.IsCancellationRequested)
+								break;
+
+							stopwatch.Restart();
+							foreach (var pointerBatch in threadQueue.Where(x => x.Board == board).Batch(10000))
+							{
+								if (token.IsCancellationRequested)
+									break;
+
+								Logger.Debug("Read thread batch in {time}", stopwatch.Elapsed);
+
+								stopwatch.Restart();
+
+								var existingThreads = await ThreadConsumer.CheckExistingThreads(
+									pointerBatch.Select(x => x.ThreadId),
+									board,
+									false,
+									true,
+									false);
+
+								Logger.Debug("Read existing threads in {time}", stopwatch.Elapsed);
+								stopwatch.Restart();
+
+								lock (TrackedThreads)
+								{
+									foreach (var existingThread in existingThreads)
+									{
+										TrackedThreads[new ThreadPointer(board, existingThread.ThreadId)] =
+											TrackedThread.StartTrackingThread(ThreadConsumer.CalculateHash,
+												existingThread);
+									}
+								}
+
+								Logger.Debug("Set tracked threads in {time}", stopwatch.Elapsed);
+
+								try
+								{
+									await pointerQueue.EnqueueAsync(pointerBatch, token);
+								}
+								catch (OperationCanceledException)
+								{
+									break;
+								}
+
+								stopwatch.Restart();
+							}
+						}
+
+						pointerQueue.CompleteAdding();
+					});
+
+					while (await pointerQueue.OutputAvailableAsync(token))
+					{
+						foreach (var item in await pointerQueue.DequeueAsync(token))
+							yield return item;
+					}
+				}
+
+				return new MaybeAsyncEnumerable<ThreadPointer>(internalEnumerate());
+			}
 		}
 
 		protected override async Task<ApiResponse<Thread>> RetrieveThreadAsync(ThreadPointer threadPointer, HttpClientProxy client, CancellationToken token)
 		{
-			return new ApiResponse<Thread>(ResponseType.Ok, await Importer.RetrieveThread(threadPointer));
+			var thread = await Importer.RetrieveThread(threadPointer);
+
+			return new ApiResponse<Thread>(thread != null ? ResponseType.Ok : ResponseType.NotFound, thread);
 		}
 	}
 }

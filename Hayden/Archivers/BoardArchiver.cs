@@ -115,11 +115,14 @@ namespace Hayden
 					queuedThreads = await ReadBoards(firstRun, token);
 				}
 				
-				if (queuedThreads.IsListBacked)
+				if (queuedThreads.Count.HasValue)
 					Log.Information("{queuedThreadsCount} threads have been queued total", queuedThreads.Count);
 
 				var (requeuedThreads, requeuedImages) = await PerformScrape(firstRun, queuedThreads, queuedImages, token);
-				
+
+				if (requeuedImages == null)
+					break;
+
 				queuedThreads = new MaybeAsyncEnumerable<ThreadPointer>(requeuedThreads);
 				queuedImages = requeuedImages;
 
@@ -397,6 +400,9 @@ namespace Hayden
 							// Add detected images to the cache layer image collection
 							await StateStore.InsertToDownloadQueue(new ReadOnlyCollection<QueuedImageDownload>(result.ImageDownloads));
 						}
+
+						if (SourceConfig.SingleScan)
+							HandleThreadRemoval(nextThread); // we're never going to look at the thread again, purge it from memory
 
 						// Log the status of the scraped thread
 						Log.Information($"{"[Thread]",-9} {$"/{nextThread.Board}/{nextThread.ThreadId}",-17} {threadStatus} {$"+({result.ImageDownloads.Count}/{result.PostCountChange})",-13} [{enqueuedImages.Count}/{newCompletedCount}/{threadQueue.Count?.ToString() ?? "?"}]");

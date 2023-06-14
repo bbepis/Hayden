@@ -261,7 +261,7 @@ namespace Hayden.Consumers
 
 			foreach (var post in threadUpdateInfo.NewPosts)
 			{
-				if (post.IsDeleted == true)
+				if (!threadUpdateInfo.IsNewThread && post.IsDeleted == true)
 				{
 					// due to limitations with the thread tracking method, deleted posts don't get processed correctly
 
