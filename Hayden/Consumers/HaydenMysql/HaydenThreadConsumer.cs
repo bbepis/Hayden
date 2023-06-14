@@ -539,19 +539,23 @@ namespace Hayden.Consumers
 
 			if (getMetadata)
 			{
-				foreach (var threadInfo in await query.Select(x => new { x.ThreadId, x.LastModified, x.IsArchived }).ToArrayAsync())
+				var threadInfos = await query.Select(x => new { x.ThreadId, x.LastModified, x.IsArchived }).ToDictionaryAsync(x => x.ThreadId);
+				
+				var postQuery =
+					dbContext.Posts.Where(x => x.BoardId == boardId && threadInfos.Keys.Contains(x.ThreadId) && (!excludeDeletedPosts || !x.IsDeleted))
+						.SelectMany(x => dbContext.FileMappings.Where(y => y.BoardId == boardId && y.PostId == x.PostId).DefaultIfEmpty(), (post, mapping) => new { post, mapping });
+
+				var allPosts = await postQuery.ToArrayAsync();
+
+				foreach (var threadGrouping in allPosts.GroupBy(x => x.post.ThreadId))
 				{
-					var hashes = new List<(ulong PostId, uint PostHash)>();
-
-					var postQuery =
-						dbContext.Posts.Where(x => x.BoardId == boardId && x.ThreadId == threadInfo.ThreadId && (!excludeDeletedPosts || !x.IsDeleted))
-							//.Join(dbContext.FileMappings, dbPost => new { dbPost.BoardId, dbPost.PostId }, dbFileMapping => new { dbFileMapping.BoardId, dbFileMapping.PostId }, (post, mapping) => new { post, mapping });
-							.SelectMany(x => dbContext.FileMappings.Where(y => y.BoardId == boardId && y.PostId == x.PostId).DefaultIfEmpty(), (post, mapping) => new { post, mapping });
-
 					var postGroupings =
-						(await postQuery.ToArrayAsync()).GroupByCustomKey(x => x.post.PostId,
+						threadGrouping.GroupByCustomKey(x => x.post.PostId,
 							x => x.post,
 							x => x.mapping);
+
+					var threadInfo = threadInfos[threadGrouping.Key];
+					var hashes = new List<(ulong PostId, uint PostHash)>();
 
 					foreach (var postGroup in postGroupings)
 					{
