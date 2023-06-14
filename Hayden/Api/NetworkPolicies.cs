@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Net;
 using System.Net.Http;
 using System.Threading.Tasks;
@@ -24,6 +25,7 @@ namespace Hayden.Api
 			Policy<HttpResponseMessage>
 				.Handle<HttpRequestException>()
 				.Or<TimeoutRejectedException>()
+				.Or<IOException>(x => x.Message.Contains("The response ended prematurely"))
 				.OrResult(response => response.StatusCode == HttpStatusCode.TooManyRequests
 									  || response.StatusCode == HttpStatusCode.RequestTimeout
 									  || (int)response.StatusCode >= 500)
@@ -36,7 +38,7 @@ namespace Hayden.Api
 						if (result.Exception != null)
 							Logger.Debug(result.Exception, "Network response failed (exception)");
 						else
-							Logger.Debug("Network response failed (code): {statusCode}", result.Result.StatusCode);
+							Logger.Warning("Network response failed (code): {statusCode}", result.Result.StatusCode);
 					}
 				)
 				.WrapAsync(
@@ -57,6 +59,7 @@ namespace Hayden.Api
 			return Policy<T>
 				   .Handle<Exception>()
 				   .Or<TimeoutRejectedException>()
+				   .Or<IOException>(x => x.Message.Contains("The response ended prematurely"))
 				   .WaitAndRetryAsync(tries,
 					   retryAttempt => TimeSpan.FromSeconds(Math.Pow(2, Math.Min(retryAttempt, 5))) // exponential back-off: 2, 4, 8 etc
 				                                      + TimeSpan.FromMilliseconds(random.Next(0, 5000)) // plus some jitter: up to 5 seconds
