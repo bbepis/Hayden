@@ -139,6 +139,7 @@ public class Program
 			case "InfinityNext":  serviceCollection.AddSingleton<IFrontendApi, InfinityNextApi>(); break;
 			case "Ponychan":      serviceCollection.AddSingleton<IFrontendApi, PonychanApi>(); break;
 			case "ASPNetChan":    serviceCollection.AddSingleton<IFrontendApi, ASPNetChanApi>(); break;
+			case "Tinyboard":     serviceCollection.AddSingleton<IFrontendApi, TinyboardApi>(); break;
 			case "FoolFuuka":     serviceCollection.AddSingletonMulti<IFrontendApi, ISearchableFrontendApi, FoolFuukaApi>(); break;
 			case "Fuuka":         serviceCollection.AddSingleton<IImporter, FuukaImporter>(); break;
 			case "Asagi":         serviceCollection.AddSingleton<IImporter, AsagiImporter>(); break;

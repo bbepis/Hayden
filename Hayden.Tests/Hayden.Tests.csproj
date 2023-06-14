@@ -14,6 +14,8 @@
   </ItemGroup>
 
   <ItemGroup>
+    <EmbeddedResource Include="TestData\tinyboard-crystalcafe-catalog.html" />
+    <EmbeddedResource Include="TestData\tinyboard-crystalcafe.html" />
     <EmbeddedResource Include="TestImages\1-thumb.jpg">
       <CopyToOutputDirectory>Never</CopyToOutputDirectory>
     </EmbeddedResource>
