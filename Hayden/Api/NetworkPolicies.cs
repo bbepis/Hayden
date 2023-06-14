@@ -54,6 +54,22 @@ namespace Hayden.Api
 		/// </summary>
 		/// <typeparam name="T">The type of data to return.</typeparam>
 		/// <param name="tries">The amount of (re)tries before the attempt is given up.</param>
+		public static AsyncPolicy<T> NetworkStreamPolicy<T>(int tries)
+		{
+			return Policy<T>
+				.Handle<IOException>(x => x.Message.Contains("The response ended prematurely"))
+				.WaitAndRetryAsync(tries,
+					retryAttempt => TimeSpan.FromSeconds(Math.Pow(2, Math.Min(retryAttempt, 5))) // exponential back-off: 2, 4, 8 etc
+					                + TimeSpan.FromMilliseconds(random.Next(0, 5000)) // plus some jitter: up to 5 seconds
+					, (result, span) => Logger.Warning(result.Exception, "Network response failed (exception)")
+				);
+		}
+
+		/// <summary>
+		/// Creates a generic retry policy, with exponential back-off and jitter.
+		/// </summary>
+		/// <typeparam name="T">The type of data to return.</typeparam>
+		/// <param name="tries">The amount of (re)tries before the attempt is given up.</param>
 		public static AsyncPolicy<T> GenericRetryPolicy<T>(int tries)
 		{
 			return Policy<T>

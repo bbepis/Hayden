@@ -61,23 +61,27 @@ namespace Hayden.Api
 
 		protected virtual async Task<ApiResponse<T>> MakeJsonApiCall<T>(Uri uri, HttpClient client, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default)
 		{
-			var (success, message, responseType) = await MakeApiCallInternal(uri, client, modifiedSince, cancellationToken);
-
-			if (!success)
+			return await NetworkPolicies.NetworkStreamPolicy<ApiResponse<T>>(10).ExecuteAsync(async (context, requestToken) =>
 			{
-				message.Dispose();
-				return new ApiResponse<T>(responseType, default);
-			}
+				var (success, message, responseType) = await MakeApiCallInternal(uri, client, modifiedSince, cancellationToken);
 
-			await using var responseStream = await message.Content.ReadAsStreamAsync(cancellationToken);
-			using StreamReader streamReader = new StreamReader(responseStream);
-			using JsonReader reader = new JsonTextReader(streamReader);
+				try
+				{
+					if (!success)
+						return new ApiResponse<T>(responseType, default);
 
-			var obj = (await JToken.LoadAsync(reader, cancellationToken)).ToObject<T>();
+					await using var responseStream = await message.Content.ReadAsStreamAsync(cancellationToken);
+					using StreamReader streamReader = new StreamReader(responseStream);
+					using JsonReader reader = new JsonTextReader(streamReader);
 
-			message.Dispose();
-
-			return new ApiResponse<T>(ResponseType.Ok, obj);
+					var obj = (await JToken.LoadAsync(reader, cancellationToken)).ToObject<T>();
+					return new ApiResponse<T>(ResponseType.Ok, obj);
+				}
+				finally
+				{
+					message.Dispose();
+				}
+			}, new Context(uri.AbsoluteUri), cancellationToken).ConfigureAwait(false);
 		}
 
 		protected virtual async Task<ApiResponse<IHtmlDocument>> MakeHtmlCall(Uri uri, HttpClient client, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default)
