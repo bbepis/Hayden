@@ -10,30 +10,30 @@
 
     import { meta } from 'tinro';
     import { onDestroy } from "svelte";
-    const route = meta();
-    let query = route.query["query"];
+	import { searchParamStore } from "../data/stores";
 
-    const unsubscribe = route.subscribe(m => {
-        if (m && m.query["query"] !== query
-            && m.query["query"] !== undefined
-            && m.query["query"] !== "") {
-            query = m.query["query"];
-            search();
-        }
+    const route = meta();
+
+	let dataPromise: Promise<BoardPageModel> | false = false;
+
+	function search(query: Record<string, string>) {
+		dataPromise = Utility.FetchData("/search", query);
+	}
+
+    const unsubscribe = searchParamStore.subscribe(m => {
+        // if (m && m.query["query"] !== query
+        //     && Utility.IsNotEmpty(m.query["query"]))
+		// {
+        //    query = m.query["query"];
+		if (m != null && Object.keys(m).length > 0)
+        	search(m);
+        //}
     });
 
     onDestroy(unsubscribe);
 
-    let dataPromise: Promise<BoardPageModel> = null;
-
-    function search() {
-        dataPromise = Utility.FetchData("/search", {
-            query: query
-        });
-    }
-
-    if (query != null) {
-        search();
+    if (route.query != null && Object.keys(route.query).length > 0) {
+        search(route.query);
     }
 </script>
 
@@ -43,9 +43,9 @@
 {#if dataPromise}
     {#await dataPromise}
         <p>Loading...</p>
-    {:then data} 
+    {:then data}
         {#each data.threads as thread ([thread.board.id, thread.threadId]) }
-        
+
             <br/>
             <hr/>
 

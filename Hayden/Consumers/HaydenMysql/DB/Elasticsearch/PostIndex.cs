@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using Nest;
 
 namespace Hayden.WebServer.DB.Elasticsearch
@@ -29,8 +29,17 @@ namespace Hayden.WebServer.DB.Elasticsearch
 		//[MatchOnlyText(Name = "postRawText")] // , Store = false, Similarity = "boolean"
 		public string PostRawText { get; set; }
 
-		//[Text(Name = "subject", Index = true, Store = false, Similarity = "boolean")]
-		//public string Subject { get; set; }
+		[Text(Name = "subject", Index = true, Store = false, Similarity = "boolean")]
+		public string Subject { get; set; }
+
+		[Keyword(Name = "name", Index = true, Store = false, Similarity = "boolean")]
+		public string PosterName { get; set; }
+
+		[Keyword(Name = "trip", Index = true, Store = false, Similarity = "boolean")]
+		public string Tripcode { get; set; }
+
+		[Keyword(Name = "posterID", Index = true, Store = false, Similarity = "boolean")]
+		public string PosterID { get; set; }
 
 		[Date(Name = "postDateUtc", Index = false, Store = false, DocValues = true)]
 		public DateTime PostDateUtc { get; set; }

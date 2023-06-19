@@ -221,21 +221,6 @@ namespace Hayden
 				}
 			}
 		}
-
-		public static int FirstIndexOf<TItem>(this IEnumerable<TItem> items, Predicate<TItem> predicate)
-		{
-			int i = 0;
-
-			foreach (var item in items)
-			{
-				if (predicate(item))
-					return i;
-
-				i++;
-			}
-
-			return -1;
-		}
 		
 		public static string ConvertToBase(byte[] data, int @base = 36)
 		{

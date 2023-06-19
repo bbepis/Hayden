@@ -142,81 +142,8 @@ namespace Hayden.WebServer.Data
 			};
 		}
 
-		public async Task<JsonBoardPageModel> PerformSearch(SearchRequest searchRequest)
+		public async Task<ApiController.JsonBoardPageModel> ReadSearchResults((ushort BoardId, ulong ThreadId, ulong PostId)[] threadIdArray, int hitCount)
 		{
-			if (esClient == null || !config.Value.Elasticsearch.Enabled)
-				return null;
-
-			var searchTerm = searchRequest.TextQuery.ToLowerInvariant()
-				.Replace("\\", "\\\\")
-				.Replace("*", "\\*")
-				.Replace("?", "\\?");
-
-			Func<QueryContainerDescriptor<PostIndex>, QueryContainer> searchDescriptor;
-
-			if (!searchTerm.Contains(" "))
-			{
-				//searchDescriptor = x => /* x.Bool(b => b.Must(bc => bc.Term(y => y.IsOp, true))) && */
-				//	x.Bool(b => b.Must(bc => bc.Bool(bcd => bcd.Should(
-				//	//x.Wildcard(y => y.PostHtmlText, searchTerm),
-				//	//x.Wildcard(y => y.Subject, searchTerm),
-				//	x.Wildcard(y => y.PostRawText, searchTerm)
-				//	))));
-
-				searchDescriptor = x => 
-					x.Match(y => y.Field(o => o.PostRawText).Query(searchTerm));
-			}
-			else
-			{
-				// .Query(x => x.Match(y => y.Field(z => z.FullName).Query(searchTerm))));
-				//searchDescriptor = x => x.MatchPhrase(y => y.Field(z => z).Query(searchTerm));
-				//searchDescriptor = x => x.QueryString(y => y.Fields(z => z.Field(a => a.FullName)).Query(searchTerm));
-
-				//searchDescriptor = x => x.Term(y => y.IsOp, true) && (
-				//	x.MatchPhrase(y => y.Field(z => z.PostRawText).Query(searchTerm))
-				//	//||x.MatchPhrase(y => y.Field(z => z.PostHtmlText).Query(searchTerm))
-				//	//|| x.MatchPhrase(y => y.Field(z => z.Subject).Query(searchTerm))
-				//	);
-
-				searchDescriptor = x =>
-					x.MatchPhrase(y => y.Field(o => o.PostRawText).Query(searchTerm));
-			}
-
-			var searchResult = await esClient.SearchAsync<PostIndex>(x => x
-				.Index(config.Value.Elasticsearch.IndexName)
-				.Size(20)
-				//.Fields(f => f.Fields("threadId", "boardId", "postId")) // Fields(x => x.BoardId, x => x.ThreadId, x => x.PostId)
-				.DocValueFields(f => f.Fields(p => p.BoardId, p => p.ThreadId, p => p.PostId))
-				//.Fields(f => f.Field("*"))
-				.Sort(y => y.Descending(z => z.PostDateUtc))
-				.Query(searchDescriptor));
-
-			if (!searchResult.IsValid)
-				return null;
-
-			var threadIdArray = searchResult.Hits.Select(x => 
-					(BoardId: x.Fields.ValueOf<PostIndex, ushort>(y => y.BoardId),
-					ThreadId: x.Fields.ValueOf<PostIndex, ulong>(y => y.ThreadId),
-					PostId: x.Fields.ValueOf<PostIndex, ulong>(y => y.PostId)
-						))
-					.ToArray();
-
-			if (threadIdArray.Length == 0)
-				return new JsonBoardPageModel
-				{
-					totalThreadCount = searchResult.Hits.Count,
-					threads = Array.Empty<JsonThreadModel>(),
-					boardInfo = null
-				};
-
-
-
-			//var items = dbContext.Posts
-			//	.Join(threadIdArray.Select(x => new { x.BoardId, x.PostId }),
-			//		x => new { x.BoardId, x.PostId }, x => x, (x, _) => x)
-			//	.Join(dbContext.Boards, post => post.BoardId, board => board.Id, (post, board) => new { post, board })
-			//	;
-
 			var firstItem = threadIdArray.First();
 
 			var unionizedPosts =
@@ -224,7 +151,7 @@ namespace Hayden.WebServer.Data
 
 			unionizedPosts = threadIdArray.Skip(1)
 				.Aggregate(unionizedPosts, (current, remainingItem) =>
-					current.Union(dbContext.Posts.Where(x => x.BoardId == remainingItem.BoardId && x.PostId == remainingItem.PostId)));
+					current.Concat(dbContext.Posts.Where(x => x.BoardId == remainingItem.BoardId && x.PostId == remainingItem.PostId)));
 			
 			var items = from p in unionizedPosts
 				//join t in threadIdArray.Select(x => new { x.BoardId, x.PostId }) on new { p.BoardId, p.PostId } equals t
@@ -267,30 +194,45 @@ namespace Hayden.WebServer.Data
 
 			return new JsonBoardPageModel
 			{
-				totalThreadCount = searchResult.Hits.Count,
+				totalThreadCount = hitCount,
 				threads = threadModels,
 				boardInfo = null
 			};
 		}
 
-		public async Task<IEnumerable<PostIndex>> GetIndexEntities(string board, ulong minPostNo)
+		public Task<(ushort BoardId, ulong IndexPosition)[]> GetIndexPositions()
+		{
+			throw new NotImplementedException();
+		}
+
+		public Task SetIndexPosition(ushort boardId, ulong indexPosition)
+		{
+			throw new NotImplementedException();
+		}
+
+		public async IAsyncEnumerable<PostIndex> GetIndexEntities(string board, ulong minPostNo)
 		{
 			var boardInfo = await dbContext.Boards.AsNoTracking().Where(x => x.ShortName == board).FirstAsync();
 
-			return dbContext.Posts.AsNoTracking()
-				.Where(x => x.BoardId == boardInfo.Id && x.PostId > minPostNo)
-				.Select(x => new PostIndex
+			var query = dbContext.Posts.AsNoTracking()
+				.Where(x => x.BoardId == boardInfo.Id && x.PostId > minPostNo);
+
+			await foreach (var post in query.AsAsyncEnumerable())
+			{
+				yield return new PostIndex
 				{
 					//DocId = x.PostId * 1000 + x.BoardId,
-					BoardId = x.BoardId,
-					PostId = x.PostId,
-					ThreadId = x.ThreadId,
-					IsOp = x.PostId == x.ThreadId,
-					PostDateUtc = x.DateTime,
+					BoardId = post.BoardId,
+					PostId = post.PostId,
+					ThreadId = post.ThreadId,
+					IsOp = post.PostId == post.ThreadId,
+					PostDateUtc = post.DateTime,
 					//PostHtmlText = x.ContentHtml,
-					PostRawText = x.ContentRaw ?? x.ContentHtml,
+					PostRawText = post.ContentRaw ?? post.ContentHtml,
+					// TODO: index subject by using a join on threads
 					//Subject = null
-				});
+				};
+			}
 		}
 	}
 

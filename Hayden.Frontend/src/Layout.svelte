@@ -11,7 +11,13 @@
         { key: "niniba", text: "Niniba" },
     ]
 
-    let selectedTheme : string = $themeStore;
+    let selectedTheme: string = $themeStore;
+    
+    let loadedBoardInfo: BoardModel[] | null = null;
+
+    (async function() {
+        loadedBoardInfo = await $boardInfoStore;
+    })();
 </script>
 
 <style>
@@ -126,7 +132,7 @@
                     </li> -->
                     {#if Utility.infoObject.searchEnabled}
                         <li class="ml-auto">
-                            <SearchBar />
+                            <SearchBar boardInfo={loadedBoardInfo} />
                         </li>
                     {/if}
                 </ul>

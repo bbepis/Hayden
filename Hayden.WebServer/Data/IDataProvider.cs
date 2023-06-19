@@ -16,9 +16,12 @@ public interface IDataProvider
 	Task<IList<DBBoard>> GetBoardInfo();
 	Task<ApiController.JsonThreadModel> GetThread(string board, ulong threadid);
 	Task<ApiController.JsonBoardPageModel> GetBoardPage(string board, int? page);
-	Task<ApiController.JsonBoardPageModel> PerformSearch(SearchRequest searchRequest);
+	Task<ApiController.JsonBoardPageModel> ReadSearchResults((ushort BoardId, ulong ThreadId, ulong PostId)[] threadIdArray, int hitCount);
 
-	Task<IEnumerable<PostIndex>> GetIndexEntities(string board, ulong minPostNo);
+	Task<(ushort BoardId, ulong IndexPosition)[]> GetIndexPositions();
+	Task SetIndexPosition(ushort boardId, ulong indexPosition);
+
+	IAsyncEnumerable<PostIndex> GetIndexEntities(string board, ulong minPostNo);
 }
 
 public class SearchRequest
@@ -29,8 +32,15 @@ public class SearchRequest
 
 	public string Subject { get; set; }
 	public string PosterName { get; set; }
+	public string PosterTrip { get; set; }
 	public string PosterID { get; set; }
+
 	public bool? IsOp { get; set; }
+
+	public string DateStart { get; set; }
+	public string DateEnd { get; set; }
+
+	public string OrderType { get; set; }
 
 	public int? Page { get; set; }
 }

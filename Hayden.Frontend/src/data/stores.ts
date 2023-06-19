@@ -12,6 +12,7 @@ export class Exception {
 
 export const moderatorUserStore = writable<ModeratorRole | null>(null);
 export const boardInfoStore = writable<Promise<BoardModel[]> | null>(null);
+export const searchParamStore = writable<Record<string, string> | null>(null);
 
 export const theme = writable(localStorage.getItem("hayden_theme") || 'yotsuba')
 theme.subscribe((value) => localStorage.setItem("hayden_theme", value))

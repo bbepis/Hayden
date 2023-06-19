@@ -1,4 +1,4 @@
-﻿using Hayden.Config;
+using Hayden.Config;
 
 namespace Hayden.WebServer
 {
@@ -25,6 +25,8 @@ namespace Hayden.WebServer
 		public DatabaseType? DBType { get; set; }
 		public string ProviderType { get; set; }
 		public string DBConnectionString { get; set; }
+
+		public string AuxiliaryDbLocation { get; set; }
 	}
 
 	public class ServerCaptchaConfig

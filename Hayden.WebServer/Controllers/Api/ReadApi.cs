@@ -1,11 +1,14 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Hayden.Consumers.HaydenMysql.DB;
 using Hayden.WebServer.Data;
+using Hayden.WebServer.DB.Elasticsearch;
 using Hayden.WebServer.View;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Nest;
 
 namespace Hayden.WebServer.Controllers.Api
 {
@@ -17,19 +20,8 @@ namespace Hayden.WebServer.Controllers.Api
 			var topThreads = await dbContext.Threads.AsNoTracking()
 				.OrderByDescending(x => x.LastModified)
 				.Take(10)
-				//.Join(dbContext.Posts.AsNoTracking(), t => new { t.ThreadId, t.BoardId }, p => new { p.ThreadId, p.BoardId }, (t, p) => new { t, p })
-				//.Take(10)
 				.ToArrayAsync();
-
-			// This is incredibly inefficient and slow, but it's prototype code so who cares
-
-			//var array = topThreads.GroupBy(x => x.t.ThreadId)
-			//	.Select(x => x.OrderBy(y => y.p.DateTime).Take(1)
-			//		.Concat(x.Where(y => y.p.PostId != y.p.ThreadId).OrderByDescending(y => y.p.DateTime).Take(3).Reverse()).ToArray())
-			//	.Select(x => new ThreadModel(x.First().t, x.Select(y => new PostPartialViewModel(y.p, Config.Value)).ToArray()))
-			//	.OrderByDescending(x => x.thread.LastModified)
-			//	.ToArray();
-
+			
 			JsonThreadModel[] threadModels = new JsonThreadModel[topThreads.Length];
 
 			for (var i = 0; i < topThreads.Length; i++)
@@ -60,21 +52,130 @@ namespace Hayden.WebServer.Controllers.Api
 			[FromQuery] string query,
 			[FromQuery] string subject,
 			[FromQuery] string boards,
-			[FromQuery] bool? isOp,
+			[FromQuery] string postType,
+			[FromQuery] string orderType,
 			[FromQuery] string posterId,
-			[FromQuery] string posterName,
+			[FromQuery] string name,
+			[FromQuery] string trip,
+			[FromQuery] string dateStart,
+			[FromQuery] string dateEnd,
 			[FromQuery] int? page)
 		{
-			return Json(await dataProvider.PerformSearch(new SearchRequest
-			{
+			var searchRequest = new Data.SearchRequest
+            {
 				TextQuery = query,
 				Subject = subject,
 				Boards = string.IsNullOrWhiteSpace(boards) ? null : boards.Split(','),
-				IsOp = isOp,
+				IsOp = postType == "op" ? true : postType == "reply" ? false : null,
 				PosterID = posterId,
-				PosterName = posterName,
+				PosterName = name,
+				PosterTrip = trip,
+				DateStart = dateStart,
+				DateEnd = dateEnd,
+				OrderType = orderType,
 				Page = page
-			}));
+			};
+
+			if (ElasticClient == null || !Config.Value.Elasticsearch.Enabled)
+				return null;
+
+			var searchTerm = searchRequest.TextQuery?.ToLowerInvariant()
+				.Replace("\\", "\\\\")
+				.Replace("*", "\\*")
+				.Replace("?", "\\?");
+
+			var boardInfo = await dataProvider.GetBoardInfo();
+			
+			Func<QueryContainerDescriptor<PostIndex>, QueryContainer> searchDescriptor = x =>
+			{
+				var allQueries = new List<Func<QueryContainerDescriptor<PostIndex>, QueryContainer>>();
+
+				if (!string.IsNullOrWhiteSpace(searchRequest.Subject))
+					allQueries.Add(y => y.Match(z => z.Field(a => a.Subject).Query(searchRequest.Subject)));
+
+				if (!string.IsNullOrWhiteSpace(searchRequest.PosterName))
+					allQueries.Add(y => y.Match(z => z.Field(a => a.Subject).Query(searchRequest.PosterName)));
+
+				if (!string.IsNullOrWhiteSpace(searchRequest.PosterTrip))
+					allQueries.Add(y => y.Match(z => z.Field(a => a.Subject).Query(searchRequest.PosterTrip)));
+
+				if (!string.IsNullOrWhiteSpace(searchRequest.PosterID))
+					allQueries.Add(y => y.Match(z => z.Field(a => a.Subject).Query(searchRequest.PosterID)));
+
+				var startDateBool = string.IsNullOrWhiteSpace(searchRequest.DateStart) && DateOnly.TryParse(searchRequest.DateStart, out var startDate);
+				var endDateBool = string.IsNullOrWhiteSpace(searchRequest.DateEnd) && DateOnly.TryParse(searchRequest.DateEnd, out var endDate);
+
+				if (startDateBool || endDateBool)
+					allQueries.Add(y => y.DateRange(z =>
+					{
+						var query = z.Field(a => a.PostDateUtc);
+
+						if (startDateBool)
+							query = query.GreaterThanOrEquals(new DateMathExpression(startDate.ToDateTime(TimeOnly.MinValue)));
+
+						if (endDateBool)
+							query = query.LessThanOrEquals(new DateMathExpression(endDate.ToDateTime(TimeOnly.MaxValue)));
+
+						return query;
+					}));
+
+				if (searchRequest.IsOp.HasValue)
+					allQueries.Add(y => y.Term(z => z.Field(f => f.IsOp).Value(searchRequest.IsOp.Value)));
+
+				if (searchRequest.Boards != null && searchRequest.Boards.Length > 0)
+				{
+					allQueries.Add(y => y.Bool(z => z.Should(searchRequest.Boards.Select<string, Func<QueryContainerDescriptor<PostIndex>, QueryContainer>>(board =>
+					{
+						return a => a.Term(b => b.Field(f => f.BoardId).Value(boardInfo.First(j => j.ShortName == board).Id));
+					}))));
+				}
+
+				if (!string.IsNullOrWhiteSpace(searchTerm))
+					if (!searchTerm.Contains(" "))
+					{
+						allQueries.Add(y => y.Match(z => z.Field(o => o.PostRawText).Query(searchTerm)));
+					}
+					else
+					{
+						allQueries.Add(y => y.MatchPhrase(z => z.Field(o => o.PostRawText).Query(searchTerm)));
+					}
+
+				return x.Bool(y => y.Must(allQueries));
+			};
+
+			var searchResult = await ElasticClient.SearchAsync<PostIndex>(x => x
+				.Index(Config.Value.Elasticsearch.IndexName)
+				.Size(20)
+				.Skip(searchRequest.Page.HasValue ? (searchRequest.Page.Value - 1) * 20 : null)
+				.DocValueFields(f => f.Fields(p => p.BoardId, p => p.ThreadId, p => p.PostId))
+				.Sort(y => y.Descending(z => z.PostDateUtc))
+				.Query(searchDescriptor)
+				.Sort(x => searchRequest.OrderType == "asc" ? x.Ascending(y => y.PostDateUtc)
+					: searchRequest.OrderType == "desc" ? x.Descending(y => y.PostDateUtc)
+					: x));
+
+			if (Config.Value.Elasticsearch.Debug)
+				Console.WriteLine(searchResult.ApiCall.DebugInformation);
+
+			if (!searchResult.IsValid)
+				return null;
+
+			var threadIdArray = searchResult.Hits.Select(x =>
+					(BoardId: x.Fields.ValueOf<PostIndex, ushort>(y => y.BoardId),
+					ThreadId: x.Fields.ValueOf<PostIndex, ulong>(y => y.ThreadId),
+					PostId: x.Fields.ValueOf<PostIndex, ulong>(y => y.PostId)
+						))
+					.ToArray();
+
+			if (threadIdArray.Length == 0)
+				return Json(new ApiController.JsonBoardPageModel
+				{
+					totalThreadCount = searchResult.Hits.Count,
+					threads = Array.Empty<ApiController.JsonThreadModel>(),
+					boardInfo = null
+				});
+			
+			return Json(await dataProvider.ReadSearchResults(threadIdArray, searchResult.Hits.Count));
 		}
 
 		[HttpGet("{board}/thread/{threadid}")]

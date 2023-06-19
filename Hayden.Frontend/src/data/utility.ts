@@ -60,7 +60,7 @@ export class Utility {
 
     static async FetchData(endpoint: string, data: any = null): Promise<any> {
         const searchParams = new URLSearchParams();
-        
+
         if (data) {
             for (var key of Object.keys(data)) {
                 searchParams.set(key, data[key]);
@@ -74,7 +74,7 @@ export class Utility {
         }
 
 		const result = await fetch(url);
-		
+
 		if (!result.ok) {
 			throw result;
 		}
@@ -106,7 +106,7 @@ export class Utility {
             method: "post",
             body: body
         });
-		
+
 		// if (!result.ok) {
 		// 	throw result;
 		// }
@@ -134,19 +134,26 @@ export class Utility {
 
         if (isNaN(number))
             return null;
-        
+
         return number;
     }
 
     static RangeTo(startIndex : number, endIndex: number): number[] {
         let outputArray : number[] = []
-    
+
         let counter = 0;
         while (counter + startIndex < endIndex) {
             outputArray.push(startIndex + counter);
             counter++;
         }
-    
+
         return outputArray;
     }
+
+	static IsNotEmpty(value: string | null | undefined) {
+		if (value === null || value === undefined || value.length === 0)
+			return false;
+
+		return true;
+	}
 }

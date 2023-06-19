@@ -9,7 +9,6 @@ using Hayden.Config;
 using Hayden.Consumers.Asagi;
 using Hayden.Consumers.HaydenMysql.DB;
 using Hayden.Models;
-using Newtonsoft.Json.Linq;
 
 namespace Hayden.ImportExport;
 
@@ -17,14 +16,14 @@ public class AsagiImporter : IImporter
 {
 	private SourceConfig sourceConfig;
 	private ConsumerConfig consumerConfig;
-	private DbContextOptions dbContextOptions;
+	private DbContextOptions<AsagiDbContext> dbContextOptions;
 
 	public AsagiImporter(SourceConfig sourceConfig, ConsumerConfig consumerConfig)
 	{
 		this.sourceConfig = sourceConfig;
 		this.consumerConfig = consumerConfig;
 
-		dbContextOptions = new DbContextOptionsBuilder()
+		dbContextOptions = new DbContextOptionsBuilder<AsagiDbContext>()
 			.UseMySql(sourceConfig.DbConnectionString,
 				ServerVersion.AutoDetect(sourceConfig.DbConnectionString), o =>
 				{
@@ -44,7 +43,8 @@ public class AsagiImporter : IImporter
 	}
 
 	private AsagiDbContext GetDbContext()
-		=> new AsagiDbContext(dbContextOptions, sourceConfig.DbConnectionString);
+		=> new AsagiDbContext(dbContextOptions,
+			new AsagiDbContext.AsagiDbContextOptions { ConnectionString = sourceConfig.DbConnectionString });
 
 
 	public async Task<string[]> GetBoardList()
@@ -57,8 +57,8 @@ public class AsagiImporter : IImporter
 	public async IAsyncEnumerable<ThreadPointer> GetThreadList(string board, long? minId = null, long? maxId = null)
 	{
 		await using var dbContext = GetDbContext();
-
-		var query = dbContext.GetSets(board).threads.AsNoTracking();
+		
+		var query = dbContext.GetSets(board).posts.AsNoTracking();
 
 		if (minId.HasValue)
 			query = query.Where(x => x.thread_num >= minId);
@@ -66,7 +66,7 @@ public class AsagiImporter : IImporter
 		if (maxId.HasValue)
 			query = query.Where(x => x.thread_num <= maxId);
 
-		await foreach (var threadId in query.Select(x => x.thread_num).AsAsyncEnumerable())
+		await foreach (var threadId in query.Select(x => x.thread_num).Distinct().AsAsyncEnumerable())
 		{
 			yield return new ThreadPointer(board, threadId);
 		}
