@@ -61,6 +61,9 @@ namespace Hayden.WebServer.Controllers.Api
 			[FromQuery] string dateEnd,
 			[FromQuery] int? page)
 		{
+			if (ElasticClient == null || !Config.Value.Elasticsearch.Enabled || !Config.Value.Settings.SearchEnabled)
+				return BadRequest("Search is not enabled");
+
 			var searchRequest = new Data.SearchRequest
             {
 				TextQuery = query,
@@ -75,9 +78,6 @@ namespace Hayden.WebServer.Controllers.Api
 				OrderType = orderType,
 				Page = page
 			};
-
-			if (ElasticClient == null || !Config.Value.Elasticsearch.Enabled)
-				return null;
 
 			var searchTerm = searchRequest.TextQuery?.ToLowerInvariant()
 				.Replace("\\", "\\\\")
