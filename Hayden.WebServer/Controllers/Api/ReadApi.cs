@@ -148,11 +148,9 @@ namespace Hayden.WebServer.Controllers.Api
 				.Size(20)
 				.Skip(searchRequest.Page.HasValue ? (searchRequest.Page.Value - 1) * 20 : null)
 				.DocValueFields(f => f.Fields(p => p.BoardId, p => p.ThreadId, p => p.PostId))
-				.Sort(y => y.Descending(z => z.PostDateUtc))
 				.Query(searchDescriptor)
-				.Sort(x => searchRequest.OrderType == "asc" ? x.Ascending(y => y.PostDateUtc)
-					: searchRequest.OrderType == "desc" ? x.Descending(y => y.PostDateUtc)
-					: x));
+				.Sort(y => searchRequest.OrderType == "asc" ? y.Ascending(z => z.PostDateUtc)
+					: y.Descending(z => z.PostDateUtc)));
 
 			if (Config.Value.Elasticsearch.Debug)
 				Console.WriteLine(searchResult.ApiCall.DebugInformation);
