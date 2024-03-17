@@ -76,7 +76,7 @@ public class AsagiImporter : IImporter
 	{
 		await using var dbContext = GetDbContext();
 
-		var (posts, images, threads) = dbContext.GetSets(pointer.Board);
+		var (posts, images, threads, _) = dbContext.GetSets(pointer.Board);
 
 		var threadPosts = await (from p in posts.AsNoTracking()
 								 where p.thread_num == (uint)pointer.ThreadId && p.subnum == 0
@@ -117,7 +117,7 @@ public class AsagiImporter : IImporter
 						{
 							Filename = HttpUtility.HtmlDecode(Path.GetFileNameWithoutExtension(x.p.media_filename)),
 							FileExtension = Path.GetExtension(x.p.media_filename),
-							Index = 1,
+							Index = 0,
 							FileSize = x.p.media_size,
 							IsSpoiler = x.p.spoiler,
 							//ThumbnailExtension = x.i == null ? null : Path.GetExtension(x.i.preview_op ?? x.i.preview_reply),

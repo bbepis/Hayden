@@ -16,7 +16,7 @@ namespace Hayden.Api
 	{
 		private static readonly Random random = new Random();
 
-		public static ILogger Logger { get; } = Program.CreateLogger("Network");
+		public static ILogger Logger { get; } = SerilogManager.CreateSubLogger("Network");
 
 		/// <summary>
 		/// The HTTP request policy used for API calls to ensure that requests are reliably performed.
@@ -62,6 +62,13 @@ namespace Hayden.Api
 					retryAttempt => TimeSpan.FromSeconds(Math.Pow(2, Math.Min(retryAttempt, 5))) // exponential back-off: 2, 4, 8 etc
 					                + TimeSpan.FromMilliseconds(random.Next(0, 5000)) // plus some jitter: up to 5 seconds
 					, (result, span) => Logger.Warning(result.Exception, "Network response failed (exception)")
+				)
+				.WrapAsync(
+					Policy.TimeoutAsync(300, TimeoutStrategy.Pessimistic, (context, span, failedTask) =>
+					{
+						Logger.Debug("Timeout occurred: {contextOperationKey}", context.OperationKey);
+						return Task.CompletedTask;
+					})
 				);
 		}
 

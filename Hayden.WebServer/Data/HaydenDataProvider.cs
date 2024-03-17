@@ -3,16 +3,14 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Threading.Tasks;
-using Hayden.Config;
 using Hayden.Consumers.HaydenMysql.DB;
+using Hayden.Models;
 using Hayden.WebServer.Controllers.Api;
 using Hayden.WebServer.DB.Elasticsearch;
-using Hayden.WebServer.Services;
-using Hayden.WebServer.View;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
-using Nest;
+using Newtonsoft.Json;
 using static Hayden.WebServer.Controllers.Api.ApiController;
 
 namespace Hayden.WebServer.Data
@@ -21,7 +19,6 @@ namespace Hayden.WebServer.Data
 	{
 		private HaydenDbContext dbContext { get; }
 		private IOptions<ServerConfig> config { get; }
-		private ElasticClient esClient { get; set; }
 
 		public HaydenDataProvider(HaydenDbContext context, IOptions<ServerConfig> config)
 		{
@@ -34,7 +31,6 @@ namespace Hayden.WebServer.Data
 		public async Task<bool> PerformInitialization(IServiceProvider services)
 		{
 			await using var dbContext = services.GetRequiredService<HaydenDbContext>();
-			esClient = services.GetService<ElasticClient>();
 
 			try
 			{
@@ -77,11 +73,27 @@ namespace Hayden.WebServer.Data
 								if (y.Item2 == null)
 									return new JsonFileModel(null, y.Item1, null, null);
 
-								var (imageUrl, thumbUrl) = PostPartialViewModel.GenerateUrls(y.Item2, boardObj.ShortName, config.Value);
+								var (imageUrl, thumbUrl) = GenerateUrls(y.Item2, boardObj.ShortName, config.Value);
 
 								return new JsonFileModel(y.Item2, y.Item1, imageUrl, thumbUrl);
 							}).ToArray()))
 				.ToArray());
+		}
+
+		private JsonPostModel CreatePostModel(DBBoard boardObj, DBPost post,
+			(DBFileMapping, DBFile)[] mappings)
+		{
+			return new JsonPostModel(post,
+						mappings
+							.Select(y =>
+							{
+								if (y.Item2 == null)
+									return new JsonFileModel(null, y.Item1, null, null);
+
+								var (imageUrl, thumbUrl) = GenerateUrls(y.Item2, boardObj.ShortName, config.Value);
+
+								return new JsonFileModel(y.Item2, y.Item1, imageUrl, thumbUrl);
+							}).ToArray());
 		}
 
 		public async Task<JsonThreadModel> GetThread(string board, ulong threadid)
@@ -94,6 +106,23 @@ namespace Hayden.WebServer.Data
 			return CreateThreadModel(boardObj, thread, posts, mappings);
 		}
 
+		public async Task<JsonPostModel> GetPost(string board, ulong postid)
+		{
+			var boardObj = await dbContext.Boards.FirstOrDefaultAsync(x => x.ShortName == board);
+
+			if (boardObj == null)
+				return null;
+
+			var postInfo = await dbContext.GetPostInfo(postid, boardObj.Id);
+
+			if (postInfo.Item1 == null)
+				return null;
+
+			return CreatePostModel(boardObj, postInfo.Item1, postInfo.Item2);
+		}
+
+		private static readonly Dictionary<ushort, long> ThreadCountCache = new();
+
 		public async Task<JsonBoardPageModel> GetBoardPage(string board, int? page)
 		{
 			var boardInfo = await dbContext.Boards.AsNoTracking().Where(x => x.ShortName == board).FirstOrDefaultAsync();
@@ -104,9 +133,17 @@ namespace Hayden.WebServer.Data
 			var query = dbContext.Threads.AsNoTracking()
 				.Where(x => x.BoardId == boardInfo.Id);
 
-			var totalCount = await query.CountAsync();
+			if (!ThreadCountCache.TryGetValue(boardInfo.Id, out var totalCount))
+			{
+				totalCount = await query.LongCountAsync();
+				ThreadCountCache[boardInfo.Id] = totalCount;
+			}
+			
+			DBThread[] topThreads;
 
-			var topThreads = await query
+			
+
+			topThreads = await query
 				.OrderByDescending(x => x.LastModified)
 				.Skip(page.HasValue ? ((page.Value - 1) * 10) : 0)
 				.Take(10)
@@ -142,7 +179,7 @@ namespace Hayden.WebServer.Data
 			};
 		}
 
-		public async Task<ApiController.JsonBoardPageModel> ReadSearchResults((ushort BoardId, ulong ThreadId, ulong PostId)[] threadIdArray, int hitCount)
+		public async Task<ApiController.JsonBoardPageModel> ReadSearchResults((ushort BoardId, ulong ThreadId, ulong PostId)[] threadIdArray, long hitCount)
 		{
 			var firstItem = threadIdArray.First();
 
@@ -183,7 +220,7 @@ namespace Hayden.WebServer.Data
 							if (x.f == null)
 								return new JsonFileModel(null, x.fm, null, null);
 
-							var (imageUrl, thumbUrl) = PostPartialViewModel.GenerateUrls(x.f, item.b.ShortName, config.Value);
+							var (imageUrl, thumbUrl) = GenerateUrls(x.f, item.b.ShortName, config.Value);
 							return new JsonFileModel(x.f, x.fm, imageUrl, thumbUrl);
 						}).ToArray())
 					}
@@ -200,71 +237,150 @@ namespace Hayden.WebServer.Data
 			};
 		}
 
-		public Task<(ushort BoardId, ulong IndexPosition)[]> GetIndexPositions()
+		public async Task<(ushort BoardId, ulong IndexPosition)[]> GetIndexPositions()
 		{
-			throw new NotImplementedException();
+			if (!System.IO.File.Exists("index-positions.json"))
+				return Array.Empty<(ushort, ulong)>();
+
+			return JsonConvert.DeserializeObject<Dictionary<ushort, ulong>>(
+					await System.IO.File.ReadAllTextAsync("index-positions.json"))
+				.Select(x => (x.Key, x.Value))
+				.ToArray();
 		}
 
-		public Task SetIndexPosition(ushort boardId, ulong indexPosition)
+		public async Task SetIndexPosition(ushort boardId, ulong indexPosition)
 		{
-			throw new NotImplementedException();
+			Dictionary<ushort, ulong> dictionary;
+
+			if (!System.IO.File.Exists("index-positions.json"))
+				dictionary = new Dictionary<ushort, ulong>();
+			else
+				dictionary =
+					JsonConvert.DeserializeObject<Dictionary<ushort, ulong>>(
+						await System.IO.File.ReadAllTextAsync("index-positions.json"));
+
+			dictionary[boardId] = indexPosition;
+
+			await System.IO.File.WriteAllTextAsync("index-positions.json", JsonConvert.SerializeObject(dictionary));
 		}
 
 		public async IAsyncEnumerable<PostIndex> GetIndexEntities(string board, ulong minPostNo)
 		{
 			var boardInfo = await dbContext.Boards.AsNoTracking().Where(x => x.ShortName == board).FirstAsync();
 
+			// .OrderBy(x => x.BoardId).ThenBy(x => x.PostId).Where(x => 1 == 1)
 			var query = dbContext.Posts.AsNoTracking()
-				.Where(x => x.BoardId == boardInfo.Id && x.PostId > minPostNo);
+				.Join(dbContext.Threads, post => new { post.BoardId, post.ThreadId }, thread => new { thread.BoardId, thread.ThreadId }, (post, thread) => new { post, thread })
+				//.SelectMany(x => dbContext.FileMappings.Where(y => y.PostId == x.post.PostId && y.BoardId == x.post.BoardId).Take(1).DefaultIfEmpty(), (post, mapping) => new { post.post, post.thread, mapping })
+				.SelectMany(x => dbContext.FileMappings.Where(y => y.PostId == x.post.PostId && y.BoardId == x.post.BoardId && y.Index == 0).DefaultIfEmpty(), (post, mapping) => new { post.post, post.thread, mapping })
+				.SelectMany(x => dbContext.Files.Where(y => y.Id == x.mapping.FileId).DefaultIfEmpty(), (x, file) => new { x.post, x.thread, x.mapping, file })
+				.Where(x => x.post.BoardId == boardInfo.Id && x.post.PostId > minPostNo);
 
-			await foreach (var post in query.AsAsyncEnumerable())
+			await foreach (var x in query.AsAsyncEnumerable())
 			{
+				//var additionalMetadata = new Post.PostAdditionalMetadata x.post.AdditionalMetadata;
+
+				var additionalMetadata = !string.IsNullOrWhiteSpace(x.post.AdditionalMetadata)
+					? JsonConvert.DeserializeObject<Post.PostAdditionalMetadata>(x.post.AdditionalMetadata)
+					: null;
+
+				var isOp = x.post.PostId == x.post.ThreadId;
+
 				yield return new PostIndex
 				{
-					//DocId = x.PostId * 1000 + x.BoardId,
-					BoardId = post.BoardId,
-					PostId = post.PostId,
-					ThreadId = post.ThreadId,
-					IsOp = post.PostId == post.ThreadId,
-					PostDateUtc = post.DateTime,
-					//PostHtmlText = x.ContentHtml,
-					PostRawText = post.ContentRaw ?? post.ContentHtml,
-					// TODO: index subject by using a join on threads
-					//Subject = null
+					BoardId = x.post.BoardId,
+					PostId = x.post.PostId,
+					ThreadId = x.post.ThreadId,
+					IsOp = isOp,
+					PostDateUtc = x.post.DateTime,
+					PostRawText = x.post.ContentRaw ?? x.post.ContentHtml,
+					PosterID = additionalMetadata?.PosterID,
+					IsDeleted = x.post.IsDeleted,
+					Subject = isOp ? x.thread.Title : null,
+					PosterName = x.post.Author,
+					Tripcode = x.post.Tripcode,
+					MediaFilename = x.mapping != null ? (x.mapping.Filename + "." + x.file?.Extension) : null, // TODO: this needs to check AdditionalMetadata for extensions
+					MediaMd5HashBase64 = x.file != null ? Convert.ToBase64String(x.file.Md5Hash) : null // TODO: this needs to check AdditionalMetadata for hashes
+
+					//PosterID = x.post
 				};
 			}
 		}
-	}
 
-	public static class HaydenDataProviderExtensions
-	{
-		public static IServiceCollection AddHaydenDataProvider(this IServiceCollection services, ServerConfig serverConfig)
+		public async Task<bool> DeletePost(ushort boardId, ulong postId, bool banImages)
 		{
-			services.AddScoped<IDataProvider, HaydenDataProvider>();
+			var post = await dbContext.Posts.FirstOrDefaultAsync(x => x.BoardId == boardId && x.PostId == postId);
 
-			if (serverConfig.Data.DBType == DatabaseType.MySql)
+			if (post == null)
+				return false;
+
+			var board = await dbContext.Boards.FirstAsync(x => x.Id == boardId);
+
+			var mappings = await dbContext.FileMappings
+				.Where(x => x.BoardId == boardId && x.PostId == postId)
+				.ToArrayAsync();
+
+			foreach (var mapping in mappings)
+				dbContext.Remove(mapping);
+
+			if (banImages && mappings.Length > 0)
 			{
-				services.AddDbContext<HaydenDbContext>(x =>
-					x.UseMySql(serverConfig.Data.DBConnectionString, ServerVersion.AutoDetect(serverConfig.Data.DBConnectionString),
-						y =>
-						{
-							y.CommandTimeout(86400);
-							y.EnableIndexOptimizedBooleanColumns();
-						}));
-			}
-			else if (serverConfig.Data.DBType == DatabaseType.Sqlite)
-			{
-				services.AddDbContext<HaydenDbContext>(x =>
-					x.UseSqlite(serverConfig.Data.DBConnectionString));
-			}
-			else
-			{
-				throw new Exception("Unknown database type");
+				var fileIds = mappings.Select(x => x.FileId).ToArray();
+
+				var files = await dbContext.Files
+					.Where(x => fileIds.Contains(x.Id))
+					.ToArrayAsync();
+
+				foreach (var file in files)
+				{
+					file.FileBanned = true;
+
+					var fullFilename = Common.CalculateFilename(config.Value.Data.FileLocation, board.ShortName, Common.MediaType.Image,
+						file.Sha256Hash, file.Extension);
+					var thumbFilename = Common.CalculateFilename(config.Value.Data.FileLocation, board.ShortName, Common.MediaType.Thumbnail,
+						file.Sha256Hash, file.Extension);
+
+					System.IO.File.Delete(fullFilename);
+					System.IO.File.Delete(thumbFilename);
+				}
 			}
 
-			services.AddHostedService<ESSyncService>();
+			// actually delete the post from the db?
+			// flag on board object "PreserveDeleted"
+			post.IsDeleted = true;
 
-			return services;
+			await dbContext.SaveChangesAsync();
+
+			return true;
+		}
+
+		public async Task<DBModerator> GetModerator(ushort userId) => await dbContext.Moderators.FirstOrDefaultAsync(x => x.Id == userId);
+
+		public async Task<DBModerator> GetModerator(string username) => await dbContext.Moderators.FirstOrDefaultAsync(x => x.Username == username);
+
+		public async Task<bool> RegisterModerator(DBModerator moderator)
+		{
+			if (await dbContext.Moderators.AnyAsync(x => x.Username == moderator.Username))
+				return false;
+
+			dbContext.Add(moderator);
+			await dbContext.SaveChangesAsync();
+			return true;
+		}
+
+		public static (string imageUrl, string thumbnailUrl) GenerateUrls(DBFile file, string board, ServerConfig config)
+		{
+			string b36Name = Utility.ConvertToBase(file.Sha256Hash);
+
+			// https://github.com/dotnet/runtime/issues/36510
+			var prefix = !string.IsNullOrWhiteSpace(config.Data.ImagePrefix)
+				? config.Data.ImagePrefix
+				: "/image";
+
+			var imageUrl = $"{prefix}/{board}/image/{b36Name}.{file.Extension}";
+			var thumbUrl = $"{prefix}/{board}/thumb/{b36Name}.jpg";
+
+			return (imageUrl, thumbUrl);
 		}
 	}
 }

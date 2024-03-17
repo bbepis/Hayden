@@ -1,10 +1,11 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Threading.Tasks;
 using Hayden.Consumers.HaydenMysql.DB;
+using Hayden.WebServer.Data;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Cryptography.KeyDerivation;
@@ -20,12 +21,12 @@ namespace Hayden.WebServer.Controllers.Api
 		internal static Dictionary<string, ModeratorRole> RegisterCodes = new Dictionary<string, ModeratorRole>();
 
 		[HttpPost("user/login")]
-		public async Task<IActionResult> UserLoginAsync([FromServices] HaydenDbContext dbContext,
+		public async Task<IActionResult> UserLoginAsync([FromServices] IDataProvider dataProvider,
 			[FromForm] string username, [FromForm] string password)
 		{
 			var delayTask = Task.Delay(1000);
 
-			var user = await dbContext.Moderators.FirstOrDefaultAsync(x => x.Username == username);
+			var user = await dataProvider.GetModerator(username);
 
 			if (user != null)
 			{
@@ -53,7 +54,7 @@ namespace Hayden.WebServer.Controllers.Api
 		}
 
 		[HttpPost("user/register")]
-		public async Task<IActionResult> UserRegisterAsync([FromServices] HaydenDbContext dbContext,
+		public async Task<IActionResult> UserRegisterAsync([FromServices] IDataProvider dataProvider,
 			[FromForm] string username, [FromForm] string password, [FromForm] string registerCode)
 		{
 			await Task.Delay(1000);
@@ -63,14 +64,7 @@ namespace Hayden.WebServer.Controllers.Api
 			lock (RegisterCodes)
 			{
 				if (!RegisterCodes.TryGetValue(registerCode, out grantedRole))
-					return Unauthorized();
-
-				RegisterCodes.Remove(registerCode);
-			}
-
-			if (await dbContext.Moderators.AnyAsync(x => x.Username == username))
-			{
-				return BadRequest(new { error = "Username already exists" });
+					return Unauthorized(new { error = "Unknown register code" });
 			}
 
 			var salt = GenerateSalt();
@@ -83,9 +77,16 @@ namespace Hayden.WebServer.Controllers.Api
 				PasswordHash = hashedPassword,
 				PasswordSalt = salt
 			};
-			
-			dbContext.Add(moderator);
-			await dbContext.SaveChangesAsync();
+
+			if (!await dataProvider.RegisterModerator(moderator))
+			{
+				return BadRequest(new { error = "Username already exists" });
+			}
+
+			lock (RegisterCodes)
+			{
+				RegisterCodes.Remove(registerCode);
+			}
 
 			await LoginAsUser(moderator);
 
@@ -95,8 +96,8 @@ namespace Hayden.WebServer.Controllers.Api
 		[HttpPost("user/info")]
 		public async Task<IActionResult> GetUserInfoAsync([FromServices] IServiceProvider services)
 		{
-			var dbContext = services.GetService<HaydenDbContext>();
-			if (dbContext == null) // we aren't using a hayden provider
+			var dataProvider = services.GetService<IDataProvider>();
+			if (dataProvider == null) // fallback
 				return Json(new
 				{
 					id = (int?)null,
@@ -106,7 +107,7 @@ namespace Hayden.WebServer.Controllers.Api
 			var authenticateResult = await AuthenticateAsync(HttpContext);
 
 			var moderator = authenticateResult.Principal != null
-				? await authenticateResult.Principal.GetModeratorAsync(dbContext)
+				? await authenticateResult.Principal.GetModeratorAsync(dataProvider)
 				: null;
 
 			return Json(new
@@ -172,19 +173,19 @@ namespace Hayden.WebServer.Controllers.Api
 			return principal?.GetUserID().HasValue ?? false;
 		}
 
-		public static async Task<DBModerator> GetModeratorAsync(this ClaimsPrincipal principal, HaydenDbContext dbContext)
+		public static async Task<DBModerator> GetModeratorAsync(this ClaimsPrincipal principal, IDataProvider dataProvider)
 		{
 			var id = principal.GetUserID();
 
 			if (!id.HasValue)
 				return null;
 
-			return await dbContext.Moderators.FindAsync(id.Value);
+			return await dataProvider.GetModerator(id.Value);
 		}
 
 		public static Task<DBModerator> GetModeratorAsync(this HttpContext context)
 			=> context.User != null
-				? GetModeratorAsync(context.User, context.RequestServices.GetRequiredService<HaydenDbContext>())
+				? GetModeratorAsync(context.User, context.RequestServices.GetRequiredService<IDataProvider>())
 				: Task.FromResult<DBModerator>(null);
 	}
 }

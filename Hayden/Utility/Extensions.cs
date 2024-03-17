@@ -1,9 +1,10 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
+using Nito.AsyncEx;
 
 namespace Hayden
 {
@@ -45,6 +46,13 @@ namespace Hayden
             services.AddSingleton<T2>(provider => provider.GetRequiredService<TImplementation>());
 
             return services;
+        }
+
+        public static async IAsyncEnumerable<TItem> GetAsyncEnumerable<TItem>(
+	        this AsyncProducerConsumerQueue<TItem> queue)
+        {
+	        while (await queue.OutputAvailableAsync())
+		        yield return queue.Dequeue();
         }
 	}
 }

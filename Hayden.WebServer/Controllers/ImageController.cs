@@ -1,7 +1,7 @@
-﻿using System.IO;
+using System.IO;
 using System.Threading.Tasks;
 using Hayden.Consumers.HaydenMysql.DB;
-using Hayden.WebServer.View;
+using Hayden.WebServer.Data;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -49,7 +49,7 @@ namespace Hayden.WebServer.Controllers
 
 			if (Config.Value.Data.ImagePrefix != null)
 			{
-				var urls = PostPartialViewModel.GenerateUrls(file, board.ShortName, Config.Value);
+				var urls = HaydenDataProvider.GenerateUrls(file, board.ShortName, Config.Value);
 				return Redirect(urls.imageUrl);
 			}
 

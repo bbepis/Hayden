@@ -1,5 +1,5 @@
 <script lang="ts">
-    import type { BoardModel, InfoObject } from "./data/data";
+    import { BoardModel, InfoObject } from "./data/data";
     import { Utility } from "./data/utility";
     import { moderatorUserStore, boardInfoStore, theme as themeStore } from "./data/stores"
     import { Api } from "./data/api";
@@ -12,7 +12,7 @@
     ]
 
     let selectedTheme: string = $themeStore;
-    
+
     let loadedBoardInfo: BoardModel[] | null = null;
 
     (async function() {
@@ -100,12 +100,36 @@
                     {#await $boardInfoStore}
                         <li class="nav-item nav-text">Loading...</li>
                     {:then boardInfo}
-                        {#each boardInfo as board, index}
-                            <li class="nav-item"><a class="nav-link board-nav-link" href="/board/{board.shortName}" title={board.longName}>/{board.shortName}/</a></li>
-                            <!-- {#if index < boardInfo.length - 2}
-                                <span class="nav-text">-</span>
-                            {/if} -->
-                        {/each}
+						{#if Utility.infoObject.compactBoardMode}
+							{@const groupedBoards = Utility.groupByArray(boardInfo, b => b.category)}
+
+							{#each groupedBoards as groupedBoard}
+								<li class="nav-item dropdown">
+									<a class="nav-link dropdown-toggle" href="#" role="button" data-toggle="dropdown" aria-expanded="false">
+										{groupedBoard.key}
+									</a>
+									<div class="dropdown-menu">
+
+									{#each groupedBoard.values as board, index}
+										<li class="nav-item"><a class="nav-link board-nav-link" href="/board/{board.shortName}" title={board.longName}>/{board.shortName}/</a></li>
+										<!-- {#if index < boardInfo.length - 2}
+											<span class="nav-text">-</span>
+										{/if} -->
+									{/each}
+
+								</div></li>
+							{/each}
+
+						{:else}
+
+							{#each boardInfo as board, index}
+								<li class="nav-item"><a class="nav-link board-nav-link" href="/board/{board.shortName}" title={board.longName}>/{board.shortName}/</a></li>
+								<!-- {#if index < boardInfo.length - 2}
+									<span class="nav-text">-</span>
+								{/if} -->
+							{/each}
+
+						{/if}
                     {:catch}
                         <li class="nav-item nav-text">Unable to load boards</li>
                     {/await}
@@ -114,7 +138,7 @@
                             Boards
                         </a>
                         <div class="dropdown-menu" aria-labelledby="navbarDropdown">
-                            
+
                         </div>
                     </li> -->
                     {#if $moderatorUserStore}

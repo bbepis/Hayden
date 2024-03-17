@@ -20,11 +20,12 @@ public class AsagiDbContext : DbContext
 		ConnectionString = asagiDbContextOptions.ConnectionString;
 	}
 
-	public (DbSet<AsagiDbPost> posts, DbSet<AsagiDbImage> images, DbSet<AsagiDbThread> threads) GetSets(string board)
+	public (DbSet<AsagiDbPost> posts, DbSet<AsagiDbImage> images, DbSet<AsagiDbThread> threads, DbSet<AsagiDbPost> deleted) GetSets(string board)
 	{
 		return (Set<AsagiDbPost>(board),
 			Set<AsagiDbImage>($"{board}_images"),
-			Set<AsagiDbThread>($"{board}_threads"));
+			Set<AsagiDbThread>($"{board}_threads"),
+			Set<AsagiDbPost>($"{board}_deleted"));
 	}
 
 	public async Task<string[]> GetBoardTables()

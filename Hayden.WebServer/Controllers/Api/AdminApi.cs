@@ -1,10 +1,12 @@
-﻿using Hayden.Consumers.HaydenMysql.DB;
+using Hayden.Consumers.HaydenMysql.DB;
 using Hayden.WebServer.Logic;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System;
 using System.Linq;
 using System.Threading.Tasks;
+using Hayden.WebServer.Data;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Hayden.WebServer.Controllers.Api
 {
@@ -12,52 +14,9 @@ namespace Hayden.WebServer.Controllers.Api
 	{
 		[AdminAccessFilter(ModeratorRole.Janitor, ModeratorRole.Moderator, ModeratorRole.Admin)]
 		[HttpPost("moderator/deletepost")]
-		public async Task<IActionResult> DeletePost(ushort boardId, ulong postId, bool banImages,
-			[FromServices] HaydenDbContext dbContext)
+		public async Task<IActionResult> DeletePost(ushort boardId, ulong postId, bool banImages, [FromServices] IDataProvider dataProvider)
 		{
-			var post = await dbContext.Posts.FirstOrDefaultAsync(x => x.BoardId == boardId && x.PostId == postId);
-
-			if (post == null)
-				return NotFound("Could not find post");
-
-			var board = await dbContext.Boards.FindAsync(boardId);
-
-			var mappings = await dbContext.FileMappings
-				.Where(x => x.BoardId == boardId && x.PostId == postId)
-				.ToArrayAsync();
-
-			foreach (var mapping in mappings)
-				dbContext.Remove(mapping);
-
-            if (banImages && mappings.Length > 0)
-			{
-				var fileIds = mappings.Select(x => x.FileId).ToArray();
-
-                var files = await dbContext.Files
-					.Where(x => fileIds.Contains(x.Id))
-					.ToArrayAsync();
-
-                foreach (var file in files)
-                {
-	                file.FileBanned = true;
-
-	                var fullFilename = Common.CalculateFilename(Config.Value.Data.FileLocation, board.ShortName, Common.MediaType.Image,
-		                file.Sha256Hash, file.Extension);
-	                var thumbFilename = Common.CalculateFilename(Config.Value.Data.FileLocation, board.ShortName, Common.MediaType.Thumbnail,
-		                file.Sha256Hash, file.Extension);
-
-					System.IO.File.Delete(fullFilename);
-					System.IO.File.Delete(thumbFilename);
-                }
-			}
-
-			// actually delete the post from the db?
-			// flag on board object "PreserveDeleted"
-			post.IsDeleted = true;
-
-			await dbContext.SaveChangesAsync();
-
-			return Ok();
+			return await dataProvider.DeletePost(boardId, postId, banImages) ? Ok() : BadRequest();
         }
 
 		[AdminAccessFilter(ModeratorRole.Moderator, ModeratorRole.Admin)]
@@ -85,6 +44,90 @@ namespace Hayden.WebServer.Controllers.Api
 			await dbContext.SaveChangesAsync();
 
 			return Ok();
+		}
+
+		private class ReportedPostInfo
+		{
+			public ushort BoardId { get; set; }
+			public ulong PostId { get; set; }
+
+			public ReportInfo[] Reports { get; set; }
+
+			public class ReportInfo
+			{
+				public string Severity { get; set; }
+				public string IPAddress { get; set; }
+				public string Reason { get; set; }
+			}
+		}
+
+		[AdminAccessFilter(ModeratorRole.Moderator, ModeratorRole.Admin)]
+		[HttpPost("moderator/getreports")]
+		public async Task<IActionResult> GetReports(int page,
+			[FromServices] IServiceProvider serviceProvider
+			)
+		{
+			const int pageSize = 20;
+
+			using var serviceScope = serviceProvider.CreateScope();
+
+			var dbContext = serviceScope.ServiceProvider.GetService<HaydenDbContext>();
+
+			if (dbContext == null)
+				return UnprocessableEntity(new { error = "Reports require Hayden database structure" });
+
+			// we actually want to grab the top 20 posts, so we have to do some fucky calculations
+			var reportedPosts = await dbContext.Reports
+				.Where(x => !x.Resolved)
+				.OrderByDescending(x => x.Category)
+				.ThenByDescending(x => x.TimeReported)
+				.Select(x => new { x.BoardId, x.PostId })
+				.Distinct()
+				.Skip(page * pageSize).Take(pageSize)
+				.Join(dbContext.Reports, post => post, report => new { report.BoardId, report.PostId },
+					(post, report) => report)
+				.ToListAsync();
+
+			var reportList = reportedPosts
+				.GroupBy(x => new { x.BoardId, x.PostId })
+				.Select(x => new ReportedPostInfo()
+				{
+					BoardId = x.Key.BoardId,
+					PostId = x.Key.PostId,
+					Reports = x.Select(y => new ReportedPostInfo.ReportInfo()
+					{
+						IPAddress = y.IPAddress,
+						Reason = y.Reason,
+						Severity = y.Category.ToString()
+					}).ToArray()
+				}).ToArray();
+
+            return Ok(reportList);
+		}
+
+		[AdminAccessFilter(ModeratorRole.Moderator, ModeratorRole.Admin)]
+		[HttpPost("moderator/markreportresolved")]
+		public async Task<IActionResult> MarkReportResolved(int reportId,
+			[FromServices] IServiceProvider serviceProvider
+			)
+		{
+			using var serviceScope = serviceProvider.CreateScope();
+
+			var dbContext = serviceScope.ServiceProvider.GetService<HaydenDbContext>();
+
+			if (dbContext == null)
+				return UnprocessableEntity(new { error = "Reports require Hayden database structure" });
+
+			var report = await dbContext.Reports.FindAsync(reportId);
+
+			if (report == null)
+				return BadRequest();
+
+			report.Resolved = true;
+			dbContext.Update(report);
+			await dbContext.SaveChangesAsync();
+
+            return Ok();
 		}
 	}
 }

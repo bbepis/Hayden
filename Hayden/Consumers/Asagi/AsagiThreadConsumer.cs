@@ -26,7 +26,7 @@ namespace Hayden.Consumers
 
 		private ICollection<string> Boards { get; }
 
-		private ILogger Logger { get; } = Program.CreateLogger("Asagi");
+		private ILogger Logger { get; } = SerilogManager.CreateSubLogger("Asagi");
 		
 		public AsagiThreadConsumer(ConsumerConfig consumerConfig, SourceConfig sourceConfig)
 		{
@@ -503,15 +503,15 @@ namespace Hayden.Consumers
 		}
 
 		/// <inheritdoc/>
-		public async Task<ICollection<ExistingThreadInfo>> CheckExistingThreads(IEnumerable<ulong> threadIdsToCheck, string board, bool archivedOnly, bool getMetadata = true, bool excludeDeletedPosts = true)
+		public async Task<ICollection<ExistingThreadInfo>> CheckExistingThreads(IEnumerable<ulong> threadIdsToCheck, string board, bool archivedOnly, MetadataMode metadataMode = MetadataMode.FullHashMetadata, bool excludeDeletedPosts = true)
 		{
 			int archivedInt = archivedOnly ? 1 : 0;
 
 			await using var rentedConnection = await ConnectionPool.RentConnectionAsync();
 
 			string query;
-
-			if (getMetadata)
+			
+			if (metadataMode == MetadataMode.FullHashMetadata)
 			{
 				query = $@"
 				SELECT TABLE1.num, MAX(TABLE2.timestamp), MAX(TABLE1.timestamp_expired)
@@ -553,6 +553,34 @@ namespace Hayden.Consumers
 					}
 
 					items.Add(new ExistingThreadInfo((uint)row[0], (uint)Convert.ChangeType(row[0], typeof(uint)) != 0, Utility.ConvertNewYorkTimestamp((uint)row[1]).UtcDateTime, hashes));
+				}
+
+				return items;
+			}
+			else if (metadataMode == MetadataMode.ThreadIdAndPostId)
+			{
+				// TODO: this could very likely be rewritten better
+				query = $@"
+				SELECT TABLE1.num, TABLE2.num
+				FROM `{board}` TABLE1
+					INNER JOIN `{board}` TABLE2 ON TABLE2.thread_num = TABLE1.num
+				WHERE TABLE1.op = 1
+					AND (
+						({archivedInt} = 1 AND TABLE1.timestamp_expired != 0)
+						OR ({archivedInt} = 0 AND TABLE1.timestamp_expired = 0)
+						OR TABLE1.deleted = {archivedInt}
+					)
+					AND TABLE1.num IN ({string.Join(',', threadIdsToCheck)})
+				GROUP BY TABLE1.num";
+
+				var table = await rentedConnection.Object.CreateQuery(query).ExecuteTableAsync();
+
+				var items = new List<ExistingThreadInfo>();
+				var rowEnumerable = table.Rows.Cast<DataRow>().Select(x => ((uint)x[0], (uint)x[1]));
+
+				foreach (var group in rowEnumerable.GroupBy(x => x.Item1, x => x.Item2))
+				{
+					items.Add(new ExistingThreadInfo(group.Key, false, DateTimeOffset.MinValue, group.Select(x => ((ulong)x, (uint)0)).ToArray()));
 				}
 
 				return items;

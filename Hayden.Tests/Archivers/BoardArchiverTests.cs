@@ -47,7 +47,7 @@ namespace Hayden.Tests.Archivers
 
             var timestamp = (ulong)DateTimeOffset.Now.ToUnixTimeSeconds();
 
-            consumerMock.Setup(x => x.CheckExistingThreads(It.IsAny<IEnumerable<ulong>>(), It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<bool>()))
+            consumerMock.Setup(x => x.CheckExistingThreads(It.IsAny<IEnumerable<ulong>>(), It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<MetadataMode>(), It.IsAny<bool>()))
                 .Returns(Task.FromResult<ICollection<ExistingThreadInfo>>(Array.Empty<ExistingThreadInfo>()));
 
             sourceMock.Setup(x => x.GetBoard(It.IsAny<string>(), It.IsAny<HttpClient>(), It.IsAny<DateTimeOffset?>(), It.IsAny<CancellationToken>()))

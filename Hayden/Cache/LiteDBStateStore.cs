@@ -16,7 +16,7 @@ namespace Hayden.Cache
 	{
 		public LiteDatabase Database { get; private set; }
 
-		private ILogger Logger { get; } = Program.CreateLogger("LiteDB");
+		private ILogger Logger { get; } = SerilogManager.CreateSubLogger("LiteDB");
 
 		protected Stream Stream { get; set; }
 
@@ -76,6 +76,16 @@ namespace Hayden.Cache
 				QueuedImageDownloads.Upsert(imageDownloads);
 
 			return Task.CompletedTask;
+		}
+
+		public Task StoreKeyValue(string key, string value)
+		{
+			throw new NotImplementedException();
+		}
+
+		public Task<string> ReadKeyValue(string key)
+		{
+			throw new NotImplementedException();
 		}
 
 		/// <inheritdoc/>

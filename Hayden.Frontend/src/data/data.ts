@@ -9,6 +9,7 @@ export class InfoObject {
     newsItems: NewsItem[] | null;
     shiftJisArt: string | null;
     searchEnabled: boolean;
+	compactBoardMode: boolean;
 }
 
 export interface NewsItem {
@@ -56,6 +57,7 @@ export class PostModel {
     contentRaw: string | null;
 
     author: string | null;
+    tripcode: string | null;
 
     dateTime: string;
 

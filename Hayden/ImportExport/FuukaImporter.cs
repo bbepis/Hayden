@@ -71,6 +71,7 @@ namespace Hayden.ImportExport
 				query = query.Where(x => x.num <= maxId);
 
 			var threadIds = query
+				.AsNoTracking()
 				.Where(x => x.parent == 0 && x.subnum == 0)
 				.Select(x => x.num);
 
@@ -117,7 +118,7 @@ namespace Hayden.ImportExport
 							{
 								Filename = HttpUtility.HtmlDecode(Path.GetFileNameWithoutExtension(x.media)),
 								FileExtension = Path.GetExtension(x.media),
-								Index = 1,
+								Index = 0,
 								FileSize = x.media_size,
 								IsSpoiler = x.spoiler,
 								ThumbnailExtension = Path.GetExtension(x.preview),

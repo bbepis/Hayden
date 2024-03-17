@@ -1,8 +1,7 @@
-﻿using System.Linq;
+using System.Linq;
 using System.Text;
 using AngleSharp.Html.Parser;
 using AngleSharp.Text;
-using Nest;
 
 namespace Hayden.Consumers.Asagi
 {

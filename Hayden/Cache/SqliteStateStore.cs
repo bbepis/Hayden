@@ -19,6 +19,7 @@ namespace Hayden.Cache
 		protected class SqliteStateContext : DbContext
 		{ 
 			public DbSet<QueuedImageDownload> QueuedImageDownloads { get; set; }
+			public DbSet<KeyValue> KeyValues { get; set; }
 
 			public SqliteStateContext(DbContextOptions options) : base(options)
 			{
@@ -50,6 +51,13 @@ namespace Hayden.Cache
 
 					x.HasKey(x => x.Guid);
 				});
+
+				modelBuilder.Entity<KeyValue>(x =>
+				{
+					x.ToTable("KeyValue");
+
+					x.HasKey(k => k.Key);
+				});
             }
 
             public void DetachAllEntities()
@@ -60,11 +68,17 @@ namespace Hayden.Cache
                 foreach (var entry in changedEntriesCopy)
                     entry.State = EntityState.Detached;
             }
+
+            public class KeyValue
+            {
+				public string Key { get; set; }
+				public string Value { get; set; }
+            }
 		}
 
 		private AsyncLock @lock { get; } = new();
 
-		private ILogger Logger { get; } = Program.CreateLogger("SQLite");
+		private ILogger Logger { get; } = SerilogManager.CreateSubLogger("SQLite");
 
 		protected SqliteConnection Connection { get; set; }
 
@@ -132,6 +146,35 @@ namespace Hayden.Cache
 			await Context.SaveChangesAsync();
             Context.DetachAllEntities();
         }
+
+		public async Task StoreKeyValue(string key, string value)
+		{
+			var existingObj = await Context.KeyValues.FirstOrDefaultAsync(x => x.Key == key);
+
+			if (existingObj != null)
+			{
+				if (value == null)
+					Context.KeyValues.Remove(existingObj);
+				else
+				{
+					existingObj.Value = value;
+					Context.KeyValues.Update(existingObj);
+				}
+			}
+			else
+			{
+				if (value != null)
+					Context.KeyValues.Add(new SqliteStateContext.KeyValue { Key = key, Value = value });
+			}
+
+			await Context.SaveChangesAsync();
+			Context.DetachAllEntities();
+		}
+
+		public async Task<string> ReadKeyValue(string key)
+		{
+			return (await Context.KeyValues.FirstOrDefaultAsync(x => x.Key == key))?.Value ?? null;
+		}
 
 		/// <inheritdoc/>
 		public async Task<IList<QueuedImageDownload>> GetDownloadQueue()

@@ -1,14 +1,12 @@
 using System;
-using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Hayden.Consumers.HaydenMysql.DB;
 using Hayden.WebServer.Data;
-using Hayden.WebServer.DB.Elasticsearch;
-using Hayden.WebServer.View;
+using Hayden.WebServer.Search;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using Nest;
+using Newtonsoft.Json.Linq;
 
 namespace Hayden.WebServer.Controllers.Api
 {
@@ -37,7 +35,7 @@ namespace Hayden.WebServer.Controllers.Api
 							mappings.Where(y => y.Item1.PostId == x.PostId)
 								.Select(y =>
 								{
-									var (imageUrl, thumbUrl) = PostPartialViewModel.GenerateUrls(y.Item2, boardObj.ShortName, Config.Value);
+									var (imageUrl, thumbUrl) = HaydenDataProvider.GenerateUrls(y.Item2, boardObj.ShortName, Config.Value);
 
 									return new JsonFileModel(y.Item2, y.Item1, imageUrl, thumbUrl);
 								}).ToArray()))
@@ -57,123 +55,69 @@ namespace Hayden.WebServer.Controllers.Api
 			[FromQuery] string posterId,
 			[FromQuery] string name,
 			[FromQuery] string trip,
+			[FromQuery] string filename,
+			[FromQuery] string md5Hash,
 			[FromQuery] string dateStart,
 			[FromQuery] string dateEnd,
 			[FromQuery] int? page)
 		{
-			if (ElasticClient == null || !Config.Value.Elasticsearch.Enabled || !Config.Value.Settings.SearchEnabled)
+			if (SearchService == null || !Config.Value.Search.Enabled)
 				return BadRequest("Search is not enabled");
+			
+			var boardInfo = await dataProvider.GetBoardInfo();
 
-			var searchRequest = new Data.SearchRequest
+			ushort[] boardIds = string.IsNullOrWhiteSpace(boards)
+				? null
+				: boards.Split(',')
+					.Select(x =>
+						boardInfo.FirstOrDefault(
+							y => y.ShortName.Equals(x, StringComparison.InvariantCultureIgnoreCase))?.Id)
+					.Where(x => x.HasValue)
+					.Select(x => x.Value)
+					.ToArray();
+
+			const int pageSize = 40;
+
+			var searchRequest = new SearchRequest
             {
 				TextQuery = query,
 				Subject = subject,
-				Boards = string.IsNullOrWhiteSpace(boards) ? null : boards.Split(','),
+				Boards = boardIds,
 				IsOp = postType == "op" ? true : postType == "reply" ? false : null,
 				PosterID = posterId,
 				PosterName = name,
 				PosterTrip = trip,
+				Filename = filename,
+				FileMD5 = md5Hash,
 				DateStart = dateStart,
 				DateEnd = dateEnd,
 				OrderType = orderType,
-				Page = page
+				Offset = page.HasValue ? (page.Value - 1) * pageSize : null,
+				ResultSize = pageSize
 			};
 
-			var searchTerm = searchRequest.TextQuery?.ToLowerInvariant()
-				.Replace("\\", "\\\\")
-				.Replace("*", "\\*")
-				.Replace("?", "\\?");
+			var searchResult = await SearchService.PerformSearch(searchRequest);
 
-			var boardInfo = await dataProvider.GetBoardInfo();
-			
-			Func<QueryContainerDescriptor<PostIndex>, QueryContainer> searchDescriptor = x =>
-			{
-				var allQueries = new List<Func<QueryContainerDescriptor<PostIndex>, QueryContainer>>();
-
-				if (!string.IsNullOrWhiteSpace(searchRequest.Subject))
-					allQueries.Add(y => y.Match(z => z.Field(a => a.Subject).Query(searchRequest.Subject)));
-
-				if (!string.IsNullOrWhiteSpace(searchRequest.PosterName))
-					allQueries.Add(y => y.Match(z => z.Field(a => a.Subject).Query(searchRequest.PosterName)));
-
-				if (!string.IsNullOrWhiteSpace(searchRequest.PosterTrip))
-					allQueries.Add(y => y.Match(z => z.Field(a => a.Subject).Query(searchRequest.PosterTrip)));
-
-				if (!string.IsNullOrWhiteSpace(searchRequest.PosterID))
-					allQueries.Add(y => y.Match(z => z.Field(a => a.Subject).Query(searchRequest.PosterID)));
-
-				var startDateBool = string.IsNullOrWhiteSpace(searchRequest.DateStart) && DateOnly.TryParse(searchRequest.DateStart, out var startDate);
-				var endDateBool = string.IsNullOrWhiteSpace(searchRequest.DateEnd) && DateOnly.TryParse(searchRequest.DateEnd, out var endDate);
-
-				if (startDateBool || endDateBool)
-					allQueries.Add(y => y.DateRange(z =>
-					{
-						var query = z.Field(a => a.PostDateUtc);
-
-						if (startDateBool)
-							query = query.GreaterThanOrEquals(new DateMathExpression(startDate.ToDateTime(TimeOnly.MinValue)));
-
-						if (endDateBool)
-							query = query.LessThanOrEquals(new DateMathExpression(endDate.ToDateTime(TimeOnly.MaxValue)));
-
-						return query;
-					}));
-
-				if (searchRequest.IsOp.HasValue)
-					allQueries.Add(y => y.Term(z => z.Field(f => f.IsOp).Value(searchRequest.IsOp.Value)));
-
-				if (searchRequest.Boards != null && searchRequest.Boards.Length > 0)
+			if (searchResult.PostNumbers.Length == 0)
+				return Json(new JsonBoardPageModel
 				{
-					allQueries.Add(y => y.Bool(z => z.Should(searchRequest.Boards.Select<string, Func<QueryContainerDescriptor<PostIndex>, QueryContainer>>(board =>
-					{
-						return a => a.Term(b => b.Field(f => f.BoardId).Value(boardInfo.First(j => j.ShortName == board).Id));
-					}))));
-				}
-
-				if (!string.IsNullOrWhiteSpace(searchTerm))
-					if (!searchTerm.Contains(" "))
-					{
-						allQueries.Add(y => y.Match(z => z.Field(o => o.PostRawText).Query(searchTerm)));
-					}
-					else
-					{
-						allQueries.Add(y => y.MatchPhrase(z => z.Field(o => o.PostRawText).Query(searchTerm)));
-					}
-
-				return x.Bool(y => y.Must(allQueries));
-			};
-
-			var searchResult = await ElasticClient.SearchAsync<PostIndex>(x => x
-				.Index(Config.Value.Elasticsearch.IndexName)
-				.Size(20)
-				.Skip(searchRequest.Page.HasValue ? (searchRequest.Page.Value - 1) * 20 : null)
-				.DocValueFields(f => f.Fields(p => p.BoardId, p => p.ThreadId, p => p.PostId))
-				.Query(searchDescriptor)
-				.Sort(y => searchRequest.OrderType == "asc" ? y.Ascending(z => z.PostDateUtc)
-					: y.Descending(z => z.PostDateUtc)));
-
-			if (Config.Value.Elasticsearch.Debug)
-				Console.WriteLine(searchResult.ApiCall.DebugInformation);
-
-			if (!searchResult.IsValid)
-				return null;
-
-			var threadIdArray = searchResult.Hits.Select(x =>
-					(BoardId: x.Fields.ValueOf<PostIndex, ushort>(y => y.BoardId),
-					ThreadId: x.Fields.ValueOf<PostIndex, ulong>(y => y.ThreadId),
-					PostId: x.Fields.ValueOf<PostIndex, ulong>(y => y.PostId)
-						))
-					.ToArray();
-
-			if (threadIdArray.Length == 0)
-				return Json(new ApiController.JsonBoardPageModel
-				{
-					totalThreadCount = searchResult.Hits.Count,
-					threads = Array.Empty<ApiController.JsonThreadModel>(),
+					totalThreadCount = searchResult.SearchHitCount,
+					threads = Array.Empty<JsonThreadModel>(),
 					boardInfo = null
 				});
 			
-			return Json(await dataProvider.ReadSearchResults(threadIdArray, searchResult.Hits.Count));
+			return Json(await dataProvider.ReadSearchResults(searchResult.PostNumbers, searchResult.SearchHitCount));
+		}
+
+		[HttpGet("{board}/post/{postid}")]
+		public async Task<IActionResult> IndividualPost(string board, ulong postid, [FromServices] IDataProvider dataProvider)
+		{
+			var postData = await dataProvider.GetPost(board, postid);
+
+			if (postData == null)
+				return NotFound();
+
+			return Json(postData);
 		}
 
 		[HttpGet("{board}/thread/{threadid}")]
@@ -204,7 +148,7 @@ namespace Hayden.WebServer.Controllers.Api
 		
 		public class JsonBoardPageModel
 		{
-			public int totalThreadCount { get; set; }
+			public long totalThreadCount { get; set; }
 			public DBBoard boardInfo { get; set; }
 			public JsonThreadModel[] threads { get; set; }
 		}
@@ -247,6 +191,7 @@ namespace Hayden.WebServer.Controllers.Api
 			public string contentRaw { get; set; }
 
 			public string author { get; set; }
+			public string tripcode { get; set; }
 
 			public DateTime dateTime { get; set; }
 
@@ -260,6 +205,7 @@ namespace Hayden.WebServer.Controllers.Api
 				contentHtml = post.ContentHtml;
 				contentRaw = post.ContentRaw;
 				author = post.Author;
+				tripcode = post.Tripcode;
 				dateTime = post.DateTime;
 				deleted = post.IsDeleted;
 
@@ -296,14 +242,27 @@ namespace Hayden.WebServer.Controllers.Api
 
 			public JsonFileModel(DBFile file, DBFileMapping fileMapping, string imageUrl, string thumbnailUrl)
 			{
+				var mappingMetadata = !string.IsNullOrWhiteSpace(fileMapping.AdditionalMetadata)
+					? JObject.Parse(fileMapping.AdditionalMetadata)
+					: null;
+
 				fileId = file?.Id;
+
 				md5Hash = file?.Md5Hash;
+				if (md5Hash == null)
+				{
+					var md5HashB64 = mappingMetadata?.Value<string>("missing_md5hash");
+
+					if (md5HashB64 != null)
+						md5Hash = Convert.FromBase64String(md5HashB64);
+				}
+
 				sha1Hash = file?.Sha1Hash;
 				sha256Hash = file?.Sha256Hash;
-				extension = file?.Extension;
+				extension = file?.Extension ?? mappingMetadata?.Value<string>("missing_extension")?.TrimStart('.');
 				imageWidth = file?.ImageWidth;
 				imageHeight = file?.ImageHeight;
-				fileSize = file?.Size;
+				fileSize = file?.Size ?? mappingMetadata?.Value<uint?>("missing_size");
 
 				index = fileMapping.Index;
 				filename = fileMapping.Filename;

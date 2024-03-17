@@ -13,34 +13,26 @@ public interface IDataProvider
 
 	Task<bool> PerformInitialization(IServiceProvider services);
 
+	// Post info
 	Task<IList<DBBoard>> GetBoardInfo();
+	Task<ApiController.JsonPostModel> GetPost(string board, ulong postid);
 	Task<ApiController.JsonThreadModel> GetThread(string board, ulong threadid);
 	Task<ApiController.JsonBoardPageModel> GetBoardPage(string board, int? page);
-	Task<ApiController.JsonBoardPageModel> ReadSearchResults((ushort BoardId, ulong ThreadId, ulong PostId)[] threadIdArray, int hitCount);
+	Task<ApiController.JsonBoardPageModel> ReadSearchResults((ushort BoardId, ulong ThreadId, ulong PostId)[] threadIdArray, long hitCount);
 
+	// Search indexing
 	Task<(ushort BoardId, ulong IndexPosition)[]> GetIndexPositions();
 	Task SetIndexPosition(ushort boardId, ulong indexPosition);
 
 	IAsyncEnumerable<PostIndex> GetIndexEntities(string board, ulong minPostNo);
-}
 
-public class SearchRequest
-{
-	public string TextQuery { get; set; }
+	// Moderation
+	Task<bool> DeletePost(ushort boardId, ulong postId, bool banImages);
 
-	public string[] Boards { get; set; }
+	// User handling
 
-	public string Subject { get; set; }
-	public string PosterName { get; set; }
-	public string PosterTrip { get; set; }
-	public string PosterID { get; set; }
+	Task<DBModerator> GetModerator(ushort userId);
+	Task<DBModerator> GetModerator(string username);
 
-	public bool? IsOp { get; set; }
-
-	public string DateStart { get; set; }
-	public string DateEnd { get; set; }
-
-	public string OrderType { get; set; }
-
-	public int? Page { get; set; }
+	Task<bool> RegisterModerator(DBModerator moderator);
 }

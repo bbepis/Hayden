@@ -27,7 +27,7 @@ export class Api {
         await Utility.Post("/user/logout");
     }
 
-    static async UserRegisterAsync(username: string, password: string, registerCode: string): Promise<boolean>
+    static async UserRegisterAsync(username: string, password: string, registerCode: string): Promise<{success: boolean, error: string | null}>
     {
         const result = await Utility.PostForm("/user/register", {
             username: username,
@@ -35,7 +35,10 @@ export class Api {
             registerCode: registerCode
         });
 
-        return result.ok;
+        return {
+			success: result.ok,
+			error: result.ok ? null : (await result.json())["error"]
+		};
     }
 
     static async GetUserInfoAsync(): Promise<{ id: number | null, role: number | null }>

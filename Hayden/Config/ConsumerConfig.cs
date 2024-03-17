@@ -1,4 +1,4 @@
-﻿using Hayden.Contract;
+using Hayden.Contract;
 
 namespace Hayden.Config
 {

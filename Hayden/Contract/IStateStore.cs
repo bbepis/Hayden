@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 
 namespace Hayden.Contract
@@ -15,6 +15,9 @@ namespace Hayden.Contract
 		Task WriteDownloadQueue(IReadOnlyCollection<QueuedImageDownload> imageDownloads);
 
 		Task InsertToDownloadQueue(IReadOnlyCollection<QueuedImageDownload> imageDownloads);
+
+		Task StoreKeyValue(string key, string value);
+		Task<string> ReadKeyValue(string key);
 
 		/// <summary>
 		/// Retrieves a list of queued image downloads from intermediate storage.

@@ -41,6 +41,12 @@ namespace Hayden.WebServer.DB.Elasticsearch
 		[Keyword(Name = "posterID", Index = true, Store = false, Similarity = "boolean")]
 		public string PosterID { get; set; }
 
+		[Keyword(Name = "mediaFilename", Index = true, Store = false, Similarity = "boolean")]
+		public string MediaFilename { get; set; }
+
+		[Keyword(Name = "mediaMd5Hash", Index = true, Store = false, Similarity = "boolean")]
+		public string MediaMd5HashBase64 { get; set; }
+
 		[Date(Name = "postDateUtc", Index = false, Store = false, DocValues = true)]
 		public DateTime PostDateUtc { get; set; }
 

@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 using Hayden.Contract;
 
@@ -19,6 +19,16 @@ namespace Hayden.Cache
 		public Task InsertToDownloadQueue(IReadOnlyCollection<QueuedImageDownload> imageDownloads)
 		{
 			return Task.CompletedTask;
+		}
+
+		public Task StoreKeyValue(string key, string value)
+		{
+			return Task.CompletedTask;
+		}
+
+		public Task<string> ReadKeyValue(string key)
+		{
+			return Task.FromResult((string)null);
 		}
 
 		/// <inheritdoc/>

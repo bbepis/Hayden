@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.IO.Abstractions;
 using System.Linq;
 using System.Threading.Tasks;
-using Elasticsearch.Net;
+using System.Web;
 using Hayden.Config;
 using Hayden.Consumers.HaydenMysql.DB;
 using Hayden.Contract;
@@ -27,7 +27,7 @@ namespace Hayden.Consumers
 		protected IFileSystem FileSystem { get; set; }
 		protected IMediaInspector MediaInspector { get; set; }
 
-		private ILogger Logger { get; } = Program.CreateLogger("HaydenDb");
+		private ILogger Logger { get; } = SerilogManager.CreateSubLogger("HaydenDB");
 
 		protected Dictionary<string, ushort> BoardIdMappings { get; } = new(StringComparer.OrdinalIgnoreCase);
 
@@ -40,6 +40,14 @@ namespace Hayden.Consumers
 			MediaInspector = mediaInspector;
 
 			SetUpDBContext();
+		}
+
+		private string GetTranslatedBoardName(string boardName)
+		{
+			if (!SourceConfig.Boards.TryGetValue(boardName, out var boardConfig) || string.IsNullOrWhiteSpace(boardConfig.StoredBoardName))
+				return boardName;
+
+			return boardConfig.StoredBoardName;
 		}
 
 		public async Task InitializeAsync()
@@ -60,7 +68,7 @@ namespace Hayden.Consumers
 				}
 				catch (Exception ex)
 				{
-					throw new Exception("Database cannot be connected to, or is not ready");
+					throw new Exception("Database cannot be connected to, or is not ready", ex);
 				}
 
 				await context.UpgradeOrCreateAsync();
@@ -73,13 +81,15 @@ namespace Hayden.Consumers
 
 			foreach (var boardRule in SourceConfig.Boards)
 			{
-				if (BoardIdMappings.ContainsKey(boardRule.Key))
+				var translatedBoardName = GetTranslatedBoardName(boardRule.Key);
+
+				if (BoardIdMappings.ContainsKey(translatedBoardName))
 					continue;
 
 				var boardObject = new DBBoard
 				{
-					ShortName = boardRule.Key,
-					LongName = boardRule.Key,
+					ShortName = translatedBoardName,
+					LongName = translatedBoardName,
 					Category = "Archive",
 					IsNSFW = false,
 					IsReadOnly = true,
@@ -90,7 +100,7 @@ namespace Hayden.Consumers
 				context.Add(boardObject);
 				await context.SaveChangesAsync();
 
-				BoardIdMappings[boardObject.ShortName] = boardObject.Id;
+				BoardIdMappings[translatedBoardName] = boardObject.Id;
 			}
 		}
 
@@ -117,6 +127,8 @@ namespace Hayden.Consumers
 			DbContextOptions = contextBuilder.Options;
 		}
 
+		public Task CommitAsync() => Task.CompletedTask;
+
 		protected virtual HaydenDbContext GetDBContext() => new(DbContextOptions);
 
 		/// <inheritdoc/>
@@ -126,7 +138,7 @@ namespace Hayden.Consumers
 
 			await using var dbContext = GetDBContext();
 
-			string board = threadUpdateInfo.ThreadPointer.Board;
+			string board = GetTranslatedBoardName(threadUpdateInfo.ThreadPointer.Board);
 			ushort boardId = BoardIdMappings[board];
 
 			//{ // delete this block when not testing
@@ -259,14 +271,29 @@ namespace Hayden.Consumers
 				await dbContext.SaveChangesAsync();
 			}
 
+			HashSet<ulong> postNumbersToSkip = null;
+
+			if (!threadUpdateInfo.IsNewThread && threadUpdateInfo.NewPosts.Any(x => x.IsDeleted == true))
+			{
+				var checkedPostIds = threadUpdateInfo.NewPosts.Where(x => x.IsDeleted == true)
+					.Select(x => x.PostNumber)
+					.ToArray();
+
+				var skippablePostIds = await dbContext.Posts
+					.Where(x => x.BoardId == boardId && checkedPostIds.Contains(x.PostId))
+					.Select(x => x.PostId)
+					.ToArrayAsync();
+
+				postNumbersToSkip = new HashSet<ulong>(skippablePostIds);
+			}
+			
 			foreach (var post in threadUpdateInfo.NewPosts)
 			{
-				if (!threadUpdateInfo.IsNewThread && post.IsDeleted == true)
+				if (postNumbersToSkip != null && postNumbersToSkip.Contains(post.PostNumber))
 				{
 					// due to limitations with the thread tracking method, deleted posts don't get processed correctly
-
-					if (await dbContext.Posts.AnyAsync(x => x.BoardId == boardId && x.PostId == post.PostNumber))
-						continue;
+					
+					continue;
 				}
 
 				dbContext.Add(new DBPost
@@ -490,21 +517,24 @@ namespace Hayden.Consumers
 			if (media.Sha256Hash != null)
 				metadata["missing_sha256hash"] = Convert.ToBase64String(media.Sha256Hash);
 
-			metadata["missing_extension"] = media.FileExtension;
-			metadata["missing_size"] = media.FileSize;
+			if (!string.IsNullOrWhiteSpace(media.FileExtension))
+				metadata["missing_extension"] = media.FileExtension.TrimStart('.');
 
-			existingFileMapping.AdditionalMetadata = metadata.ToString(Formatting.None);
+			if (media.FileSize.HasValue)
+				metadata["missing_size"] = media.FileSize;
+			
+			existingFileMapping.AdditionalMetadata = metadata.Count > 0 ? metadata.ToString(Formatting.None) : null;
 		}
 
 		/// <inheritdoc/>
 		public async Task ThreadUntracked(ulong threadId, string board, bool deleted)
 		{
-			await UpdateThread(board, threadId, deleted, !deleted);
+			await UpdateThread(GetTranslatedBoardName(board), threadId, deleted, !deleted);
 		}
 		
 		protected async Task UpdateThread(string board, ulong threadId, bool deleted, bool archived)
 		{
-			ushort boardId = BoardIdMappings[board];
+			ushort boardId = BoardIdMappings[GetTranslatedBoardName(board)];
 
 			await using var dbContext = GetDBContext();
 
@@ -528,9 +558,9 @@ namespace Hayden.Consumers
 		}
 
 		/// <inheritdoc/>
-		public async Task<ICollection<ExistingThreadInfo>> CheckExistingThreads(IEnumerable<ulong> threadIdsToCheck, string board, bool archivedOnly, bool getMetadata = true, bool excludeDeletedPosts = true)
+		public async Task<ICollection<ExistingThreadInfo>> CheckExistingThreads(IEnumerable<ulong> threadIdsToCheck, string board, bool archivedOnly, MetadataMode metadataMode = MetadataMode.FullHashMetadata, bool excludeDeletedPosts = true)
 		{
-			ushort boardId = BoardIdMappings[board];
+			ushort boardId = BoardIdMappings[GetTranslatedBoardName(board)];
 
 			await using var dbContext = GetDBContext();
 
@@ -541,7 +571,7 @@ namespace Hayden.Consumers
 
 			var items = new List<ExistingThreadInfo>();
 
-			if (getMetadata)
+			if (metadataMode == MetadataMode.FullHashMetadata)
 			{
 				var threadInfos = await query.Select(x => new { x.ThreadId, x.LastModified, x.IsArchived }).ToDictionaryAsync(x => x.ThreadId);
 				
@@ -570,6 +600,17 @@ namespace Hayden.Consumers
 					}
 
 					items.Add(new ExistingThreadInfo(threadInfo.ThreadId, threadInfo.IsArchived, new DateTimeOffset(threadInfo.LastModified, TimeSpan.Zero), hashes));
+				}
+			}
+			else if (metadataMode == MetadataMode.ThreadIdAndPostId)
+			{
+				var postIds = await dbContext.Posts.Where(y => y.BoardId == boardId && query.Select(x => x.ThreadId).Contains(y.ThreadId))
+					.Select(x => new { x.ThreadId, x.PostId })
+					.ToArrayAsync();
+				
+				foreach (var group in postIds.GroupBy(x => x.ThreadId, x => x.PostId))
+				{
+					items.Add(new ExistingThreadInfo(group.Key, false, DateTimeOffset.MinValue, group.Select(x => (x, (uint)0)).ToArray()));
 				}
 			}
 			else

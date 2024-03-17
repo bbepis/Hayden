@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
@@ -32,6 +32,15 @@ namespace Hayden.WebServer.Controllers.Api
 			public string captcha { get; set; }
 			public string board { get; set; }
 			public ulong threadId { get; set; }
+		}
+
+		public class ReportForm
+		{
+			public ushort boardId { get; set; }
+			public ulong postId { get; set; }
+			public byte categoryLevel { get; set; }
+			public string additionalInfo { get; set; }
+			// public string captcha { get; set; }
 		}
 
 		[ConfigRequestSizeFilter]
@@ -72,6 +81,11 @@ namespace Hayden.WebServer.Controllers.Api
 
 			if (threadInfo.Item2 == null)
 				return UnprocessableEntity(new { message = "Thread does not exist" });
+
+			var moderator = await HttpContext.GetModeratorAsync();
+
+			if (form.file != null && threadInfo.Item1.MultiImageLimit == 0 && moderator == null)
+				return BadRequest(new { message = "You must not have an attached file; images have been turned off for this board." });
 
 			uint? fileId = null;
 
@@ -140,6 +154,47 @@ namespace Hayden.WebServer.Controllers.Api
 
 			return NoContent();
 		}
+		
+		[HttpPost("makereport")]
+		public async Task<IActionResult> MakeReport(
+			[FromServices] HaydenDbContext dbContext,
+			[FromServices] ICaptchaProvider captchaProvider,
+			[FromForm] ReportForm form)
+		{
+			if (form == null || form.boardId == 0 || form.postId == 0)
+				return BadRequest(new { message = "Request is malformed" });
+			
+			//var banResult = await CheckBanAsync(dbContext);
+			//if (banResult != null)
+			//	return banResult;
+
+			//if (!await captchaProvider.VerifyCaptchaAsync(form.captcha))
+			//	return BadRequest(new { message = "Invalid captcha" });
+
+			var reportCategory = (ReportCategory)form.categoryLevel;
+
+			if (!Enum.IsDefined(reportCategory))
+				return BadRequest(new { message = "Invalid category level" });
+
+			if (!dbContext.Posts.Any(x => x.BoardId == form.boardId && x.PostId == form.postId))
+				return BadRequest(new { message = "Could not find post" });
+
+			dbContext.Add(new DBReport()
+			{
+				BoardId = form.boardId,
+				PostId = form.postId,
+				Category = reportCategory,
+				IPAddress = HttpContext.Connection.RemoteIpAddress?.ToString(),
+				Reason = form.additionalInfo,
+				Resolved = false,
+				TimeReported = DateTime.UtcNow
+			});
+
+			await dbContext.SaveChangesAsync();
+			
+
+			return NoContent();
+		}
 
 		public class NewThreadForm
 		{
@@ -162,13 +217,18 @@ namespace Hayden.WebServer.Controllers.Api
 			if (form == null || form.board == null)
 				return BadRequest(new { message = "Request is malformed" });
 
-			if (form.file == null)
-				return BadRequest(new { message = "You must have an attached file." });
-
 			var board = await dbContext.Boards.FirstOrDefaultAsync(x => x.ShortName == form.board);
 
 			if (board == null)
 				return BadRequest(new { message = "Board does not exist" });
+
+			if (form.file == null && board.MultiImageLimit > 0)
+				return BadRequest(new { message = "You must have an attached file." });
+
+			var moderator = await HttpContext.GetModeratorAsync();
+
+			if (form.file != null && board.MultiImageLimit == 0 && moderator == null)
+				return BadRequest(new { message = "You must not have an attached file; images have been turned off for this board." });
 
 			var banResult = await CheckBanAsync(dbContext);
 			if (banResult != null)
@@ -188,10 +248,16 @@ namespace Hayden.WebServer.Controllers.Api
 				}
 			}
 
-			(var result, var fileId) = await ProcessUploadedFileInternal(dbContext, mediaInspector, form.file, board);
+			uint? fileId = null;
 
-			if (result != null)
-				return result;
+			if (form.file != null)
+			{
+				(var result, fileId) = await ProcessUploadedFileInternal(dbContext, mediaInspector, form.file, board);
+
+				if (result != null)
+					return result;
+			}
+
 
 			await PostSemaphore.WaitAsync();
 
@@ -237,20 +303,23 @@ namespace Hayden.WebServer.Controllers.Api
 
 				await dbContext.SaveChangesAsync();
 
-				var fileMapping = new DBFileMapping
+				if (fileId.HasValue)
 				{
-					BoardId = board.Id,
-					PostId = nextPostId,
-					FileId = fileId,
-					Filename = Path.GetFileNameWithoutExtension(form.file.FileName),
-					Index = 0,
-					IsDeleted = false,
-					IsSpoiler = true
-				};
+					var fileMapping = new DBFileMapping
+					{
+						BoardId = board.Id,
+						PostId = nextPostId,
+						FileId = fileId,
+						Filename = Path.GetFileNameWithoutExtension(form.file.FileName),
+						Index = 0,
+						IsDeleted = false,
+						IsSpoiler = true
+					};
 
-				dbContext.Add(fileMapping);
+					dbContext.Add(fileMapping);
 
-				await dbContext.SaveChangesAsync();
+					await dbContext.SaveChangesAsync();
+				}
 			}
 			finally
 			{

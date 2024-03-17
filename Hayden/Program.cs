@@ -1,6 +1,5 @@
 using System;
 using System.CommandLine;
-using System.Globalization;
 using System.IO;
 using System.IO.Abstractions;
 using System.Linq;
@@ -17,31 +16,20 @@ using Mono.Unix;
 using Mono.Unix.Native;
 using Newtonsoft.Json.Linq;
 using Serilog;
-using Serilog.Expressions;
-using Serilog.Templates.Themes;
-using Serilog.Templates;
 using Serilog.Events;
 using Hayden.ImportExport;
+using System.Collections.Generic;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Converters;
+using Newtonsoft.Json.Serialization;
 
 namespace Hayden;
 
 public class Program
 {
-	private static readonly ExpressionTemplate expressionTemplate = new(
-		"[{ConvertTimezone(@t):dd-MMM HH:mm:ss} {@l:t5}]{FilterSourceContext(SourceContext)} {@m}{#if IsError()}\n{requestInfo}{#end}\n{@x}",
-		new CultureInfo("en-AU"), theme: TemplateTheme.Code,
-		nameResolver: new StaticMemberNameResolver(typeof(LoggingFunctions)));
-
-	public static ILogger CreateLogger(string category)
-		=> Log.Logger.ForContext("SourceContext", category);
-
 	static async Task<int> Main(string[] args)
 	{
-		// basic logger
-		Log.Logger = new LoggerConfiguration()
-			.Enrich.FromLogContext()
-			.WriteTo.Console(expressionTemplate)
-			.CreateLogger();
+		SerilogManager.SetLogger();
 
 		Log.Information("Hayden v0.9.0");
 		Log.Information("By Bepis");
@@ -71,8 +59,66 @@ public class Program
 		dumpCommand.Add(connectionStringArg);
 
 		rootCommand.Add(dumpCommand);
+		
+		var generateConfigCommand = new Command("genconfig", "Dump a database to a standard format");
+		var generatedConfigArgument = new Argument<string>("config file", "The path to the .json config file to generate") { Arity = ArgumentArity.ExactlyOne };
+		generateConfigCommand.Add(generatedConfigArgument);
+
+		generateConfigCommand.SetHandler(GenerateConfig, generatedConfigArgument);
+
+		rootCommand.Add(generateConfigCommand);
 
 		return rootCommand;
+	}
+
+	private static void GenerateConfig(string configFile)
+	{
+		var configObject = new ConfigFile
+		{
+			Hayden = new HaydenConfigOptions
+			{
+				DebugLogging = false,
+				ScraperType = "Archive",
+				ResolveDnsLocally = true
+			},
+			Source = new Config.SourceConfig()
+			{
+				Type = "4chan",
+				ImageboardWebsite = "",
+				DbConnectionString = "",
+				Boards = new Dictionary<string, Config.BoardRulesConfig>
+				{
+					["a"] = new Config.BoardRulesConfig(),
+					["b"] = new Config.BoardRulesConfig(),
+				},
+				ApiDelay = 1,
+				BoardScrapeDelay = 30,
+				SingleScan = false,
+				ReadArchive = true
+			},
+			Consumer = new Config.ConsumerConfig
+			{
+				Type = "Foobar",
+				DatabaseType = Config.DatabaseType.None,
+				ConnectionString = "",
+				DownloadLocation = "",
+				IgnoreSha1Hash = false,
+				IgnoreMd5Hash = false,
+				ThumbnailsEnabled = false,
+				FullImagesEnabled = false,
+				ConsolidationMode = Config.ConsolidationMode.Authoritative
+			}
+		};
+
+		File.WriteAllText(configFile, JsonConvert.SerializeObject(configObject, new JsonSerializerSettings()
+		{
+			Formatting = Formatting.Indented,
+			NullValueHandling = NullValueHandling.Include,
+			Converters = new List<JsonConverter>
+			{
+				new StringEnumConverter(new DefaultNamingStrategy(), false)
+			}
+		}));
 	}
 
 	private static async Task<int> RunScrape(string configPath)
@@ -122,13 +168,7 @@ public class Program
 		serviceCollection.AddSingleton(configFile.Consumer);
 		serviceCollection.AddSingleton(configFile.Hayden);
 
-		var logLevel = configFile.Hayden.DebugLogging ? LogEventLevel.Verbose : LogEventLevel.Information;
-
-		Log.Logger = new LoggerConfiguration()
-			.WriteTo.Console(expressionTemplate)
-			.MinimumLevel.Is(logLevel)
-			.Enrich.FromLogContext()
-			.CreateLogger();
+		SerilogManager.LevelSwitch.MinimumLevel = configFile.Hayden.DebugLogging ? LogEventLevel.Verbose : LogEventLevel.Information;
 
 		switch (configFile.Source.Type)
 		{
@@ -143,6 +183,9 @@ public class Program
 			case "FoolFuuka":     serviceCollection.AddSingletonMulti<IFrontendApi, ISearchableFrontendApi, FoolFuukaApi>(); break;
 			case "Fuuka":         serviceCollection.AddSingleton<IImporter, FuukaImporter>(); break;
 			case "Asagi":         serviceCollection.AddSingleton<IImporter, AsagiImporter>(); break;
+			case "JSArchive":     serviceCollection.AddSingleton<IImporter, JSArchiveImporter>(); break;
+			case "Tar":           serviceCollection.AddSingleton<IForwardOnlyImporter, TarJsonImporter>(); break;
+			case "Json":          serviceCollection.AddSingleton<IForwardOnlyImporter, JsonImporter>(); break;
 			default:              throw new Exception($"Unknown source type: {configFile.Source.Type}");
 		}
 			
@@ -297,16 +340,6 @@ public class Program
 
 internal static class LoggingFunctions
 {
-	public static LogEventPropertyValue ConvertTimezone(
-		LogEventPropertyValue time)
-	{
-		if (time is ScalarValue sv && sv.Value is DateTimeOffset s)
-			return new ScalarValue(TimeZoneInfo.ConvertTimeBySystemTimeZoneId(s, "Australia/Sydney"));
-
-		// Undefined - argument was not a string.
-		return null;
-	}
-
 	public static LogEventPropertyValue FilterSourceContext(
 		LogEventPropertyValue context)
 	{

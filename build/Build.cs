@@ -1,19 +1,10 @@
-using System;
 using System.IO;
-using System.Linq;
-using System.Runtime.CompilerServices;
 using Nuke.Common;
-using Nuke.Common.CI;
-using Nuke.Common.Execution;
 using Nuke.Common.IO;
-using Nuke.Common.ProjectModel;
 using Nuke.Common.Tooling;
 using Nuke.Common.Tools.DotNet;
 using Nuke.Common.Tools.Npm;
-using Nuke.Common.Utilities.Collections;
-using static Nuke.Common.EnvironmentInfo;
 using static Nuke.Common.IO.FileSystemTasks;
-using static Nuke.Common.IO.PathConstruction;
 
 class Build : NukeBuild
 {
@@ -28,8 +19,8 @@ class Build : NukeBuild
 
 	readonly string[] publishRuntimes =
 	{
-		"win-x64",
 		"linux-x64",
+		"win-x64",
 		//"any"
 	};
 

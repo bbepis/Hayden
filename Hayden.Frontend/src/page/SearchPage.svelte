@@ -11,6 +11,7 @@
     import { meta } from 'tinro';
     import { onDestroy } from "svelte";
 	import { searchParamStore } from "../data/stores";
+	import PageSelector from "../component/PageSelector.svelte";
 
     const route = meta();
 
@@ -25,10 +26,35 @@
         //     && Utility.IsNotEmpty(m.query["query"]))
 		// {
         //    query = m.query["query"];
+
 		if (m != null && Object.keys(m).length > 0)
-        	search(m);
+		{
+			search(m);
+		}
         //}
     });
+
+	function getPageNumber(): number {
+		return Number($searchParamStore ? ($searchParamStore["page"] ?? 1) : 1);
+	}
+
+	function navigatePage(pageNumber: number) {
+		if (pageNumber <= 1) {
+			searchParamStore.update(x => {
+				if (!!x)
+					return x;
+
+				delete x["page"];
+				return x;
+			})
+		}
+		else {
+			if (!$searchParamStore)
+				$searchParamStore = { ["page"]: String(pageNumber) }
+			else
+				$searchParamStore["page"] = String(pageNumber);
+		}
+	}
 
     onDestroy(unsubscribe);
 
@@ -51,6 +77,8 @@
 
             <Thread {thread} />
         {/each}
+
+		<PageSelector currentPage={getPageNumber()} maxPage={Math.ceil(data.totalThreadCount / 40)} on:page={event => navigatePage(event.detail.page)} />
     {:catch}
         <p>Error 2</p>
     {/await}

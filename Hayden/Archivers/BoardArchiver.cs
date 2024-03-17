@@ -17,6 +17,7 @@ using Hayden.Contract;
 using Hayden.Models;
 using Hayden.Proxy;
 using Nito.AsyncEx;
+using Polly;
 using Polly.Timeout;
 using Serilog;
 using Thread = Hayden.Models.Thread;
@@ -594,7 +595,7 @@ namespace Hayden
 
 			var threadQueue = new List<ThreadPointer>();
 
-			var archiveRequest = await NetworkPolicies.GenericRetryPolicy<ApiResponse<ulong[]>>(12).ExecuteAsync(async () =>
+			var archiveRequest = await NetworkPolicies.GenericRetryPolicy<ApiResponse<ulong[]>>(99999).ExecuteAsync(async () =>
 			{
 				token.ThrowIfCancellationRequested();
 				await using var boardClient = await ProxyProvider.RentHttpClient();
@@ -605,7 +606,7 @@ namespace Hayden
 			{
 				case ResponseType.Ok:
 
-					var existingArchivedThreads = await ThreadConsumer.CheckExistingThreads(archiveRequest.Data, board, false, true);
+					var existingArchivedThreads = await ThreadConsumer.CheckExistingThreads(archiveRequest.Data, board, false, MetadataMode.FullHashMetadata);
 
 					Log.Information("Found {existingArchivedThreadsCount} existing archived threads for board /{board}/", existingArchivedThreads.Count, board);
 
@@ -676,7 +677,7 @@ namespace Hayden
 			MaybeAsyncEnumerable<ThreadPointer> threads = null;
 			ulong? lastTimestamp = null;
 
-			var pagesRequest = await NetworkPolicies.GenericRetryPolicy<ApiResponse<MaybeAsyncEnumerable<PageThread>>>(12).ExecuteAsync(async (requestToken) =>
+			var pagesRequest = await NetworkPolicies.GenericRetryPolicy<ApiResponse<MaybeAsyncEnumerable<PageThread>>>(99999).ExecuteAsync(async (requestToken) =>
 			{
 				requestToken.ThrowIfCancellationRequested();
 				Log.Information("Requesting threads from board /{board}/...", board);
@@ -730,7 +731,7 @@ namespace Hayden
 								var existingThreads = await ThreadConsumer.CheckExistingThreads(new[] {thread.ThreadNumber}, //threadList.Select(x => x.ThreadNumber)
 									board,
 									false,
-									true);
+									MetadataMode.FullHashMetadata);
 
 								bool skipThread = false;
 
@@ -916,7 +917,7 @@ namespace Hayden
 							var existingThread = await ThreadConsumer.CheckExistingThreads(new[] { threadPointer.ThreadId },
 								threadPointer.Board,
 								false,
-								true);
+								MetadataMode.FullHashMetadata);
 
 							if (existingThread.Count > 0)
 							{
@@ -1018,11 +1019,25 @@ namespace Hayden
 			response.EnsureSuccessStatusCode();
 
 			var tempFilePath = FileSystem.Path.Combine(ConsumerConfig.DownloadLocation, "hayden", Guid.NewGuid().ToString("N") + ".temp");
-			
-			await using (var webStream = await response.Content.ReadAsStreamAsync())
-			await using (var tempFileStream = FileSystem.FileStream.Create(tempFilePath, System.IO.FileMode.CreateNew))
+
+			try
 			{
-				await webStream.CopyToAsync(tempFileStream);
+				await NetworkPolicies.NetworkStreamPolicy<object>(1).ExecuteAsync(async (ctx, token) =>
+				{
+					await using (var webStream = await response.Content.ReadAsStreamAsync())
+					await using (var tempFileStream =
+					             FileSystem.FileStream.New(tempFilePath, System.IO.FileMode.Create))
+					{
+						await webStream.CopyToAsync(tempFileStream);
+					}
+
+					return null;
+				}, new Context(imageUrl.ToString()), CancellationToken.None);
+			}
+			catch
+			{
+				FileSystem.File.Delete(tempFilePath);
+				throw;
 			}
 
 			return tempFilePath;

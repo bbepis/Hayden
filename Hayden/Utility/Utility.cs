@@ -163,6 +163,17 @@ namespace Hayden
 		}
 
 		/// <summary>
+		/// Converts a Unix timestamp into it's respective <see cref="DateTimeOffset"/> value, taking into account the <value>America/New_York</value> timezone.
+		/// </summary>
+		/// <param name="timestamp">The timestamp to convert.</param>
+		public static DateTimeOffset ConvertNewYorkTimestamp(DateTime dateTime)
+		{
+			return LocalDateTime.FromDateTime(dateTime)
+								.InZoneLeniently(EasternTimeZone)
+								.ToDateTimeOffset();
+		}
+
+		/// <summary>
 		/// Converts a Unix timestamp into it's respective <see cref="DateTimeOffset"/> value.
 		/// </summary>
 		/// <param name="timestamp">The timestamp to convert.</param>

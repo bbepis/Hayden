@@ -49,7 +49,7 @@
                                 <ul>
                                     {#await $boardInfoStore}
                                         <div>Loading boards...</div>
-                                    {:then boardInfo} 
+                                    {:then boardInfo}
                                         {@const uniqueCategories = [...new Set(boardInfo.map(x => x.category))]}
 
                                         {#each uniqueCategories as category, categoryIndex}
@@ -73,7 +73,7 @@
                 </table>
             </fieldset>
         </div>
-        
+
         <div class="col-sm-6 p-0 pl-sm-1 d-flex flex-column">
             <fieldset>
                 <legend style="font-weight: bold;">Navigation</legend>
@@ -82,11 +82,12 @@
                         ><tr>
                             <div id="divNavigation" class="navigation title">
                                 <ul>
-                                    <li><a href="news">News</a></li>
-                                    <li><a href="rules">Rules</a></li>
-                                    <li>
+                                    <!-- <li><a href="news">News</a></li> -->
+                                    <!-- <li><a href="rules">Rules</a></li> -->
+                                    <li><a href="info">Info & Contact</a></li>
+                                    <!-- <li>
                                         <a href="mailto:22chan@disroot.org">Contact</a>
-                                    </li>
+                                    </li> -->
                                     <!-- <li><a href="legal">Legal</a></li> -->
                                 </ul>
                             </div>

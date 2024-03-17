@@ -11,7 +11,6 @@ using Hayden.Api;
 using Hayden.Config;
 using Hayden.Consumers.HaydenMysql.DB;
 using Hayden.Models;
-using Newtonsoft.Json.Linq;
 using Thread = Hayden.Models.Thread;
 
 namespace Hayden

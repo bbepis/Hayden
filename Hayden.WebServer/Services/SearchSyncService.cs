@@ -3,32 +3,31 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Hayden.WebServer.Data;
-using Hayden.WebServer.DB.Elasticsearch;
+using Hayden.WebServer.Search;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
-using Nest;
 
 namespace Hayden.WebServer.Services
 {
-	public class ESSyncService : BackgroundService
+	public class SearchSyncService : BackgroundService
 	{
 		private IDataProvider DataProvider { get; }
-		private ElasticClient EsClient { get; }
-		private ServerElasticSearchConfig Config { get; }
+		private ISearchService SearchService { get; }
+		private ServerSearchConfig Config { get; }
 
-		public ESSyncService(IServiceProvider services, IOptions<ServerConfig> config)
+		public SearchSyncService(IServiceProvider services, IOptions<ServerConfig> config)
 		{
 			var scope = services.CreateScope();
 
 			DataProvider = scope.ServiceProvider.GetRequiredService<IDataProvider>();
-			EsClient = scope.ServiceProvider.GetService<ElasticClient>();
-			Config = config.Value.Elasticsearch;
+			SearchService = scope.ServiceProvider.GetService<ISearchService>();
+			Config = config.Value.Search;
 		}
 
 		protected override async Task ExecuteAsync(CancellationToken stoppingToken)
 		{
-			if (EsClient == null || Config == null || !Config.Enabled)
+			if (SearchService == null || Config == null || !Config.Enabled)
 			{
 				Console.WriteLine("Disabling elasticsearch");
 				return;
@@ -38,39 +37,12 @@ namespace Hayden.WebServer.Services
 			{
 				throw new Exception("Elasticsearch.IndexName must be a valid index name");
 			}
-
-			var indexName = Config.IndexName;
-
-			bool alreadyExists = (await EsClient.Indices.ExistsAsync(indexName)).Exists;
 			
-			if (!alreadyExists)
-			{
-				await EsClient.Indices.DeleteAsync(indexName);
+			Console.WriteLine("Creating search index");
 
-				var createResult = await EsClient.Indices.CreateAsync(indexName, i =>
-					i.Settings(s => s.Setting("codec", "best_compression")
-						.SoftDeletes(sd =>
-							sd.Retention(r => r.Operations(0)))
-						.NumberOfShards(1)
-						.NumberOfReplicas(0)
-					));
-				
-#pragma warning disable CS0618 // Type or member is obsolete
-				var mapResult = await EsClient.MapAsync<PostIndex>(c =>
-					c.AutoMap()
-						.SourceField(s => s.Enabled(false))
-						.AllField(a => a.Enabled(false))
-						.Dynamic(false)
-						.Index(indexName));
-#pragma warning restore CS0618 // Type or member is obsolete
-
-				if (!mapResult.IsValid)
-				{
-					Console.WriteLine(mapResult.ServerError?.ToString());
-					Console.WriteLine(mapResult.DebugInformation);
-					return;
-				}
-			}
+			await SearchService.CreateIndex();
+			
+			Console.WriteLine("Indexing post searches");
 
 			while (true)
 			{
@@ -87,14 +59,21 @@ namespace Hayden.WebServer.Services
 
 					foreach (var board in boardList)
 					{
-						var minPostNo = indexPositions.First(x => x.BoardId == board.Id).IndexPosition;
+						ulong minPostNo;
+
+						if (indexPositions.Any(x => x.BoardId == board.Id))
+							minPostNo = indexPositions.First(x => x.BoardId == board.Id).IndexPosition;
+						else
+							minPostNo = 0;
 
 						int i = 0;
 						const int batchSize = 20000;
 
+						Console.WriteLine($"[{board.ShortName}]: Retrieving index entities > {minPostNo}");
+
 						await foreach (var batch in DataProvider.GetIndexEntities(board.ShortName, minPostNo).Batch(batchSize))
 						{
-							await EsClient.IndexManyAsync(batch, indexName, stoppingToken);
+							await SearchService.IndexBatch(batch, stoppingToken);
 
 							i += batch.Count;
 
@@ -107,6 +86,8 @@ namespace Hayden.WebServer.Services
 							if (stoppingToken.IsCancellationRequested)
 								return;
 						}
+
+						await SearchService.Commit();
 					}
 				}
 				catch (Exception ex)

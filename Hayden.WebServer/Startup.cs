@@ -10,13 +10,19 @@ using Hayden.Consumers.HaydenMysql.DB;
 using Hayden.WebServer.Controllers.Api;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.HttpOverrides;
-using Nest;
 using Hayden.MediaInfo;
 using Hayden.WebServer.Data;
+using Hayden.WebServer.Search;
+using Hayden.WebServer.Services;
 using Hayden.WebServer.Services.Captcha;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.FileProviders;
+using System.Net;
+using Hayden.Config;
+using Microsoft.EntityFrameworkCore;
+using Hayden.Consumers.Asagi;
+using Nest;
 
 namespace Hayden.WebServer
 {
@@ -31,43 +37,33 @@ namespace Hayden.WebServer
 		public IConfiguration Configuration { get; }
 		public IWebHostEnvironment Environment { get; }
 
-		private ServerConfig ServerConfig { get; set; }
+		internal static ServerConfig ServerConfig { get; set; }
 
 		// This method gets called by the runtime. Use this method to add services to the container.
 		public void ConfigureServices(IServiceCollection services)
 		{
 			services.AddRazorPages();
+			services.AddOptions();			
 
-			services.AddOptions();
-
-			var section = Configuration.GetSection("config");
-
-			ServerConfig = section.Get<ServerConfig>();
-			services.Configure<ServerConfig>(section);
-
-			switch (ServerConfig.Data.ProviderType)
+			switch (ServerConfig.Data.ProviderType?.ToLower())
 			{
-				case "Hayden": services.AddHaydenDataProvider(ServerConfig); break;
-				case "Asagi": services.AddAsagiDataProvider(ServerConfig); break;
+				case "hayden": services.AddHaydenDataProvider(ServerConfig); break;
+				case "asagi": services.AddAsagiDataProvider(ServerConfig); break;
 				case null: throw new Exception("Data provider type was null");
 				default: throw new Exception($"Unknown data provider type: {ServerConfig.Data.ProviderType}");
 			}
 			
-			if (ServerConfig.Elasticsearch?.Enabled == true)
+			if (ServerConfig.Search?.Enabled == true)
 			{
-				services.AddSingleton<ElasticClient>(x =>
+				switch (ServerConfig.Search.ServerType?.ToLower())
 				{
-					var settings = new ConnectionSettings(new Uri(ServerConfig.Elasticsearch.Endpoint));
-						//.DefaultMappingFor<PostIndex>(map => map.IndexName(PostIndex.IndexName))
+					case "elasticsearch": services.AddElasticSearch(ServerConfig.Search); break;
+					case "lnx": services.AddLnxSearch(); break;
+					case null: throw new Exception("Search server type was null");
+					default: throw new Exception($"Unknown search server type: {ServerConfig.Data.ProviderType}");
+				}
 
-					if (ServerConfig.Elasticsearch.Username != null)
-						settings.BasicAuthentication(ServerConfig.Elasticsearch.Username, ServerConfig.Elasticsearch.Password);
-
-					if (ServerConfig.Elasticsearch.Debug)
-						settings.EnableDebugMode();
-
-					return new ElasticClient(settings);
-				});
+				services.AddHostedService<SearchSyncService>();
 			}
 
 			services.AddAuthentication()
@@ -111,7 +107,7 @@ namespace Hayden.WebServer
 			{
 				app.UseExceptionHandler("/Error");
 
-				if (ServerConfig.EnableHTTPS)
+				if (ServerConfig.RedirectToHTTPS)
 				{
 					// The default HSTS value is 30 days. You may want to change this for production scenarios, see https://aka.ms/aspnetcore-hsts.
 					app.UseHsts();
@@ -123,7 +119,7 @@ namespace Hayden.WebServer
 				ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
 			});
 
-			if (!env.IsDevelopment() && ServerConfig.EnableHTTPS)
+			if (!env.IsDevelopment() && ServerConfig.RedirectToHTTPS)
 			{
 				app.UseHttpsRedirection();
 			}
@@ -138,11 +134,22 @@ namespace Hayden.WebServer
 
 			app.UseStaticFiles();
 
+			app.Use(async (context, next) =>
+			{
+				if (context.Request.Headers.TryGetValue("CF-Connecting-IP", out var cfIps))
+				{
+					context.Connection.RemoteIpAddress = IPAddress.Parse(cfIps[0]);
+				}
+
+				await next();
+			});
+
 			if (env.IsDevelopment())
 			{
 				app.Use(async (context, next) =>
 				{
-					context.Response.Headers.Add("Access-Control-Allow-Origin", "*");
+					context.Response.Headers.Add("Access-Control-Allow-Origin", "http://localhost:5523");
+					context.Response.Headers.Add("Access-Control-Allow-Credentials", "true");
 
 					await next();
 				});
@@ -178,6 +185,93 @@ namespace Hayden.WebServer
 			//		routes.MapRoute("default", "{controller=Archive}/{action=Index}");
 			//	}
 			//});
+		}
+	}
+
+	public static class ServiceExtensions
+	{
+		public static IServiceCollection AddHaydenDataProvider(this IServiceCollection services, ServerConfig serverConfig)
+		{
+			services.AddScoped<IDataProvider, HaydenDataProvider>();
+
+			if (serverConfig.Data.DBType == DatabaseType.MySql)
+			{
+				services.AddDbContext<HaydenDbContext>(x =>
+					x.UseMySql(serverConfig.Data.DBConnectionString, ServerVersion.AutoDetect(serverConfig.Data.DBConnectionString),
+						y =>
+						{
+							y.CommandTimeout(86400);
+							y.EnableIndexOptimizedBooleanColumns();
+						}));
+			}
+			else if (serverConfig.Data.DBType == DatabaseType.Sqlite)
+			{
+				services.AddDbContext<HaydenDbContext>(x =>
+					x.UseSqlite(serverConfig.Data.DBConnectionString));
+			}
+			else
+			{
+				throw new Exception("Unknown database type");
+			}
+
+			return services;
+		}
+
+		public static IServiceCollection AddAsagiDataProvider(this IServiceCollection services, ServerConfig serverConfig)
+		{
+			services.AddScoped<IDataProvider, AsagiDataProvider>();
+			services.AddSingleton(new AsagiDbContext.AsagiDbContextOptions { ConnectionString = serverConfig.Data.DBConnectionString });
+
+			if (serverConfig.Data.DBType == DatabaseType.MySql)
+			{
+				services.AddDbContext<AsagiDbContext>(x =>
+					x.UseMySql(serverConfig.Data.DBConnectionString, ServerVersion.AutoDetect(serverConfig.Data.DBConnectionString),
+						y =>
+						{
+							y.CommandTimeout(86400);
+							y.EnableIndexOptimizedBooleanColumns();
+						}));
+			}
+			else
+			{
+				throw new Exception("Unsupported database type");
+			}
+
+			if (!string.IsNullOrWhiteSpace(serverConfig.Data.AuxiliaryDbLocation))
+			{
+				services.AddDbContext<AuxiliaryDbContext>(x => x
+					.UseSqlite("Data Source=" + serverConfig.Data.AuxiliaryDbLocation));
+			}
+
+			return services;
+		}
+
+		public static IServiceCollection AddElasticSearch(this IServiceCollection services, ServerSearchConfig serverConfig)
+		{
+			services.AddSingleton<ElasticClient>(x =>
+			{
+				var settings = new ConnectionSettings(new Uri(serverConfig.Endpoint));
+				//.DefaultMappingFor<PostIndex>(map => map.IndexName(PostIndex.IndexName))
+
+				if (serverConfig.Username != null)
+					settings.BasicAuthentication(serverConfig.Username, serverConfig.Password);
+
+				if (serverConfig.Debug)
+					settings.EnableDebugMode();
+
+				return new ElasticClient(settings);
+			});
+
+			services.AddSingleton<ISearchService, ElasticSearch>();
+
+			return services;
+		}
+
+		public static IServiceCollection AddLnxSearch(this IServiceCollection services)
+		{
+			services.AddSingleton<ISearchService, LnxSearch>();
+
+			return services;
 		}
 	}
 }

@@ -30,22 +30,33 @@ public class Post
 
 	public class PostAdditionalMetadata
 	{
+		[JsonProperty("capcode")]
 		public string Capcode { get; set; }
 
+		[JsonProperty("posterID")]
 		public string PosterID { get; set; }
 
+		[JsonProperty("countryCode")]
 		public string CountryCode { get; set; }
+		[JsonProperty("countryName")]
 		public string CountryName { get; set; }
 
+		[JsonProperty("boardFlagCode")]
 		public string BoardFlagCode { get; set; }
+		[JsonProperty("boardFlagName")]
 		public string BoardFlagName { get; set; }
-		
+
+		[JsonProperty("exif")]
 		public string Exif { get; set; }
+		[JsonProperty("asagi_exif")]
 		public string AsagiExif { get; set; }
 
+		[JsonProperty("ponychan_mature")]
 		public bool? PonychanMature { get; set; }
+		[JsonProperty("ponychan_anonymous")]
 		public bool? PonychanAnonymous { get; set; }
 
+		[JsonProperty("infinitynext_globalid")]
 		public ulong? InfinityNextGlobalId { get; set; }
 
 		public string Serialize()

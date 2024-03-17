@@ -27,11 +27,12 @@ namespace Hayden.Consumers.HaydenMysql.DB
 		public virtual DbSet<DBFileMapping> FileMappings { get; set; }
 		public virtual DbSet<DBFile> Files { get; set; }
 
-		private ILogger Logger { get; } = Program.CreateLogger("HaydenDB");
+		private ILogger Logger { get; } = SerilogManager.CreateSubLogger("HaydenDB");
 
 		// live imageboard only
 		public virtual DbSet<DBBannedPoster> BannedPosters { get; set; }
 		public virtual DbSet<DBModerator> Moderators { get; set; }
+		public virtual DbSet<DBReport> Reports { get; set; }
 
 		private HaydenDbContext() { }
 		public HaydenDbContext(DbContextOptions options) : base(options) { }
@@ -48,7 +49,6 @@ namespace Hayden.Consumers.HaydenMysql.DB
 
 				if (fixedLengthAttribute != null)
 				{
-					
 					property.SetIsFixedLength(true);
 					property.SetMaxLength(fixedLengthAttribute.Length);
 				}
@@ -163,6 +163,11 @@ namespace Hayden.Consumers.HaydenMysql.DB
 				}
 			});
 
+			modelBuilder.Entity<DBReport>(x =>
+			{
+				x.Property(x => x.Category).HasConversion<byte>();
+			});
+
 			modelBuilder.HasCharSet(CharSet.Utf8Mb4.Name, DelegationModes.ApplyToColumns);
 		}
 
@@ -200,6 +205,21 @@ namespace Hayden.Consumers.HaydenMysql.DB
 			}
 
 			Logger.Information("Database upgrade complete.");
+		}
+
+		public async Task<(DBPost, (DBFileMapping, DBFile)[])> GetPostInfo(ulong postId, ushort boardId)
+		{
+			var post = await Posts.AsNoTracking().FirstOrDefaultAsync(x => x.BoardId == boardId && x.PostId == postId);
+
+			if (post == null)
+				return (null, null);
+
+			var fileMappings = await (from mapping in FileMappings
+				from file in Files.Where(f => f.BoardId == mapping.BoardId && f.Id == mapping.FileId).DefaultIfEmpty()
+				where mapping.BoardId == boardId && mapping.PostId == postId
+				select new { mapping, file }).ToArrayAsync();
+
+			return (post, fileMappings.Select(x => (x.mapping, x.file)).ToArray());
 		}
 
 		public async Task<(DBBoard, DBThread, DBPost[], (DBFileMapping, DBFile)[])> GetThreadInfo(ulong threadId, DBBoard boardObj, bool skipPostInfo = false)

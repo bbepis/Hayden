@@ -1,8 +1,9 @@
 <script lang="ts">
 	import { onMount } from "svelte";
 	import type { ThreadModel, PostModel } from "../data/data";
-    import BanUserModal from "./admin/BanUserModal.svelte";
-    import DeletePostModal from "./admin/DeletePostModal.svelte";
+	import BanUserModal from "./modal/BanUserModal.svelte";
+	import DeletePostModal from "./modal/DeletePostModal.svelte";
+	import ReportModal from "./modal/ReportModal.svelte";
 	import Post from "./Post.svelte";
 
 	export let thread: ThreadModel;
@@ -10,23 +11,29 @@
 
 	let banUserModal: BanUserModal;
 	let deletePostModal: DeletePostModal;
+	let reportModal: ReportModal;
 
 	function postAction(
-		e: CustomEvent<{ action: string; boardId: number; postId: number }>
+		e: CustomEvent<{ action: string; boardId: number; postId: number }>,
 	) {
 		if (e.detail.action === "ban-ip") {
 			banUserModal.showModal(e.detail.boardId, e.detail.postId);
-		}
-		else if (e.detail.action === "delete-post") {
+		} else if (e.detail.action === "delete-post") {
 			deletePostModal.showModal(e.detail.boardId, e.detail.postId);
+		} else if (e.detail.action === "report") {
+			reportModal.showModal(e.detail.boardId, e.detail.postId);
 		}
 	}
 
 	function calculateBackquotes(post: PostModel): number[] {
 		return thread.posts
 			.filter((x) => {
-				return (x.contentHtml && x.contentHtml.indexOf(`&gt;&gt;${post.postId}`) >= 0)
-					|| (x.contentRaw && x.contentRaw.indexOf(`>>${post.postId}`) >= 0);
+				return (
+					(x.contentHtml &&
+						x.contentHtml.indexOf(`&gt;&gt;${post.postId}`) >= 0) ||
+					(x.contentRaw &&
+						x.contentRaw.indexOf(`>>${post.postId}`) >= 0)
+				);
 			})
 			.map((x) => x.postId);
 	}
@@ -55,6 +62,7 @@
 
 <BanUserModal bind:this={banUserModal} />
 <DeletePostModal bind:this={deletePostModal} />
+<ReportModal bind:this={reportModal} />
 
 <style>
 	.reply-margin {

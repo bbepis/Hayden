@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -30,13 +30,11 @@ namespace Hayden.Consumers
 
 			public WrittenThread() {}
 
-			public WrittenThread(Thread thread, bool threadDeleted)
+			public WrittenThread(Thread thread)
 			{
 				Thread = thread;
-				ThreadDeleted = false;
 				DeletedPostIds = new List<ulong>();
 			}
-
 		}
 
 		protected void WriteJson(string filename, WrittenThread thread)
@@ -61,6 +59,11 @@ namespace Hayden.Consumers
 		/// Does nothing.
 		/// </summary>
 		public virtual Task InitializeAsync() => Task.CompletedTask;
+
+		public async Task CommitAsync()
+		{
+
+		}
 
 		public Task<IList<QueuedImageDownload>> ConsumeThread(ThreadUpdateInfo threadUpdateInfo)
 		{
@@ -182,7 +185,7 @@ namespace Hayden.Consumers
 			{
 				// thread either doesn't exist, or is corrupt. treat it as a never seen before thread by writing it as-is
 
-				WriteJson(threadFileName, new WrittenThread(threadUpdateInfo.Thread, false));
+				WriteJson(threadFileName, new WrittenThread(threadUpdateInfo.Thread));
 				return;
 			}
 
@@ -196,8 +199,16 @@ namespace Hayden.Consumers
 
 			foreach (var deletedPostId in threadUpdateInfo.DeletedPosts)
 			{
-				if (!writtenThread.DeletedPostIds.Contains(deletedPostId))
+				var foundPost = writtenThread.Thread.Posts.FirstOrDefault(x => x.PostNumber == deletedPostId);
+
+				if (foundPost != null)
+				{
+					foundPost.IsDeleted = true;
+				}
+				else if (!writtenThread.DeletedPostIds.Contains(deletedPostId))
+				{
 					writtenThread.DeletedPostIds.Add(deletedPostId);
+				}
 			}
 
 			// add any new posts
@@ -258,7 +269,7 @@ namespace Hayden.Consumers
 			return Task.CompletedTask;
 		}
 
-		public Task<ICollection<ExistingThreadInfo>> CheckExistingThreads(IEnumerable<ulong> threadIdsToCheck, string board, bool archivedOnly, bool getMetadata = true, bool excludeDeletedPosts = true)
+		public Task<ICollection<ExistingThreadInfo>> CheckExistingThreads(IEnumerable<ulong> threadIdsToCheck, string board, bool archivedOnly, MetadataMode metadataMode = MetadataMode.FullHashMetadata, bool excludeDeletedPosts = true)
 		{
 			var boardDirectory = Path.Combine(ArchiveDirectory, board);
 
@@ -275,7 +286,7 @@ namespace Hayden.Consumers
 				if (!existingDirectories.TryGetValue(threadId, out var threadDir))
 					continue;
 
-				if (!getMetadata && !archivedOnly)
+				if (metadataMode == MetadataMode.ThreadIdOnly && !archivedOnly)
 				{
 					existingThreads.Add(new ExistingThreadInfo(threadId));
 					continue;
@@ -297,7 +308,7 @@ namespace Hayden.Consumers
 				if (archivedOnly && writtenThread.Thread.IsArchived != true)
 					continue;
 
-				if (!getMetadata)
+				if (metadataMode == MetadataMode.ThreadIdOnly)
 				{
 					existingThreads.Add(new ExistingThreadInfo(threadId));
 					continue;

@@ -1,9 +1,10 @@
 <script lang="ts">
     import { clickOutside } from "./clickOutside";
-	import {router} from 'tinro';
+	import { router } from 'tinro';
     import type { BoardModel } from "../data/data";
 	import { Utility } from "../data/utility";
 	import { searchParamStore } from "../data/stores";
+	import CryptoES from "crypto-es";
 
     export let boardInfo: BoardModel[] | null = null;
 
@@ -15,6 +16,8 @@
 	let nameText = "";
 	let tripText = "";
 	let posterIdText = "";
+	let filenameText = "";
+	let fileMd5Hash = "";
 	let dateStartText = "";
 	let dateEndText = "";
 	let postType = "";
@@ -48,6 +51,12 @@
 		if (Utility.IsNotEmpty(posterIdText))
 			params["posterId"] = posterIdText;
 
+		if (Utility.IsNotEmpty(fileMd5Hash))
+			params["md5hash"] = fileMd5Hash;
+
+		if (Utility.IsNotEmpty(filenameText))
+			params["filename"] = filenameText;
+
 		if (Utility.IsNotEmpty(dateStartText))
 			params["dateStart"] = dateStartText;
 
@@ -69,6 +78,25 @@
 
 	function GoToPostNumber() {
 		//router.goto(`/search?query=${encodeURI(searchBoxText)}`);
+	}
+
+	function HashedFileSelection(e: Event) {
+		const fileList = (<HTMLInputElement>e.target).files;
+
+		if (fileList.length == 0) {
+			fileMd5Hash = null;
+			return;
+		}
+
+		const reader = new FileReader();
+
+		reader.onload = function(event) {
+			const data = <ArrayBuffer>event.target.result;
+
+			fileMd5Hash = CryptoES.MD5(CryptoES.lib.WordArray.create(data)).toString();
+		};
+
+		reader.readAsArrayBuffer(fileList[0]);
 	}
 </script>
 
@@ -132,6 +160,21 @@
 			<div class="d-flex mt-2">
 				<div class="d-flex" style="width: 50%">
 					<span class="px-2 text-right align-middle d-flex" style="width: 80px; background-color: var(--box-header-background-color); justify-content: end; align-items: center;">
+						Filename
+					</span>
+					<input disabled class="flex-grow-1" type="text" bind:value={filenameText}/>
+				</div>
+				<div class="d-flex" style="width: 50%">
+					<span class="px-2 text-right align-middle d-flex" style="width: 170px; background-color: var(--box-header-background-color); justify-content: end; align-items: center;">
+						File MD5
+					</span>
+					<input disabled class="flex-grow-1" type="file" on:change={HashedFileSelection} />
+				</div>
+			</div>
+
+			<div class="d-flex mt-2">
+				<div class="d-flex" style="width: 50%">
+					<span class="px-2 text-right align-middle d-flex" style="width: 80px; background-color: var(--box-header-background-color); justify-content: end; align-items: center;">
 						Date start
 					</span>
 					<input class="flex-grow-1" type="date" bind:value={dateStartText}/>
@@ -160,8 +203,7 @@
 						Order
 					</span>
 					<select class="flex-grow-1" bind:value={orderType}>
-						<option value="" selected>Any</option>
-						<option value="desc">Most recent</option>
+						<option value="">Most recent</option>
 						<option value="asc">Least recent</option>
 					</select>
 				</div>
@@ -188,11 +230,12 @@
 	}
 
 	.main-searchbox {
-		width: 350px;
+		width: 100%;
 	}
 
 	.search-container {
 		margin: -3px 0;
+		min-width: 350px;
 	}
 
 	.expanded.search-container {

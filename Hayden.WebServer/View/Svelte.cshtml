@@ -1,4 +1,4 @@
-﻿@using Hayden.WebServer
+@using Hayden.WebServer
 @using Hayden.WebServer.Services.Captcha
 @using Microsoft.Extensions.Options
 @using Newtonsoft.Json
@@ -7,8 +7,8 @@
 
 @addTagHelper *, Microsoft.AspNetCore.Mvc.TagHelpers
 
-<!DOCTYPE html>
 <cache expires-after="TimeSpan.FromMinutes(1)">
+<!DOCTYPE html>
 <html lang="en" class="theme-tomorrow">
 <head>
     <meta charset='utf-8'>
@@ -34,11 +34,9 @@
             hCaptchaSiteKey: @Html.Raw(JsonConvert.SerializeObject(Config.Value.Captcha.HCaptchaTesting ? HCaptchaProvider.DummySiteKey : Config.Value.Captcha.HCaptchaSiteKey)),
             maxGlobalUploadSize: @(Config.Value.Settings.MaxFileUploadSizeMB == null ? "null" : (Config.Value.Settings.MaxFileUploadSizeMB * 1024 * 1024)),
             siteName: "@(Config.Value.Settings.SiteName ?? "Hayden")",
-            quoteList: @Html.Raw(JsonConvert.SerializeObject(Config.Value.Settings.QuoteList)),
-            bannerFilename: @Html.Raw(JsonConvert.SerializeObject(Config.Value.Settings.BannerFilename)),
-            newsItems: @Html.Raw(JsonConvert.SerializeObject(Config.Value.Settings.NewsItems)),
             shiftJisArt: @Html.Raw(JsonConvert.SerializeObject(Config.Value.Settings.ShiftJisArt)),
-            searchEnabled: @(Config.Value.Settings.SearchEnabled.ToString().ToLower()),
+            searchEnabled: @(Config.Value.Search.Enabled.ToString().ToLower()),
+            compactBoardMode: @(Config.Value.Settings.CompactBoardsUi.ToString().ToLower()),
         }
     </script>
 </head>

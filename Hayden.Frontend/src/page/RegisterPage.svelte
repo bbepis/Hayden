@@ -1,53 +1,67 @@
 <script lang="ts">
-    import { moderatorUserStore } from "../data/stores"
-    import { Api } from "../data/api";
+	import { moderatorUserStore } from "../data/stores";
+	import { Api } from "../data/api";
 
+	let formUsername: string = null;
+	let formPassword: string = null;
+	let formRegisterCode: string = null;
+	let error: string | null = null;
 
-    let formUsername: string = null;
-    let formPassword: string = null;
-    let formRegisterCode: string = null;
-    let error: string | null = null;
+	async function register() {
+		if (
+			formUsername == null ||
+			formPassword == null ||
+			formRegisterCode == null
+		)
+			return;
 
-    async function register() {
-        if (formUsername == null || formPassword == null || formRegisterCode == null)
-            return;
+		const result = await Api.UserRegisterAsync(
+			formUsername,
+			formPassword,
+			formRegisterCode,
+		);
 
-        const result = await Api.UserRegisterAsync(formUsername, formPassword, formRegisterCode);
+		if (result.success) {
+			error = null;
 
-        if (result) {
-            error = null;
+			const userInfoResult = await Api.GetUserInfoAsync();
+			$moderatorUserStore = userInfoResult.role;
 
-            const userInfoResult = await Api.GetUserInfoAsync();
-            $moderatorUserStore = userInfoResult.role;
-
-            document.location.href = "/";
-        }
-        else {
-            $moderatorUserStore = null;
-            error = "Invalid login";
-        }
-    }
+			document.location.href = "/";
+		} else {
+			$moderatorUserStore = null;
+			error = result.error;
+		}
+	}
 </script>
 
-
 {#if error}
-    <p>{error}</p>
+	<p style="color: red">{error}</p>
 {/if}
 
 <div id="reply-box" class="rounded border mb-5 container">
-    <div class="row input-row">
-        <div class="col-3">Username</div>
-        <div class="col-9"><input class="w-100" type="text" bind:value={formUsername} /></div>
-    </div>
-    <div class="row input-row">
-        <div class="col-3">Password</div>
-        <div class="col-9"><input class="w-100" type="password" bind:value={formPassword} /></div>
-    </div>
-    <div class="row input-row">
-        <div class="col-3">Register code</div>
-        <div class="col-9"><input class="w-100" type="text" bind:value={formRegisterCode} /></div>
-    </div>
-    <div class="row input-row">
-        <button on:click={register} class="mx-3 form-control btn btn-outline-secondary">Register</button>
-    </div>
+	<div class="row input-row">
+		<div class="col-3">Username</div>
+		<div class="col-9">
+			<input class="w-100" type="text" bind:value={formUsername} />
+		</div>
+	</div>
+	<div class="row input-row">
+		<div class="col-3">Password</div>
+		<div class="col-9">
+			<input class="w-100" type="password" bind:value={formPassword} />
+		</div>
+	</div>
+	<div class="row input-row">
+		<div class="col-3">Register code</div>
+		<div class="col-9">
+			<input class="w-100" type="text" bind:value={formRegisterCode} />
+		</div>
+	</div>
+	<div class="row input-row">
+		<button
+			on:click={register}
+			class="mx-3 form-control btn btn-outline-secondary">Register</button
+		>
+	</div>
 </div>

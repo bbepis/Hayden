@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using Hayden.Contract;
 
 namespace Hayden.Config
@@ -70,5 +70,10 @@ namespace Hayden.Config
 		/// The regex blacklist for either the thread subject or OP post content.
 		/// </summary>
 		public string AnyBlacklist { get; set; }
+
+		/// <summary>
+		/// The board name to use when saving to the storage medium
+		/// </summary>
+		public string StoredBoardName { get; set; }
 	}
 }

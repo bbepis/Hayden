@@ -35,7 +35,7 @@ namespace Hayden
 		/// <inheritdoc />
 		protected override Task<ApiResponse<VichanThread>> GetThreadInternal(string board, ulong threadNumber, HttpClient client, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default)
 		{
-			return MakeJsonApiCall<VichanThread>(new Uri($"{ImageboardWebsite}{board}/res/{threadNumber}.json"), client, modifiedSince, cancellationToken);
+			return MakeJsonApiCall<VichanThread>(new Uri($"{ImageboardWebsite}{board}/thread/{threadNumber}.json"), client, modifiedSince, cancellationToken);
 		}
 
 		protected override Thread ConvertThread(VichanThread thread, string board)
@@ -206,8 +206,8 @@ namespace Hayden
 						Filename = file.OriginalFilename,
 						FileExtension = file.FileExtension,
 						ThumbnailExtension = "jpg",
-						Index = (byte)(i + 1),
-						FileSize = file.FileSize.Value,
+						Index = (byte)i,
+						FileSize = file.FileSize,
 						IsDeleted = false, // Vichan API does not expose this
 						IsSpoiler = null, // Vichan API does not expose this
 						Md5Hash = Convert.FromBase64String(file.FileMd5),
