@@ -15,13 +15,11 @@ namespace Hayden.ImportExport;
 public class AsagiImporter : IImporter
 {
 	private SourceConfig sourceConfig;
-	private ConsumerConfig consumerConfig;
 	private DbContextOptions<AsagiDbContext> dbContextOptions;
 
-	public AsagiImporter(SourceConfig sourceConfig, ConsumerConfig consumerConfig)
+	public AsagiImporter(SourceConfig sourceConfig)
 	{
 		this.sourceConfig = sourceConfig;
-		this.consumerConfig = consumerConfig;
 
 		dbContextOptions = new DbContextOptionsBuilder<AsagiDbContext>()
 			.UseMySql(sourceConfig.DbConnectionString,

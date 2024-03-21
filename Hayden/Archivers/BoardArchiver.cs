@@ -27,7 +27,7 @@ namespace Hayden
 	/// <summary>
 	/// Handles the core archival logic, independent of any API or consumer implementations.
 	/// </summary>
-	public class BoardArchiver
+	public class BoardArchiver : IArchiver
 	{
 		public SourceConfig SourceConfig { get; }
 		public ConsumerConfig ConsumerConfig { get; }
@@ -44,6 +44,7 @@ namespace Hayden
 		protected Dictionary<string, BoardRules> BoardRules { get; } = new();
 
 		protected virtual bool LoopArchive { get; }
+		protected virtual bool ForceSingleRun { get; } = false;
 
 		protected virtual bool NeedsToDelayThreadApiCall => true;
 
@@ -129,7 +130,7 @@ namespace Hayden
 
 				firstRun = false;
 
-				if (!LoopArchive && queuedThreads.Count == 0 && queuedImages.Count == 0)
+				if (ForceSingleRun || (!LoopArchive && queuedThreads.Count == 0 && queuedImages.Count == 0))
 					break;
 			}
 		}
@@ -372,19 +373,6 @@ namespace Hayden
 
 						int newCompletedCount = Interlocked.Increment(ref threadCompletedCount);
 
-						string threadStatus;
-
-						switch (result.Status)
-						{
-							case ThreadUpdateStatus.Ok:				threadStatus = " "; break;
-							case ThreadUpdateStatus.Archived:		threadStatus = "A"; break;
-							case ThreadUpdateStatus.Deleted:		threadStatus = "D"; break;
-							case ThreadUpdateStatus.NotModified:	threadStatus = "N"; break;
-							case ThreadUpdateStatus.DoNotArchive:	threadStatus = "S"; break;
-							case ThreadUpdateStatus.Error:			threadStatus = "E"; break;
-							default:								threadStatus = "?"; break;
-						}
-
 						if (!result.Success)
 						{
 							lock (requeuedThreads)
@@ -406,7 +394,7 @@ namespace Hayden
 							HandleThreadRemoval(nextThread); // we're never going to look at the thread again, purge it from memory
 
 						// Log the status of the scraped thread
-						Log.Information($"{"[Thread]",-9} {$"/{nextThread.Board}/{nextThread.ThreadId}",-17} {threadStatus} {$"+({result.ImageDownloads.Count}/{result.PostCountChange})",-13} [{enqueuedImages.Count}/{newCompletedCount}/{threadQueue.Count?.ToString() ?? "?"}]");
+						ReportProgress(nextThread, result, enqueuedImages.Count, newCompletedCount, threadQueue.Count);
 					});
 
 					return true;
@@ -471,7 +459,8 @@ namespace Hayden
 
 			Log.Information("");
 			Log.Information($"Completed {threadCompletedCount} / {threadQueue.Count ?? threadCompletedCount} threads");
-			Log.Information($"Waiting for next board update interval ({secondsRemaining:0.0}s)");
+			if (secondsRemaining > 0)
+				Log.Information($"Waiting for next board update interval ({secondsRemaining:0.0}s)");
 			Log.Information("");
 
 			// Add any images that were previously requeued from failure
@@ -494,7 +483,26 @@ namespace Hayden
 
 			return (requeuedThreads, enqueuedImages.ToList());
 		}
-		
+
+		protected virtual void ReportProgress(ThreadPointer completedThread,
+			ThreadUpdateTaskResult result, int enqueuedImageCount, int newCompletedCount, int? totalThreadCount)
+		{
+			string threadStatus;
+
+			switch (result.Status)
+			{
+				case ThreadUpdateStatus.Ok:				threadStatus = " "; break;
+				case ThreadUpdateStatus.Archived:		threadStatus = "A"; break;
+				case ThreadUpdateStatus.Deleted:		threadStatus = "D"; break;
+				case ThreadUpdateStatus.NotModified:	threadStatus = "N"; break;
+				case ThreadUpdateStatus.DoNotArchive:	threadStatus = "S"; break;
+				case ThreadUpdateStatus.Error:			threadStatus = "E"; break;
+				default:								threadStatus = "?"; break;
+			}
+
+			Log.Information($"{"[Thread]",-9} {$"/{completedThread.Board}/{completedThread.ThreadId}",-17} {threadStatus} {$"+({result.ImageDownloads.Count}/{result.PostCountChange})",-13} [{enqueuedImageCount}/{newCompletedCount}/{totalThreadCount?.ToString() ?? "?"}]");
+		}
+
 		#region Network
 
 		/// <summary>

@@ -19,7 +19,7 @@ namespace Hayden
 	/// <summary>
 	/// Handles the core archival logic, independent of any API or consumer implementations.
 	/// </summary>
-	public class SearchArchiver
+	public class SearchArchiver : IArchiver
 	{
 		public SourceConfig SourceConfig { get; }
 		public ConsumerConfig ConsumerConfig { get; }

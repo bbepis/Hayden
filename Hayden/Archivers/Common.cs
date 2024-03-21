@@ -3,12 +3,18 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading;
+using System.Threading.Tasks;
 using Hayden.Config;
 using Newtonsoft.Json.Linq;
 using Serilog;
 
 namespace Hayden
 {
+	public interface IArchiver
+	{
+		Task Execute(CancellationToken token);
+	}
+
 	public class QueuedImageDownload
 	{
 		public Uri FullImageUri { get; set; }
@@ -108,7 +114,7 @@ namespace Hayden
 
 		public ThreadPointer(string board, ulong threadId)
 		{
-			Board = board;
+			Board = string.Intern(board);
 			ThreadId = threadId;
 		}
 

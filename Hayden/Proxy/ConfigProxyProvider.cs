@@ -24,7 +24,7 @@ namespace Hayden.Proxy
 		private int _proxyCount = 0;
 		public override int ProxyCount => _proxyCount;
 
-		public override async Task InitializeAsync()
+		public override async Task InitializeAsync(bool needsToTest)
 		{
 			List<HttpClientProxy> proxies = new List<HttpClientProxy>();
 
@@ -58,6 +58,15 @@ namespace Hayden.Proxy
 
 			// add a direct connection client too
 			proxies.Add(new HttpClientProxy(CreateNewClient((IWebProxy)null), "baseconnection/none"));
+
+			if (!needsToTest)
+			{
+				foreach (var proxy in proxies)
+					ProxyClients.Add(proxy);
+
+				_proxyCount = proxies.Count;
+				return;
+			}
 
 			var testTasks = proxies.Select(proxy => Task.Run(async () =>
 			{

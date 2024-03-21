@@ -17,13 +17,11 @@ namespace Hayden.ImportExport;
 public class JSArchiveImporter : IImporter
 {
 	private SourceConfig sourceConfig;
-	private ConsumerConfig consumerConfig;
 	private DbContextOptions<JSArchiveDbContext> dbContextOptions;
 
-	public JSArchiveImporter(SourceConfig sourceConfig, ConsumerConfig consumerConfig)
+	public JSArchiveImporter(SourceConfig sourceConfig)
 	{
 		this.sourceConfig = sourceConfig;
-		this.consumerConfig = consumerConfig;
 
 		dbContextOptions = new DbContextOptionsBuilder<JSArchiveDbContext>()
 			.UseMySql(sourceConfig.DbConnectionString,

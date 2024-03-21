@@ -64,6 +64,15 @@ public class JsonImporter : IForwardOnlyImporter
 			if (!boardHashset.Contains(thread.Board))
 				continue;
 
+			foreach (var post in thread.Posts)
+			{
+				foreach (var file in post.Media)
+				{
+					if (string.IsNullOrWhiteSpace(file.Filename))
+						file.Filename = "[blank]";
+				}
+			}
+
 			var threadPointer = new ThreadPointer(string.Intern(thread.Board), thread.ThreadId);
 
 			yield return (threadPointer, thread);

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Net;
 using System.Net.Http;
 using System.Threading.Tasks;
@@ -43,7 +43,7 @@ namespace Hayden.Proxy
 			ConfigureClientHandlerAction = configureClientHandlerHandlerAction;
 		}
 
-		public abstract Task InitializeAsync();
+		public abstract Task InitializeAsync(bool needsToTest);
 
 		/// <summary>
 		/// Rents a <see cref="HttpClientProxy"/> object, encapsulated in a <see cref="PoolObject{HttpClientProxy}"/> object.

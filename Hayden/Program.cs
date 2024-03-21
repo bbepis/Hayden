@@ -31,9 +31,6 @@ public class Program
 	{
 		SerilogManager.SetLogger();
 
-		Log.Information("Hayden v0.9.0");
-		Log.Information("By Bepis");
-
 		// restrict threadpool size to prevent excessive amounts of unmanaged memory usage
 		ThreadPool.SetMinThreads(Environment.ProcessorCount, Environment.ProcessorCount);
 		ThreadPool.SetMaxThreads(Environment.ProcessorCount * 2, Environment.ProcessorCount * 4);
@@ -50,13 +47,18 @@ public class Program
 		var scrapeCommand = new Command("scrape", "Scrape using a config");
 		var configArg = new Argument<string>("config path", () => "config.json", "The path to the .json config file") { Arity = ArgumentArity.ExactlyOne };
 		scrapeCommand.Add(configArg);
-		scrapeCommand.SetHandler(RunScrape, configArg);
+		scrapeCommand.SetHandler((configFile) => RunScrape(configFile, null), configArg);
 
 		rootCommand.Add(scrapeCommand);
 		
-		var dumpCommand = new Command("dump", "Dump a database to a standard format");
-		var connectionStringArg = new Argument<string>("connection string", "The path to the .json config file") { Arity = ArgumentArity.ExactlyOne };
-		dumpCommand.Add(connectionStringArg);
+		var dumpCommand = new Command("export", "Dump a database to a standard format");
+		var exportConfigArg = new Argument<string>("config path", "The path to the .json config file to read database information from") { Arity = ArgumentArity.ExactlyOne };
+		var outputFileArg = new Argument<string>("output path", "Where the exported data should be written to. Either a .json or .json.zst file") { Arity = ArgumentArity.ExactlyOne };
+		dumpCommand.Add(exportConfigArg);
+		dumpCommand.Add(outputFileArg);
+
+		dumpCommand.SetHandler((configFile, outputFile) => RunScrape(configFile, new ExportSettings() { OutputFile = outputFile }),
+			exportConfigArg, outputFileArg);
 
 		rootCommand.Add(dumpCommand);
 		
@@ -121,7 +123,7 @@ public class Program
 		}));
 	}
 
-	private static async Task<int> RunScrape(string configPath)
+	private static async Task<int> RunScrape(string configPath, ExportSettings exportSettings)
 	{
 		if (!File.Exists(configPath))
 		{
@@ -129,11 +131,23 @@ public class Program
 			return 2;
 		}
 
+		try
+		{
+			var e = JObject.Parse(File.ReadAllText(configPath));
+		}
+		catch (Exception ex)
+		{
+			Console.WriteLine(ex);
+			await Task.Delay(9999999);
+		}
 		var rawConfigFile = JObject.Parse(File.ReadAllText(configPath));
 
 		var tokenSource = new CancellationTokenSource();
 
-		var archivalTask = Task.Run(() => CreateBoardArchiverExecutor(rawConfigFile, tokenSource));
+		Log.Information("Hayden v0.9.0");
+		Log.Information("By Bepis");
+
+		var archivalTask = Task.Run(() => CreateBoardArchiverExecutor(rawConfigFile, exportSettings, tokenSource));
 
 		var terminateTask = WaitForTerminateAsync();
 		await Task.WhenAny(archivalTask, terminateTask).ConfigureAwait(false);
@@ -146,8 +160,10 @@ public class Program
 		return await archivalTask.ConfigureAwait(false);
 	}
 
-	private static async Task<int> CreateBoardArchiverExecutor(JObject rawConfigFile, CancellationTokenSource tokenSource)
+	private static async Task<int> CreateBoardArchiverExecutor(JObject rawConfigFile, ExportSettings exportSettings, CancellationTokenSource tokenSource)
 	{
+		bool usingConsumer = exportSettings == null;
+
 		var serviceCollection = new ServiceCollection();
 
 		var configFile = rawConfigFile.ToObject<ConfigFile>();
@@ -160,13 +176,20 @@ public class Program
 		if (configFile.Source == null)
 			throw new Exception("Source config section must be present.");
 
-		if (configFile.Consumer == null)
-			throw new Exception("Consumer config section must be present.");
+		if (usingConsumer)
+		{
+			if (configFile.Consumer == null)
+				throw new Exception("Consumer config section must be present.");
+
+			serviceCollection.AddSingleton(configFile.Consumer);
+		}
 
 		serviceCollection.AddSingleton(configFile);
 		serviceCollection.AddSingleton(configFile.Source);
-		serviceCollection.AddSingleton(configFile.Consumer);
 		serviceCollection.AddSingleton(configFile.Hayden);
+
+		if (exportSettings != null)
+			serviceCollection.AddSingleton(exportSettings);
 
 		SerilogManager.LevelSwitch.MinimumLevel = configFile.Hayden.DebugLogging ? LogEventLevel.Verbose : LogEventLevel.Information;
 
@@ -181,6 +204,7 @@ public class Program
 			case "ASPNetChan":    serviceCollection.AddSingleton<IFrontendApi, ASPNetChanApi>(); break;
 			case "Tinyboard":     serviceCollection.AddSingleton<IFrontendApi, TinyboardApi>(); break;
 			case "FoolFuuka":     serviceCollection.AddSingletonMulti<IFrontendApi, ISearchableFrontendApi, FoolFuukaApi>(); break;
+			case "Hayden":        serviceCollection.AddSingleton<IImporter, HaydenImporter>(); break;
 			case "Fuuka":         serviceCollection.AddSingleton<IImporter, FuukaImporter>(); break;
 			case "Asagi":         serviceCollection.AddSingleton<IImporter, AsagiImporter>(); break;
 			case "JSArchive":     serviceCollection.AddSingleton<IImporter, JSArchiveImporter>(); break;
@@ -188,33 +212,36 @@ public class Program
 			case "Json":          serviceCollection.AddSingleton<IForwardOnlyImporter, JsonImporter>(); break;
 			default:              throw new Exception($"Unknown source type: {configFile.Source.Type}");
 		}
-			
-		switch (configFile.Consumer.Type)
+
+		if (usingConsumer)
 		{
-			case "Hayden":        serviceCollection.AddSingleton<IThreadConsumer, HaydenThreadConsumer>(); break;
-			case "Filesystem":    serviceCollection.AddSingleton<IThreadConsumer, FilesystemThreadConsumer>(); break;
-			case "Asagi":         serviceCollection.AddSingleton<IThreadConsumer, AsagiThreadConsumer>(); break;
-			case "Null":          serviceCollection.AddSingleton<IThreadConsumer, NullThreadConsumer>(); break;
-			default:              throw new Exception($"Unknown consumer type: {configFile.Consumer.Type}");
+			switch (configFile.Consumer.Type)
+			{
+				case "Hayden":        serviceCollection.AddSingleton<IThreadConsumer, HaydenThreadConsumer>(); break;
+				case "Filesystem":    serviceCollection.AddSingleton<IThreadConsumer, FilesystemThreadConsumer>(); break;
+				case "Asagi":         serviceCollection.AddSingleton<IThreadConsumer, AsagiThreadConsumer>(); break;
+				case "Null":          serviceCollection.AddSingleton<IThreadConsumer, NullThreadConsumer>(); break;
+				default:              throw new Exception($"Unknown consumer type: {configFile.Consumer.Type}");
+			}
+
+			if (configFile.Consumer.Type == "Asagi" && configFile.Source.Type != "4chan")
+				throw new Exception("The 'Asagi' backend only supports a source type of '4chan'.");
+
+
+			var haydenDirectory = Path.Combine(configFile.Consumer.DownloadLocation, "hayden");
+			Directory.CreateDirectory(haydenDirectory);
+
+			// TODO: make this & proxy provider configurable
+			var stateStore = new SqliteStateStore($"Data Source={Path.Combine(haydenDirectory, "imagequeue.db")}");
+			serviceCollection.AddSingleton<IStateStore>(stateStore);
 		}
-
-		if (configFile.Consumer.Type == "Asagi" && configFile.Source.Type != "4chan")
-			throw new Exception("The 'Asagi' backend only supports a source type of '4chan'.");
-
-
-		var haydenDirectory = Path.Combine(configFile.Consumer.DownloadLocation, "hayden");
-		Directory.CreateDirectory(haydenDirectory);
-
-		// TODO: make this & proxy provider configurable
-		var stateStore = new SqliteStateStore($"Data Source={Path.Combine(haydenDirectory, "imagequeue.db")}");
-		serviceCollection.AddSingleton<IStateStore>(stateStore);
 
 		ProxyProvider proxyProvider = null;
 
 		if (rawConfigFile["proxies"] != null)
 		{
 			proxyProvider = new ConfigProxyProvider((JArray)rawConfigFile["proxies"], configFile.Hayden.ResolveDnsLocally);
-			await proxyProvider.InitializeAsync();
+			await proxyProvider.InitializeAsync(usingConsumer);
 			serviceCollection.AddSingleton<ProxyProvider>(proxyProvider);
 		}
 
@@ -223,33 +250,24 @@ public class Program
 
 		var serviceProvider = serviceCollection.BuildServiceProvider();
 
-		await serviceProvider.GetRequiredService<IThreadConsumer>().InitializeAsync();
-
+		if (usingConsumer)
+			await serviceProvider.GetRequiredService<IThreadConsumer>().InitializeAsync();
+		
 		Log.Information("Initialized.");
 		Log.Information("Press Q to stop archival.");
 
-		Task archiveTask;
-
-		if (configFile.Hayden.ScraperType == "Search")
+		IArchiver boardArchiver = configFile.Hayden.ScraperType.ToLower() switch
 		{
-			var searchArchiver = ActivatorUtilities.CreateInstance<SearchArchiver>(serviceProvider);
-			archiveTask = searchArchiver.Execute(tokenSource.Token);
-		}
-		else
-		{
-			BoardArchiver boardArchiver;
-
-			if (configFile.Hayden.ScraperType == "Import")
-				boardArchiver = ActivatorUtilities.CreateInstance<ImportArchiver>(serviceProvider);
-			else
-				boardArchiver = ActivatorUtilities.CreateInstance<BoardArchiver>(serviceProvider);
-
-			archiveTask = boardArchiver.Execute(tokenSource.Token);
-		}
+			"archive" => ActivatorUtilities.CreateInstance<BoardArchiver>(serviceProvider),
+			"search" => ActivatorUtilities.CreateInstance<SearchArchiver>(serviceProvider),
+			"import" => ActivatorUtilities.CreateInstance<ImportArchiver>(serviceProvider),
+			"export" => ActivatorUtilities.CreateInstance<ExportArchiver>(serviceProvider),
+			_ => throw new ArgumentOutOfRangeException($"Unkonwn archiver type: {configFile.Hayden.ScraperType}")
+		};
 
 		try
 		{
-			await archiveTask;
+			await boardArchiver.Execute(tokenSource.Token);
 
 			return 0;
 		}

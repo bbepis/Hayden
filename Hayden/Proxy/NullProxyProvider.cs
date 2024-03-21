@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Net;
 using System.Net.Http;
 using System.Threading.Tasks;
@@ -15,7 +15,7 @@ namespace Hayden.Proxy
 
 		public override int ProxyCount => 1;
 
-		public override Task InitializeAsync()
+		public override Task InitializeAsync(bool needsToTest)
 		{
 			return Task.CompletedTask;
 		}
