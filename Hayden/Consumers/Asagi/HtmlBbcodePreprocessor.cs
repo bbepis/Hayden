@@ -15,7 +15,7 @@ namespace Hayden.Consumers.Asagi
 
 			var builder = new StringBuilder();
 
-			var tokens = textSource.Tokenize().ToArray();
+			var tokens = textSource.Tokenize(new HtmlTokenizerOptions()).ToArray();
 
 			int stackLayer = 0;
 			int i = 0;
