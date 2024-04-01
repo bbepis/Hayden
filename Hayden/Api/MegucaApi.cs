@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
@@ -297,8 +298,8 @@ namespace Hayden
 						FileSize = (uint)Image.FileSize,
 						IsDeleted = false, // I don't know if images can be deleted without deleting the entire post? or even how to check
 						IsSpoiler = Image.IsSpoiler,
-						Md5Hash = Convert.FromBase64String(Image.Md5Hash),
-						Sha1Hash= Convert.FromBase64String(Image.Sha1Hash),
+						Md5Hash = ConvertBase64String(Image.Md5Hash),
+						Sha1Hash = Convert.FromHexString(Image.Sha1Hash),
 						OriginalObject = this,
 						AdditionalMetadata = null
 					}
@@ -321,6 +322,25 @@ namespace Hayden
 					BoardFlagCode = Flag
 				}
 			};
+		}
+
+		private static byte[] ConvertBase64String(string str)
+		{
+			// https://github.com/meowmin/meguca/blob/e1fa52f20a6004deeb7f505bdcf7b518d6bc3f2d/imager/upload.go#L464
+			// Uses URL-safe base64. So we have to try and convert it back in a very clunky way
+			// https://github.com/dotnet/aspnetcore/blob/main/src/Shared/WebEncoders/WebEncoders.cs#L127
+			
+			try
+			{
+				return Convert.FromBase64String(str
+					.Replace('-', '+')
+					.Replace('_', '/')
+					.PadRight(24, '='));
+			}
+			catch
+			{
+				throw new Exception($"Could not convert string from base64: {str}");
+			}
 		}
 	}
 

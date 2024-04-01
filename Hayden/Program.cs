@@ -262,7 +262,7 @@ public class Program
 			"search" => ActivatorUtilities.CreateInstance<SearchArchiver>(serviceProvider),
 			"import" => ActivatorUtilities.CreateInstance<ImportArchiver>(serviceProvider),
 			"export" => ActivatorUtilities.CreateInstance<ExportArchiver>(serviceProvider),
-			_ => throw new ArgumentOutOfRangeException($"Unkonwn archiver type: {configFile.Hayden.ScraperType}")
+			_ => throw new ArgumentOutOfRangeException($"Unknown archiver type: {configFile.Hayden.ScraperType}")
 		};
 
 		try
