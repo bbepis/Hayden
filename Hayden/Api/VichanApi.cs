@@ -206,7 +206,7 @@ namespace Hayden
 						Filename = file.OriginalFilename,
 						FileExtension = file.FileExtension,
 						ThumbnailExtension = "jpg",
-						Index = (byte)i,
+						Index = (byte)(i + 1),
 						FileSize = file.FileSize,
 						IsDeleted = false, // Vichan API does not expose this
 						IsSpoiler = null, // Vichan API does not expose this
