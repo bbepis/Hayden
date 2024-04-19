@@ -51,18 +51,20 @@ public class Program
 
 		rootCommand.Add(scrapeCommand);
 		
-		var dumpCommand = new Command("export", "Dump a database to a standard format");
+		var exportCommand = new Command("export", "Dump a database to a standard format");
+		var compressionLevelArg = new Option<int>(new[] { "-c", "--compression-level" }, () => 6, "The compression level to use when exporting to a compressed format (.json.zst)") { Arity = ArgumentArity.ExactlyOne };
 		var exportConfigArg = new Argument<string>("config path", "The path to the .json config file to read database information from") { Arity = ArgumentArity.ExactlyOne };
 		var outputFileArg = new Argument<string>("output path", "Where the exported data should be written to. Either a .json or .json.zst file") { Arity = ArgumentArity.ExactlyOne };
-		dumpCommand.Add(exportConfigArg);
-		dumpCommand.Add(outputFileArg);
+		exportCommand.Add(exportConfigArg);
+		exportCommand.Add(outputFileArg);
+		exportCommand.Add(compressionLevelArg);
 
-		dumpCommand.SetHandler((configFile, outputFile) => RunScrape(configFile, new ExportSettings() { OutputFile = outputFile }),
-			exportConfigArg, outputFileArg);
+		exportCommand.SetHandler((configFile, outputFile, compressionLevel) => RunScrape(configFile, new ExportSettings() { OutputFile = outputFile, CompressionLevel = compressionLevel > 0 ? compressionLevel : null }),
+			exportConfigArg, outputFileArg, compressionLevelArg);
 
-		rootCommand.Add(dumpCommand);
+		rootCommand.Add(exportCommand);
 		
-		var generateConfigCommand = new Command("genconfig", "Dump a database to a standard format");
+		var generateConfigCommand = new Command("genconfig", "Generate a configuration file");
 		var generatedConfigArgument = new Argument<string>("config file", "The path to the .json config file to generate") { Arity = ArgumentArity.ExactlyOne };
 		generateConfigCommand.Add(generatedConfigArgument);
 
@@ -256,7 +258,7 @@ public class Program
 		Log.Information("Initialized.");
 		Log.Information("Press Q to stop archival.");
 
-		IArchiver boardArchiver = configFile.Hayden.ScraperType.ToLower() switch
+		using IArchiver boardArchiver = configFile.Hayden.ScraperType.ToLower() switch
 		{
 			"archive" => ActivatorUtilities.CreateInstance<BoardArchiver>(serviceProvider),
 			"search" => ActivatorUtilities.CreateInstance<SearchArchiver>(serviceProvider),
@@ -353,40 +355,5 @@ public class Program
 
 		var taskArray = new[] { unixKillSignalTask, consoleWaitTask ?? new TaskCompletionSource<object>().Task };
 		return Task.WhenAny(taskArray.Where(x => x != null));
-	}
-}
-
-internal static class LoggingFunctions
-{
-	public static LogEventPropertyValue FilterSourceContext(
-		LogEventPropertyValue context)
-	{
-		if (context is ScalarValue sv && sv.Value != null && sv.Value is string s)
-		{
-			if (s == "Microsoft.Hosting.Lifetime")
-				return new ScalarValue(string.Empty);
-
-			return new ScalarValue($" [{s}]");
-		}
-
-		// Undefined - argument was not a string.
-		return null;
-	}
-
-	public static LogEventPropertyValue AddRequestInfo(
-		LogEvent @event)
-	{
-		if (@event.Level >= LogEventLevel.Error)
-		{
-			return new ScalarValue(@event.Properties.TryGetValue("requestInfo", out var requestInfo) ? "\n" + requestInfo : null);
-		}
-
-		return null;
-	}
-
-	public static LogEventPropertyValue IsError(
-		LogEvent @event)
-	{
-		return new ScalarValue(@event.Level >= LogEventLevel.Error);
 	}
 }

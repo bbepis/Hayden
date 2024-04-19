@@ -1,4 +1,4 @@
-﻿using Hayden.Config;
+using Hayden.Config;
 
 namespace Hayden
 {
@@ -17,6 +17,6 @@ namespace Hayden
 
 		public bool ResolveDnsLocally { get; set; } = false;
 
-		public string ScraperType { get; set; } = "Board";
+		public string ScraperType { get; set; } = "archive";
 	}
 }

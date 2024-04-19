@@ -10,7 +10,7 @@ using Serilog;
 
 namespace Hayden
 {
-	public interface IArchiver
+	public interface IArchiver : IDisposable
 	{
 		Task Execute(CancellationToken token);
 	}

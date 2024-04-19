@@ -12,13 +12,11 @@ using System.Threading.Tasks;
 using Hayden.Api;
 using Hayden.Cache;
 using Hayden.Config;
-using Hayden.Consumers.HaydenMysql.DB;
 using Hayden.Contract;
 using Hayden.Models;
 using Hayden.Proxy;
 using Nito.AsyncEx;
 using Polly;
-using Polly.Timeout;
 using Serilog;
 using Thread = Hayden.Models.Thread;
 
@@ -1052,5 +1050,10 @@ namespace Hayden
 		}
 
 		#endregion
+
+		public virtual void Dispose()
+		{
+			ThreadConsumer.Dispose();
+		}
 	}
 }

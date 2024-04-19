@@ -106,8 +106,8 @@ namespace Hayden
 			stopwatch.Start();
 
 			foreach (var board in SourceConfig.Boards.Keys)
-			await foreach (var pointer in Importer.GetThreadList(board).WithCancellation(token))
-				threadQueue.Add(pointer);
+				await foreach (var pointer in Importer.GetThreadList(board).WithCancellation(token))
+					threadQueue.Add(pointer);
 
 			Logger.Debug("Read thread list in {time}", stopwatch.Elapsed);
 

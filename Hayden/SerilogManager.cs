@@ -30,4 +30,39 @@ public static class SerilogManager
 
 	public static ILogger CreateSubLogger(string category)
 		=> Log.Logger.ForContext("SourceContext", category);
+
+	internal static class LoggingFunctions
+	{
+		public static LogEventPropertyValue FilterSourceContext(
+			LogEventPropertyValue context)
+		{
+			if (context is ScalarValue sv && sv.Value != null && sv.Value is string s)
+			{
+				if (s == "Microsoft.Hosting.Lifetime")
+					return new ScalarValue(string.Empty);
+
+				return new ScalarValue($" [{s}]");
+			}
+
+			// Undefined - argument was not a string.
+			return null;
+		}
+
+		public static LogEventPropertyValue AddRequestInfo(
+			LogEvent @event)
+		{
+			if (@event.Level >= LogEventLevel.Error)
+			{
+				return new ScalarValue(@event.Properties.TryGetValue("requestInfo", out var requestInfo) ? "\n" + requestInfo : null);
+			}
+
+			return null;
+		}
+
+		public static LogEventPropertyValue IsError(
+			LogEvent @event)
+		{
+			return new ScalarValue(@event.Level >= LogEventLevel.Error);
+		}
+	}
 }

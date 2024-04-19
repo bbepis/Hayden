@@ -528,5 +528,10 @@ namespace Hayden
 		}
 
 		#endregion
+
+		public void Dispose()
+		{
+			ThreadConsumer.Dispose();
+		}
 	}
 }

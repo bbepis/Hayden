@@ -1,10 +1,12 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO;
 using System.IO.Abstractions;
 using System.Linq;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Threading;
+using System.Threading.Channels;
 using System.Threading.Tasks;
 using Hayden.Api;
 using Hayden.Config;
@@ -13,9 +15,6 @@ using Hayden.ImportExport;
 using Hayden.Models;
 using Hayden.Proxy;
 using Microsoft.Extensions.DependencyInjection;
-using Newtonsoft.Json;
-using Newtonsoft.Json.Converters;
-using Newtonsoft.Json.Serialization;
 using Nito.AsyncEx;
 using Serilog;
 using ZstdSharp;
@@ -26,6 +25,7 @@ namespace Hayden;
 public class ExportSettings
 {
 	public string OutputFile { get; set; }
+	public int? CompressionLevel { get; set; }
 }
 
 public class ExportArchiver : BoardArchiver
@@ -38,17 +38,18 @@ public class ExportArchiver : BoardArchiver
 
 	protected override bool NeedsToDelayThreadApiCall => false;
 
-	private ILogger Logger { get; } = SerilogManager.CreateSubLogger("Importer");
+	private ILogger Logger { get; } = SerilogManager.CreateSubLogger("Exporter");
 
 	public ExportArchiver(IServiceProvider serviceProvider, SourceConfig sourceConfig,
 		ExportSettings exportSettings, IFileSystem fileSystem, IStateStore stateStore = null, ProxyProvider proxyProvider = null)
-		: base(sourceConfig, GetConsumerConfig(), null, CreateExporter(exportSettings.OutputFile), fileSystem, stateStore, proxyProvider)
+		: base(sourceConfig, GetConsumerConfig(), null, CreateExporter(exportSettings), fileSystem, stateStore, proxyProvider)
 	{
 		Importer = serviceProvider.GetService<IImporter>();
 		ForwardOnlyImporter = serviceProvider.GetService<IForwardOnlyImporter>();
 
 		sourceConfig.ApiDelay = 0;
 		sourceConfig.BoardScrapeDelay = 5;
+		sourceConfig.SingleScan = true;
 
 		if (Importer == null && ForwardOnlyImporter == null)
 			throw new InvalidOperationException("Requires either a valid IImporter or IForwardOnlyImporter instance");
@@ -68,13 +69,13 @@ public class ExportArchiver : BoardArchiver
 		};
 	}
 
-	private static JsonExporter CreateExporter(string filename)
+	private static JsonExporter CreateExporter(ExportSettings exportSettings)
 	{
-		if (filename.EndsWith(".json.zst"))
-			return new JsonExporter(filename, 10);
+		if (exportSettings.OutputFile.EndsWith(".json.zst"))
+			return new JsonExporter(exportSettings.OutputFile, exportSettings.CompressionLevel);
 
-		if (filename.EndsWith(".json"))
-			return new JsonExporter(filename);
+		if (exportSettings.OutputFile.EndsWith(".json"))
+			return new JsonExporter(exportSettings.OutputFile);
 
 		throw new Exception("Expected .json.zst or .json file");
 	}
@@ -86,32 +87,6 @@ public class ExportArchiver : BoardArchiver
 	{
 		await foreach (var threadBatch in ForwardOnlyImporter.RetrieveThreads(SourceConfig.Boards.Keys.ToArray()).Batch(1000))
 		{
-			foreach (var board in SourceConfig.Boards.Keys)
-			{
-				if (!threadBatch.Any(x => x.Item1.Board == board))
-					continue;
-
-				// Check for threads that have already been downloaded by the consumer, noting the last time they were downloaded.
-				var existingThreads = await ThreadConsumer.CheckExistingThreads(threadBatch.Where(x => x.Item1.Board == board).Select(x => x.Item1.ThreadId),
-					board,
-					false,
-					ConsumerConfig.ConsolidationMode == ConsolidationMode.Authoritative ? MetadataMode.FullHashMetadata : MetadataMode.ThreadIdAndPostId,
-					false);
-
-				lock (TrackedThreads)
-					foreach (var existingThread in existingThreads)
-					{
-						TrackedThreads[new ThreadPointer(board, existingThread.ThreadId)] =
-							TrackedThread.StartTrackingThread(ThreadConsumer.CalculateHash, existingThread);
-					}
-			}
-
-			lock (ThreadCacheDictionary)
-			{
-				foreach (var thread in threadBatch)
-					ThreadCacheDictionary.Add(thread.Item1, thread.Item2);
-			}
-				
 			foreach (var thread in threadBatch)
 				yield return thread.Item1;
 		}
@@ -119,7 +94,7 @@ public class ExportArchiver : BoardArchiver
 
 	protected override async Task<MaybeAsyncEnumerable<ThreadPointer>> ReadBoards(bool firstRun, CancellationToken token)
 	{
-		Task.Run(() => ReportingThread(CancellationToken.None));
+		_ = Task.Run(() => ReportingTask(CancellationToken.None));
 
 		if (ForwardOnlyImporter != null)
 		{
@@ -154,103 +129,8 @@ public class ExportArchiver : BoardArchiver
 				threadQueue.Add(pointer);
 
 		Logger.Debug("Read thread list in {time}", stopwatch.Elapsed);
-
-		if (threadQueue.Count < 10_000) // super memory-inefficient at this size
-		{
-			foreach (var board in SourceConfig.Boards.Keys)
-			{
-				// Check for threads that have already been downloaded by the consumer, noting the last time they were downloaded.
-				var existingThreads = await ThreadConsumer.CheckExistingThreads(threadQueue.Where(x => x.Board == board).Select(x => x.ThreadId),
-					board,
-					false,
-					ConsumerConfig.ConsolidationMode == ConsolidationMode.Authoritative ? MetadataMode.FullHashMetadata : MetadataMode.ThreadIdAndPostId,
-					false);
-
-				lock (TrackedThreads)
-					foreach (var existingThread in existingThreads)
-					{
-						TrackedThreads[new ThreadPointer(board, existingThread.ThreadId)] =
-							TrackedThread.StartTrackingThread(ThreadConsumer.CalculateHash, existingThread);
-					}
-			}
-
-			return new MaybeAsyncEnumerable<ThreadPointer>(threadQueue);
-		}
-
-		async IAsyncEnumerable<ThreadPointer> internalEnumerate()
-		{
-			AsyncProducerConsumerQueue<ICollection<ThreadPointer>> pointerQueue = new(1);
-
-			var producerTask = Task.Run(async () =>
-			{
-				try
-				{
-					foreach (var board in SourceConfig.Boards.Keys)
-					{
-						if (token.IsCancellationRequested)
-							break;
-
-						stopwatch.Restart();
-						foreach (var pointerBatch in threadQueue.Where(x => x.Board == board).Batch(10000))
-						{
-							if (token.IsCancellationRequested)
-								break;
-
-							Logger.Debug("Read thread batch in {time}", stopwatch.Elapsed);
-
-							stopwatch.Restart();
-
-							var existingThreads = await ThreadConsumer.CheckExistingThreads(
-								pointerBatch.Select(x => x.ThreadId),
-								board,
-								false,
-								ConsumerConfig.ConsolidationMode == ConsolidationMode.Authoritative ? MetadataMode.FullHashMetadata : MetadataMode.ThreadIdAndPostId,
-								false);
-
-							Logger.Debug("Read existing threads in {time}", stopwatch.Elapsed);
-							stopwatch.Restart();
-
-							lock (TrackedThreads)
-							{
-								foreach (var existingThread in existingThreads)
-								{
-									TrackedThreads[new ThreadPointer(board, existingThread.ThreadId)] =
-										TrackedThread.StartTrackingThread(ThreadConsumer.CalculateHash,
-											existingThread);
-								}
-							}
-
-							Logger.Debug("Set tracked threads in {time}", stopwatch.Elapsed);
-
-							try
-							{
-								await pointerQueue.EnqueueAsync(pointerBatch, token);
-							}
-							catch (OperationCanceledException)
-							{
-								break;
-							}
-
-							stopwatch.Restart();
-						}
-					}
-				}
-				catch (Exception ex)
-				{
-					Logger.Error(ex, "Error while importing");
-				}
-
-				pointerQueue.CompleteAdding();
-			});
-
-			while (await pointerQueue.OutputAvailableAsync(token))
-			{
-				foreach (var item in await pointerQueue.DequeueAsync(token))
-					yield return item;
-			}
-		}
-
-		return new MaybeAsyncEnumerable<ThreadPointer>(internalEnumerate(), threadQueue.Count);
+		
+		return new MaybeAsyncEnumerable<ThreadPointer>(threadQueue);
 	}
 
 	protected override async Task<ApiResponse<Thread>> RetrieveThreadAsync(ThreadPointer threadPointer, HttpClientProxy client, CancellationToken token)
@@ -273,44 +153,51 @@ public class ExportArchiver : BoardArchiver
 	}
 
 	private DateTime LastProgressTime = DateTime.UtcNow;
-	private int LastProgressThreadsProcessed = 0;
-	private int LastProgressPostsProcessed = 0;
-	private int TotalThreadsProcessed = 0;
-	private int TotalPostsProcessed = 0;
+	private long LastProgressThreadsProcessed = 0;
+	private long LastProgressPostsProcessed = 0;
+	private long TotalThreadsProcessed = 0;
+	private long TotalPostsProcessed = 0;
 
 	protected override void ReportProgress(ThreadPointer completedThread, ThreadUpdateTaskResult result, int enqueuedImageCount, int newCompletedCount, int? totalThreadCount)
 	{
 		Interlocked.Increment(ref LastProgressThreadsProcessed);
 		Interlocked.Add(ref LastProgressPostsProcessed, result.PostCountChange);
 
-		if (result.Status == ThreadUpdateStatus.Error)
+		if (result.Status == ThreadUpdateStatus.Error || result.Status == ThreadUpdateStatus.Deleted)
 			base.ReportProgress(completedThread, result, enqueuedImageCount, newCompletedCount, totalThreadCount);
 	}
 
-	private async Task ReportingThread(CancellationToken token)
+	private async Task ReportingTask(CancellationToken token)
 	{
 		const int waitTime = 5;
 
-		while (token.IsCancellationRequested)
+		try
 		{
-			await Task.Delay(TimeSpan.FromSeconds(waitTime));
+			while (!token.IsCancellationRequested)
+			{
+				await Task.Delay(TimeSpan.FromSeconds(waitTime));
 
-			if (token.IsCancellationRequested)
-				break;
+				if (token.IsCancellationRequested)
+					break;
 
-			var sinceThreadsProcessed = Interlocked.Exchange(ref LastProgressThreadsProcessed, 0);
-			var sincePostsProcessed = Interlocked.Exchange(ref LastProgressPostsProcessed, 0);
+				var sinceThreadsProcessed = Interlocked.Exchange(ref LastProgressThreadsProcessed, 0);
+				var sincePostsProcessed = Interlocked.Exchange(ref LastProgressPostsProcessed, 0);
 
-			TotalThreadsProcessed += sinceThreadsProcessed;
-			TotalPostsProcessed += sincePostsProcessed;
+				TotalThreadsProcessed += sinceThreadsProcessed;
+				TotalPostsProcessed += sincePostsProcessed;
 
-			var timeSince = DateTime.UtcNow - LastProgressTime;
-			var threadsPerSecond = Math.Round(sinceThreadsProcessed / timeSince.TotalSeconds);
-			var postsPerSecond = Math.Round(sincePostsProcessed / timeSince.TotalSeconds);
+				var timeSince = DateTime.UtcNow - LastProgressTime;
+				var threadsPerSecond = Math.Round(sinceThreadsProcessed / timeSince.TotalSeconds);
+				var postsPerSecond = Math.Round(sincePostsProcessed / timeSince.TotalSeconds);
 
-			Log.Information($"{"[Thread]",-9} {$"{TotalThreadsProcessed}t",-5} / {$"{TotalPostsProcessed}p",-5} ({$"+{sinceThreadsProcessed}t",-5}, {threadsPerSecond}/s) ({$"+{sincePostsProcessed}t",-5}, {postsPerSecond}/s)");
+				Logger.Information($"{$"{TotalThreadsProcessed:N0}t",-5} / {$"{TotalPostsProcessed:N0}p",-5} ({$"+{sinceThreadsProcessed:N0}t",-5}, {threadsPerSecond:N0}t/s) ({$"+{sincePostsProcessed:N0}p",-5}, {postsPerSecond:N0}p/s)");
 
-			LastProgressTime = DateTime.UtcNow;
+				LastProgressTime = DateTime.UtcNow;
+			}
+		}
+		catch (Exception ex)
+		{
+			Logger.Error(ex, "Reporting task failure");
 		}
 	}
 
@@ -318,19 +205,30 @@ public class ExportArchiver : BoardArchiver
 	{
 		private FileStream FileStream { get; set; }
 		private CompressionStream ZstdStream { get; set; }
-		private JsonTextWriter JsonWriter { get; set; }
+		private Utf8JsonWriter JsonWriter { get; set; }
+
+		private ILogger Logger { get; } = SerilogManager.CreateSubLogger("Exporter");
+
+		private Task ConsumerTask { get; set; }
+		
+		private Channel<Thread> ThreadChannel { get; set; } = Channel.CreateBounded<Thread>(new BoundedChannelOptions(32)
+		{
+			AllowSynchronousContinuations = false,
+		});
 
 		private bool IsDisposed { get; set; } = false;
 
-		private static JsonSerializer JsonSerializer { get; set; } = new JsonSerializer
+		private static readonly JsonSerializerOptions serializerOptions = new JsonSerializerOptions
 		{
-			Formatting = Formatting.None,
-			NullValueHandling = NullValueHandling.Ignore,
-			DefaultValueHandling = DefaultValueHandling.Include,
-			DateTimeZoneHandling = DateTimeZoneHandling.Utc,
+			AllowTrailingCommas = true,
+			IncludeFields = true,
+			PropertyNamingPolicy = null,
+			NumberHandling = System.Text.Json.Serialization.JsonNumberHandling.Strict,
+			ReadCommentHandling = JsonCommentHandling.Skip,
+			DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
 			Converters =
 			{
-				new StringEnumConverter(new DefaultNamingStrategy(), false)
+				new JsonStringEnumConverter(null, false)
 			}
 		};
 
@@ -341,23 +239,48 @@ public class ExportArchiver : BoardArchiver
 			if (compressionLevel != null)
 				ZstdStream = new CompressionStream(FileStream, compressionLevel.Value, leaveOpen: false);
 
-			JsonWriter = new JsonTextWriter(new StreamWriter((Stream)ZstdStream ?? FileStream))
+			JsonWriter = new Utf8JsonWriter((Stream)ZstdStream ?? FileStream, new JsonWriterOptions
 			{
-				Formatting = Formatting.None,
-				DateTimeZoneHandling = DateTimeZoneHandling.Utc
-			};
+				Indented = false
+			});
+
+			ConsumerTask = Task.Run(async () =>
+			{
+				try
+				{
+					await foreach (var thread in ThreadChannel.Reader.ReadAllAsync())
+					{
+						System.Text.Json.JsonSerializer.Serialize(JsonWriter, thread, serializerOptions);
+					}
+				}
+				catch (Exception ex)
+				{
+					Logger.Error(ex, "JSON writer failure");
+				}
+			});
 
 			JsonWriter.WriteStartArray();
 		}
 
-		public Task InitializeAsync() => Task.CompletedTask;
-
-		public Task<IList<QueuedImageDownload>> ConsumeThread(ThreadUpdateInfo threadUpdateInfo)
+		public Task InitializeAsync()
 		{
-			lock (JsonSerializer)
-				JsonSerializer.Serialize(JsonWriter, threadUpdateInfo.Thread);
+			return Task.CompletedTask;
+		}
 
-			return Task.FromResult((IList<QueuedImageDownload>)Array.Empty<QueuedImageDownload>());
+		public async Task<IList<QueuedImageDownload>> ConsumeThread(ThreadUpdateInfo threadUpdateInfo)
+		{
+			if (IsDisposed)
+				throw new Exception("Consumer disposed");
+
+			var thread = threadUpdateInfo.Thread;
+			thread.OriginalObject = null;
+
+			foreach (var post in thread.Posts)
+				post.OriginalObject = null;
+
+			await ThreadChannel.Writer.WriteAsync(thread);
+
+			return Array.Empty<QueuedImageDownload>();
 		}
 
 		public Task ProcessFileDownload(QueuedImageDownload queuedImageDownload, string imageTempFilename, string thumbTempFilename)
@@ -379,6 +302,10 @@ public class ExportArchiver : BoardArchiver
 		{
 			if (IsDisposed)
 				return;
+
+			ThreadChannel.Writer.Complete();
+
+			ConsumerTask.Wait();
 
 			JsonWriter.WriteEndArray();
 
