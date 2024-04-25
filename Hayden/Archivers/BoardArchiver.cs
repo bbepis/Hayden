@@ -98,7 +98,7 @@ namespace Hayden
 		/// Performs the main archival loop.
 		/// </summary>
 		/// <param name="token">Token to safely cancel the execution.</param>
-		public async Task Execute(CancellationToken token)
+		public virtual async Task Execute(CancellationToken token)
 		{
 			bool firstRun = true;
 

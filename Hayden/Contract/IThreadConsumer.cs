@@ -50,10 +50,21 @@ public interface IThreadConsumer : IDisposable
 	/// <param name="threadIdsToCheck">The IDs of the threads to check if they have been previously consumed.</param>
 	/// <param name="board">The board of the threads.</param>
 	/// <param name="archivedOnly">True to only return threads that have been marked as completed, otherwise false to return all.</param>
-	/// <param name="getMetadata">True to return timestamps alongside the thread numbers, otherwise false to return minimum values.</param>
+	/// <param name="metadataMode">The amount of metadata to return.</param>
 	/// <param name="excludeDeletedPosts">True to remove deleted posts from the output, otherwise false to return all posts.</param>
 	/// <returns>A list of threads that are already stored in the consumer.</returns>
-	Task<ICollection<ExistingThreadInfo>> CheckExistingThreads(IEnumerable<ulong> threadIdsToCheck, string board, bool archivedOnly, MetadataMode metadataMode = MetadataMode.FullHashMetadata,
+	Task<IList<ExistingThreadInfo>> CheckExistingThreads(IEnumerable<ulong> threadIdsToCheck, string board, bool archivedOnly, MetadataMode metadataMode = MetadataMode.FullHashMetadata,
+		bool excludeDeletedPosts = true);
+
+	/// <summary>
+	/// Returns a list of threads that are already stored in the consumer, to prevent re-scraping of them.
+	/// </summary>
+	/// <param name="threadId">The ID of the threads to check if it has been previously consumed.</param>
+	/// <param name="board">The board of the threads.</param>
+	/// <param name="metadataMode">The amount of metadata to return.</param>
+	/// <param name="excludeDeletedPosts">True to remove deleted posts from the output, otherwise false to return all posts.</param>
+	/// <returns>A list of threads that are already stored in the consumer.</returns>
+	Task<ExistingThreadInfo> CheckExistingThread(ulong threadId, string board, MetadataMode metadataMode = MetadataMode.FullHashMetadata,
 		bool excludeDeletedPosts = true);
 
 	/// <summary>
@@ -71,7 +82,7 @@ public enum MetadataMode
 	FullHashMetadata
 }
 
-public struct ExistingThreadInfo
+public class ExistingThreadInfo
 {
 	public ulong ThreadId;
 	public bool Archived;

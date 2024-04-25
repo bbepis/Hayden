@@ -627,7 +627,7 @@ namespace Hayden.Consumers
 		}
 
 		/// <inheritdoc/>
-		public async Task<ICollection<ExistingThreadInfo>> CheckExistingThreads(IEnumerable<ulong> threadIdsToCheck, string board, bool archivedOnly, MetadataMode metadataMode = MetadataMode.FullHashMetadata, bool excludeDeletedPosts = true)
+		public async Task<IList<ExistingThreadInfo>> CheckExistingThreads(IEnumerable<ulong> threadIdsToCheck, string board, bool archivedOnly, MetadataMode metadataMode = MetadataMode.FullHashMetadata, bool excludeDeletedPosts = true)
 		{
 			ushort boardId = BoardIdMappings[GetTranslatedBoardName(board)];
 
@@ -693,6 +693,77 @@ namespace Hayden.Consumers
 			}
 
 			return items;
+		}
+
+		public async Task<ExistingThreadInfo> CheckExistingThread(ulong threadId, string board, MetadataMode metadataMode = MetadataMode.FullHashMetadata,
+			bool excludeDeletedPosts = true)
+		{
+			ushort boardId = BoardIdMappings[GetTranslatedBoardName(board)];
+
+			await using var dbContext = GetDBContext();
+
+			if (metadataMode == MetadataMode.FullHashMetadata)
+			{
+				// Would be perfect but EF Core doesn't support translating GroupJoin
+
+				//var posts = await dbContext.Posts
+				//	.Where(x => x.BoardId == boardId && x.ThreadId == threadId && (!excludeDeletedPosts || !x.IsDeleted))
+				//	.GroupJoin(dbContext.FileMappings,
+				//		post => new { post.BoardId, post.PostId },
+				//		mapping => new { mapping.BoardId, mapping.PostId },
+				//		(post, mappings) => new {
+				//			post.PostId,
+				//			post.ContentHtml,
+				//			post.ContentRaw,
+				//			fileCount = mappings.Count(),
+				//			deletedCount = mappings.Count(x => x.IsDeleted),
+				//			spoilerCount = mappings.Count(x => x.IsSpoiler)
+				//		}).ToArrayAsync();
+
+				//var thread = await dbContext.Threads.AsNoTracking().FirstAsync(x => x.BoardId == boardId && x.ThreadId == threadId)
+
+				var allPosts = await dbContext.Posts
+					.AsNoTracking()
+					.Where(x => x.BoardId == boardId && x.ThreadId == threadId && (!excludeDeletedPosts || !x.IsDeleted))
+					.Select(x => new { x.PostId, x.ContentRaw, x.ContentHtml })
+					.ToArrayAsync();
+
+				var allPostNumbers = allPosts.Select(x => x.PostId).ToArray();
+
+				var fileMappings = await dbContext.FileMappings
+					.AsNoTracking()
+					.Where(x => x.BoardId == boardId && allPostNumbers.Contains(x.PostId))
+					.Select(x => new { x.PostId, x.IsSpoiler, x.IsDeleted })
+					.ToArrayAsync();
+
+				var hashes = new List<(ulong PostId, uint PostHash)>();
+
+				foreach (var post in allPosts)
+				{
+					var postMappings = fileMappings.Where(x => x.PostId == post.PostId);
+
+					var hash = CalculatePostHash(post.ContentHtml, post.ContentRaw,
+						postMappings.Count(x => x.IsSpoiler), postMappings.Count(), postMappings.Count(x => x.IsDeleted));
+
+					hashes.Add((post.PostId, hash));
+				}
+
+				// TODO: actually retrieve this thread data
+
+				// new DateTimeOffset(threadInfo.LastModified, TimeSpan.Zero)
+				return new ExistingThreadInfo(threadId, false, DateTimeOffset.MinValue, hashes);
+			}
+
+			if (metadataMode == MetadataMode.ThreadIdAndPostId)
+			{
+				var postIds = await dbContext.Posts.Where(x => x.BoardId == boardId && x.ThreadId == threadId)
+					.Select(x => x.PostId)
+					.ToArrayAsync();
+				
+				return new ExistingThreadInfo(threadId, false, DateTimeOffset.MinValue, postIds.Select(x => (x, (uint)0)).ToArray());
+			}
+
+			return new ExistingThreadInfo(threadId);
 		}
 
 		public static string CalculateFilename(string baseFolder, MediaType mediaType, uint fileId, string extension)

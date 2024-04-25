@@ -3,14 +3,13 @@ using System.Collections.Generic;
 using System.IO.Abstractions;
 using System.Linq;
 using System.Threading;
+using System.Threading.Channels;
 using System.Threading.Tasks;
-using Hayden.Api;
 using Hayden.Config;
 using Hayden.Contract;
 using Hayden.ImportExport;
 using Hayden.Proxy;
 using Microsoft.Extensions.DependencyInjection;
-using Nito.AsyncEx;
 using Serilog;
 using Thread = Hayden.Models.Thread;
 
@@ -37,197 +36,143 @@ namespace Hayden
 				throw new InvalidOperationException("Requires either a valid IImporter or IForwardOnlyImporter instance");
 		}
 
-		private MultiDictionary<ThreadPointer, Thread> ThreadCacheDictionary { get; } = new();
-
-
-		private async IAsyncEnumerable<ThreadPointer> ForwardOnlyEnumerate()
+		public override async Task Execute(CancellationToken token)
 		{
-			await foreach (var threadBatch in ForwardOnlyImporter.RetrieveThreads(SourceConfig.Boards.Keys.ToArray()).Batch(1000))
-			{
-				foreach (var board in SourceConfig.Boards.Keys)
-				{
-					if (!threadBatch.Any(x => x.Item1.Board == board))
-						continue;
+			_ = Task.Run(() => ReportingTask(CancellationToken.None));
 
-					// Check for threads that have already been downloaded by the consumer, noting the last time they were downloaded.
-					var existingThreads = await ThreadConsumer.CheckExistingThreads(threadBatch.Where(x => x.Item1.Board == board).Select(x => x.Item1.ThreadId),
-						board,
-						false,
+			int readParallelism = 20;
+			int writeParallelism = 100;
+
+			var threadChannel = Channel.CreateBounded<(ThreadPointer, Thread)>(1000);
+
+			var readerTask = Task.Run(async () =>
+				{
+					await foreach (var thread in ReadThreads(token, readParallelism))
+					{
+						if (thread.Item2 == null)
+							continue;
+
+						await threadChannel.Writer.WriteAsync(thread, token);
+					}
+				})
+				.ContinueWith(task => threadChannel.Writer.Complete(task.Exception));
+
+			var writerTask = Parallel.ForEachAsync(threadChannel.Reader.ReadAllAsync(token), new ParallelOptions{
+				MaxDegreeOfParallelism = writeParallelism,
+				CancellationToken = token
+			}, async (thread, token) =>
+			{
+				try
+				{
+					var threadInfo = await ThreadConsumer.CheckExistingThread(thread.Item1.ThreadId, thread.Item1.Board,
 						ConsumerConfig.ConsolidationMode == ConsolidationMode.Authoritative ? MetadataMode.FullHashMetadata : MetadataMode.ThreadIdAndPostId,
 						false);
 
-					lock (TrackedThreads)
-						foreach (var existingThread in existingThreads)
-						{
-							TrackedThreads[new ThreadPointer(board, existingThread.ThreadId)] =
-								TrackedThread.StartTrackingThread(ThreadConsumer.CalculateHash, existingThread);
-						}
-				}
+					var trackedThread = TrackedThread.StartTrackingThread(ThreadConsumer.CalculateHash, threadInfo);
+					var updateInfo = trackedThread.ProcessThreadUpdates(thread.Item1, thread.Item2, ConsumerConfig.ConsolidationMode == ConsolidationMode.Authoritative);
 
-				lock (ThreadCacheDictionary)
-				{
-					foreach (var thread in threadBatch)
-						ThreadCacheDictionary.Add(thread.Item1, thread.Item2);
+					await ThreadConsumer.ConsumeThread(updateInfo);
+
+					Interlocked.Increment(ref LastProgressThreadsProcessed);
+					Interlocked.Add(ref LastProgressPostsProcessed, updateInfo.NewPosts.Count);
 				}
-				
-				foreach (var thread in threadBatch)
-					yield return thread.Item1;
-			}
+				catch (Exception ex)
+				{
+					Logger.Error(ex, "Failed to write thread");
+				}
+			});
+
+			await Task.WhenAll(readerTask, writerTask);
 		}
 
-		protected override async Task<MaybeAsyncEnumerable<ThreadPointer>> ReadBoards(bool firstRun, CancellationToken token)
+		protected IAsyncEnumerable<(ThreadPointer, Thread)> ReadThreads(CancellationToken token, int parallelism)
 		{
 			if (ForwardOnlyImporter != null)
-			{
-				var asyncThreadQueue = new AsyncProducerConsumerQueue<ThreadPointer>(1000);
+				return ForwardOnlyImporter.RetrieveThreads(SourceConfig.Boards.Keys.ToArray());
 
-				_ = Task.Run(async () =>
-				{
-					try
-					{
-						await foreach (var threadPointer in ForwardOnlyEnumerate())
-							await asyncThreadQueue.EnqueueAsync(threadPointer, token);
-					}
-					catch (Exception ex)
-					{
-						Logger.Error(ex, "Failed when enumerating over source material");
-					}
-					finally
-					{
-						asyncThreadQueue.CompleteAdding();
-					}
-				});
-				
-				return new MaybeAsyncEnumerable<ThreadPointer>(asyncThreadQueue.GetAsyncEnumerable());
-			}
-
-			var threadQueue = new List<ThreadPointer>();
-			var stopwatch = new System.Diagnostics.Stopwatch();
-			stopwatch.Start();
-
-			foreach (var board in SourceConfig.Boards.Keys)
-				await foreach (var pointer in Importer.GetThreadList(board).WithCancellation(token))
-					threadQueue.Add(pointer);
-
-			Logger.Debug("Read thread list in {time}", stopwatch.Elapsed);
-
-			if (threadQueue.Count < 10_000) // super memory-inefficient at this size
+			async IAsyncEnumerable<(ThreadPointer, Thread)> InnerEnumerable()
 			{
 				foreach (var board in SourceConfig.Boards.Keys)
 				{
-					// Check for threads that have already been downloaded by the consumer, noting the last time they were downloaded.
-					var existingThreads = await ThreadConsumer.CheckExistingThreads(threadQueue.Where(x => x.Board == board).Select(x => x.ThreadId),
-						board,
-						false,
-						ConsumerConfig.ConsolidationMode == ConsolidationMode.Authoritative ? MetadataMode.FullHashMetadata : MetadataMode.ThreadIdAndPostId,
-						false);
+					var threadQueue = new List<ThreadPointer>();
 
-					lock (TrackedThreads)
-						foreach (var existingThread in existingThreads)
+					await foreach (var pointer in Importer.GetThreadList(board).WithCancellation(token))
+						threadQueue.Add(pointer);
+
+					Logger.Information("Found {threadCount:N0} threads for board /{board}/", threadQueue.Count, board);
+
+					var threadChannel = Channel.CreateBounded<(ThreadPointer, Thread)>(1000);
+
+					var parallelismTask = Parallel.ForEachAsync(threadQueue, new ParallelOptions
 						{
-							TrackedThreads[new ThreadPointer(board, existingThread.ThreadId)] =
-								TrackedThread.StartTrackingThread(ThreadConsumer.CalculateHash, existingThread);
-						}
+							CancellationToken = token,
+							MaxDegreeOfParallelism = parallelism
+						}, async (threadPointer, token) =>
+						{
+							var thread = await Importer.RetrieveThread(threadPointer);
+
+							if (thread == null)
+								return;
+
+							await threadChannel.Writer.WriteAsync((threadPointer, thread), token);
+						})
+						.ContinueWith(task => threadChannel.Writer.Complete(task.Exception));
+
+					await foreach (var thread in threadChannel.Reader.ReadAllAsync(token))
+						yield return thread;
 				}
-
-				return new MaybeAsyncEnumerable<ThreadPointer>(threadQueue);
 			}
-			else
-			{
-				async IAsyncEnumerable<ThreadPointer> internalEnumerate()
-				{
-					AsyncProducerConsumerQueue<ICollection<ThreadPointer>> pointerQueue = new(1);
 
-					var producerTask = Task.Run(async () =>
-					{
-						try
-						{
-							foreach (var board in SourceConfig.Boards.Keys)
-							{
-								if (token.IsCancellationRequested)
-									break;
-
-								stopwatch.Restart();
-								foreach (var pointerBatch in threadQueue.Where(x => x.Board == board).Batch(10000))
-								{
-									if (token.IsCancellationRequested)
-										break;
-
-									Logger.Debug("Read thread batch in {time}", stopwatch.Elapsed);
-
-									stopwatch.Restart();
-
-									var existingThreads = await ThreadConsumer.CheckExistingThreads(
-										pointerBatch.Select(x => x.ThreadId),
-										board,
-										false,
-										ConsumerConfig.ConsolidationMode == ConsolidationMode.Authoritative ? MetadataMode.FullHashMetadata : MetadataMode.ThreadIdAndPostId,
-										false);
-
-									Logger.Debug("Read existing threads in {time}", stopwatch.Elapsed);
-									stopwatch.Restart();
-
-									lock (TrackedThreads)
-									{
-										foreach (var existingThread in existingThreads)
-										{
-											TrackedThreads[new ThreadPointer(board, existingThread.ThreadId)] =
-												TrackedThread.StartTrackingThread(ThreadConsumer.CalculateHash,
-													existingThread);
-										}
-									}
-
-									Logger.Debug("Set tracked threads in {time}", stopwatch.Elapsed);
-
-									try
-									{
-										await pointerQueue.EnqueueAsync(pointerBatch, token);
-									}
-									catch (OperationCanceledException)
-									{
-										break;
-									}
-
-									stopwatch.Restart();
-								}
-							}
-						}
-						catch (Exception ex)
-						{
-							Logger.Error(ex, "Error while importing");
-						}
-
-						pointerQueue.CompleteAdding();
-					});
-
-					while (await pointerQueue.OutputAvailableAsync(token))
-					{
-						foreach (var item in await pointerQueue.DequeueAsync(token))
-							yield return item;
-					}
-				}
-
-				return new MaybeAsyncEnumerable<ThreadPointer>(internalEnumerate());
-			}
+			return InnerEnumerable();
 		}
 
-		protected override async Task<ApiResponse<Thread>> RetrieveThreadAsync(ThreadPointer threadPointer, HttpClientProxy client, CancellationToken token)
-		{
-			Thread thread;
+		private DateTime LastProgressTime = DateTime.UtcNow;
+		private long LastProgressThreadsProcessed = 0;
+		private long LastProgressPostsProcessed = 0;
+		private long TotalThreadsProcessed = 0;
+		private long TotalPostsProcessed = 0;
 
-			if (ForwardOnlyImporter != null)
+		protected override void ReportProgress(ThreadPointer completedThread, ThreadUpdateTaskResult result, int enqueuedImageCount, int newCompletedCount, int? totalThreadCount)
+		{
+			Interlocked.Increment(ref LastProgressThreadsProcessed);
+			Interlocked.Add(ref LastProgressPostsProcessed, result.PostCountChange);
+
+			if (result.Status == ThreadUpdateStatus.Error || result.Status == ThreadUpdateStatus.Deleted)
+				base.ReportProgress(completedThread, result, enqueuedImageCount, newCompletedCount, totalThreadCount);
+		}
+
+		private async Task ReportingTask(CancellationToken token)
+		{
+			const int waitTime = 5;
+
+			try
 			{
-				lock (ThreadCacheDictionary)
+				while (!token.IsCancellationRequested)
 				{
-					thread = ThreadCacheDictionary.PopValue(threadPointer);
+					await Task.Delay(TimeSpan.FromSeconds(waitTime));
+
+					if (token.IsCancellationRequested)
+						break;
+
+					var sinceThreadsProcessed = Interlocked.Exchange(ref LastProgressThreadsProcessed, 0);
+					var sincePostsProcessed = Interlocked.Exchange(ref LastProgressPostsProcessed, 0);
+
+					TotalThreadsProcessed += sinceThreadsProcessed;
+					TotalPostsProcessed += sincePostsProcessed;
+
+					var timeSince = DateTime.UtcNow - LastProgressTime;
+					var threadsPerSecond = Math.Round(sinceThreadsProcessed / timeSince.TotalSeconds);
+					var postsPerSecond = Math.Round(sincePostsProcessed / timeSince.TotalSeconds);
+
+					Logger.Information($"{$"{TotalThreadsProcessed:N0}t",-5} / {$"{TotalPostsProcessed:N0}p",-5} ({$"+{sinceThreadsProcessed:N0}t",-5}, {threadsPerSecond:N0}t/s) ({$"+{sincePostsProcessed:N0}p",-5}, {postsPerSecond:N0}p/s)");
+
+					LastProgressTime = DateTime.UtcNow;
 				}
 			}
-			else
+			catch (Exception ex)
 			{
-				thread = await Importer.RetrieveThread(threadPointer);
+				Logger.Error(ex, "Reporting task failure");
 			}
-
-			return new ApiResponse<Thread>(thread != null ? ResponseType.Ok : ResponseType.NotFound, thread);
 		}
 	}
 }

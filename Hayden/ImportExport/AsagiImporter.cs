@@ -9,6 +9,7 @@ using Hayden.Config;
 using Hayden.Consumers.Asagi;
 using Hayden.Consumers.HaydenMysql.DB;
 using Hayden.Models;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 
 namespace Hayden.ImportExport;
 
@@ -21,28 +22,31 @@ public class AsagiImporter : IImporter
 	{
 		this.sourceConfig = sourceConfig;
 
-		dbContextOptions = new DbContextOptionsBuilder<AsagiDbContext>()
+		dbContextOptions = (DbContextOptions<AsagiDbContext>)new DbContextOptionsBuilder<AsagiDbContext>()
 			.UseMySql(sourceConfig.DbConnectionString,
 				ServerVersion.AutoDetect(sourceConfig.DbConnectionString), o =>
 				{
 					o.EnableIndexOptimizedBooleanColumns();
 				})
 			//.LogTo(s => Program.Log(s))
-			.Options;
-
+			.Options
+			.WithExtension(new AsagiDbContext.AsagiDbExtension(sourceConfig.DbConnectionString));
 		//using var dbContext = GetDbContext();
 
 		//boardTables = dbContext.GetBoardTables().Result;
+		
+		//var cdnUrl = sourceConfig.ImageboardWebsite;
 
-		//CdnUrl = sourceConfig.ImageboardWebsite;
+		//if (!cdnUrl.EndsWith('/'))
+		//	cdnUrl += "/";
 
-		//if (!CdnUrl.EndsWith('/'))
-		//	CdnUrl += "/";
+		contextPool = new PooledDbContextFactory<AsagiDbContext>(dbContextOptions);
 	}
 
+	private PooledDbContextFactory<AsagiDbContext> contextPool;
+
 	private AsagiDbContext GetDbContext()
-		=> new AsagiDbContext(dbContextOptions,
-			new AsagiDbContext.AsagiDbContextOptions { ConnectionString = sourceConfig.DbConnectionString });
+		=> contextPool.CreateDbContext();
 
 
 	public async Task<string[]> GetBoardList()
@@ -89,6 +93,9 @@ public class AsagiImporter : IImporter
 
 		//string radix = $"{pointer.ThreadId / 100000 % 1000:0000}/{pointer.ThreadId / 1000 % 100:00}";
 
+		if (threadPosts.Length == 0)
+			return null;
+
 		return new Thread
 		{
 			ThreadId = pointer.ThreadId,
@@ -97,7 +104,7 @@ public class AsagiImporter : IImporter
 			Posts = threadPosts.Select(x => new Post
 			{
 				PostNumber = x.p.num,
-				TimePosted = Utility.ConvertNewYorkTimestamp(x.p.timestamp),
+				TimePosted = Utility.ConvertNewYorkTimestamp(x.p.timestamp.Value),
 				Author = x.p.name,
 				Tripcode = x.p.trip,
 				Email = x.p.email,
@@ -119,7 +126,7 @@ public class AsagiImporter : IImporter
 							FileSize = x.p.media_size,
 							IsSpoiler = x.p.spoiler,
 							//ThumbnailExtension = x.i == null ? null : Path.GetExtension(x.i.preview_op ?? x.i.preview_reply),
-							Md5Hash = Convert.FromBase64String(x.p.media_hash),
+							Md5Hash = TryConvertBase64(x.p.media_hash),
 							//FileUrl = $"{CdnUrl}data/{pointer.Board}/img/{radix}/{x.media_filename}",
 							//ThumbnailUrl = $"{CdnUrl}data/{pointer.Board}/thumb/{radix}/{x.preview}"
 						}
@@ -138,5 +145,18 @@ public class AsagiImporter : IImporter
 				TimeExpired = threadPosts[0].p.timestamp_expired,
 			}
 		};
+	}
+
+	private static byte[] TryConvertBase64(string inputHash)
+	{
+		if (string.IsNullOrWhiteSpace(inputHash))
+			return null;
+
+		var md5Hash = new byte[16];
+
+		if (Convert.TryFromBase64String(inputHash, md5Hash, out _))
+			return md5Hash;
+
+		return null;
 	}
 }

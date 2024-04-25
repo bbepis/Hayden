@@ -509,7 +509,7 @@ public class AsagiNewThreadConsumer : IThreadConsumer
 	}
 
 	/// <inheritdoc/>
-	public async Task<ICollection<ExistingThreadInfo>> CheckExistingThreads(IEnumerable<ulong> threadIdsToCheck, string board, bool archivedOnly, MetadataMode metadataMode = MetadataMode.FullHashMetadata, bool excludeDeletedPosts = true)
+	public async Task<IList<ExistingThreadInfo>> CheckExistingThreads(IEnumerable<ulong> threadIdsToCheck, string board, bool archivedOnly, MetadataMode metadataMode = MetadataMode.FullHashMetadata, bool excludeDeletedPosts = true)
 	{
 		int archivedInt = archivedOnly ? 1 : 0;
 
@@ -614,6 +614,12 @@ public class AsagiNewThreadConsumer : IThreadConsumer
 
 			return items;
 		}
+	}
+
+	public Task<ExistingThreadInfo> CheckExistingThread(ulong threadId, string board, MetadataMode metadataMode = MetadataMode.FullHashMetadata,
+		bool excludeDeletedPosts = true)
+	{
+		throw new NotImplementedException();
 	}
 
 	#endregion

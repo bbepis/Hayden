@@ -503,7 +503,7 @@ namespace Hayden.Consumers
 		}
 
 		/// <inheritdoc/>
-		public async Task<ICollection<ExistingThreadInfo>> CheckExistingThreads(IEnumerable<ulong> threadIdsToCheck, string board, bool archivedOnly, MetadataMode metadataMode = MetadataMode.FullHashMetadata, bool excludeDeletedPosts = true)
+		public async Task<IList<ExistingThreadInfo>> CheckExistingThreads(IEnumerable<ulong> threadIdsToCheck, string board, bool archivedOnly, MetadataMode metadataMode = MetadataMode.FullHashMetadata, bool excludeDeletedPosts = true)
 		{
 			int archivedInt = archivedOnly ? 1 : 0;
 
@@ -608,6 +608,12 @@ namespace Hayden.Consumers
 
 				return items;
 			}
+		}
+
+		public Task<ExistingThreadInfo> CheckExistingThread(ulong threadId, string board, MetadataMode metadataMode = MetadataMode.FullHashMetadata,
+			bool excludeDeletedPosts = true)
+		{
+			throw new NotImplementedException();
 		}
 
 		#endregion

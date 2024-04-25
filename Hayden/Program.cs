@@ -133,15 +133,6 @@ public class Program
 			return 2;
 		}
 
-		try
-		{
-			var e = JObject.Parse(File.ReadAllText(configPath));
-		}
-		catch (Exception ex)
-		{
-			Console.WriteLine(ex);
-			await Task.Delay(9999999);
-		}
 		var rawConfigFile = JObject.Parse(File.ReadAllText(configPath));
 
 		var tokenSource = new CancellationTokenSource();

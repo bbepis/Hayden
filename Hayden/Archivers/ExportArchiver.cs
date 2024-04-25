@@ -266,10 +266,16 @@ public class ExportArchiver : IArchiver
 
 		public Task ThreadUntracked(ulong threadId, string board, bool deleted) => Task.CompletedTask;
 
-		public Task<ICollection<ExistingThreadInfo>> CheckExistingThreads(IEnumerable<ulong> threadIdsToCheck, string board, bool archivedOnly,
+		public Task<IList<ExistingThreadInfo>> CheckExistingThreads(IEnumerable<ulong> threadIdsToCheck, string board, bool archivedOnly,
 			MetadataMode metadataMode = MetadataMode.FullHashMetadata, bool excludeDeletedPosts = true)
 		{
-			return Task.FromResult((ICollection<ExistingThreadInfo>)Array.Empty<ExistingThreadInfo>());
+			return Task.FromResult((IList<ExistingThreadInfo>)Array.Empty<ExistingThreadInfo>());
+		}
+
+		public Task<ExistingThreadInfo> CheckExistingThread(ulong threadId, string board, MetadataMode metadataMode = MetadataMode.FullHashMetadata,
+			bool excludeDeletedPosts = true)
+		{
+			throw new NotImplementedException();
 		}
 
 		public uint CalculateHash(Post post) => 0;

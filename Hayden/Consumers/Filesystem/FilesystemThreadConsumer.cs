@@ -269,7 +269,7 @@ namespace Hayden.Consumers
 			return Task.CompletedTask;
 		}
 
-		public Task<ICollection<ExistingThreadInfo>> CheckExistingThreads(IEnumerable<ulong> threadIdsToCheck, string board, bool archivedOnly, MetadataMode metadataMode = MetadataMode.FullHashMetadata, bool excludeDeletedPosts = true)
+		public Task<IList<ExistingThreadInfo>> CheckExistingThreads(IEnumerable<ulong> threadIdsToCheck, string board, bool archivedOnly, MetadataMode metadataMode = MetadataMode.FullHashMetadata, bool excludeDeletedPosts = true)
 		{
 			var boardDirectory = Path.Combine(ArchiveDirectory, board);
 
@@ -331,7 +331,13 @@ namespace Hayden.Consumers
 					threadHashList));
 			}
 
-			return Task.FromResult<ICollection<ExistingThreadInfo>>(existingThreads);
+			return Task.FromResult<IList<ExistingThreadInfo>>(existingThreads);
+		}
+
+		public Task<ExistingThreadInfo> CheckExistingThread(ulong threadId, string board, MetadataMode metadataMode = MetadataMode.FullHashMetadata,
+			bool excludeDeletedPosts = true)
+		{
+			throw new NotImplementedException();
 		}
 
 		public uint CalculateHash(Post post)

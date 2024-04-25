@@ -19,8 +19,12 @@ namespace Hayden.Consumers
 		public Task ThreadUntracked(ulong threadId, string board, bool deleted)
 			=> Task.CompletedTask;
 
-		public Task<ICollection<ExistingThreadInfo>> CheckExistingThreads(IEnumerable<ulong> threadIdsToCheck, string board, bool archivedOnly, MetadataMode metadataMode = MetadataMode.FullHashMetadata, bool excludeDeletedPosts = true)
-			=> Task.FromResult<ICollection<ExistingThreadInfo>>(new List<ExistingThreadInfo>());
+		public Task<IList<ExistingThreadInfo>> CheckExistingThreads(IEnumerable<ulong> threadIdsToCheck, string board, bool archivedOnly, MetadataMode metadataMode = MetadataMode.FullHashMetadata, bool excludeDeletedPosts = true)
+			=> Task.FromResult<IList<ExistingThreadInfo>>(new List<ExistingThreadInfo>());
+
+		public Task<ExistingThreadInfo> CheckExistingThread(ulong threadId, string board, MetadataMode metadataMode = MetadataMode.FullHashMetadata,
+			bool excludeDeletedPosts = true)
+			=> Task.FromResult(new ExistingThreadInfo(threadId));
 
 		public uint CalculateHash(Post post)
 			=> 0;
