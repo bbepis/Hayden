@@ -765,7 +765,7 @@ namespace Hayden
 							allThreadIds.Add(thread.ThreadNumber);
 
 							// Perform a last modified time check, remove any threads that have not changed since the last time we've checked (passed in via lastCheckTimestamp)
-							if (thread.LastModified < lastCheckTimestamp && thread.LastModified > 0)
+							if (thread.LastModified <= lastCheckTimestamp && thread.LastModified > 0)
 							{
 								Log.Verbose("Thread /{board}/{threadId} has not changed (timestamp {timestamp}, last {lastCheckTimestamp}, current {currentTimestamp})",
 									board, thread.ThreadNumber, thread.LastModified, lastCheckTimestamp, Utility.GetGMTTimestamp(DateTimeOffset.Now));
