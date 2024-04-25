@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.IO.Abstractions;
 using System.Linq;
 using System.Threading.Tasks;
@@ -10,9 +11,12 @@ using Hayden.Contract;
 using Hayden.MediaInfo;
 using Hayden.Models;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using Serilog;
+using static Hayden.Common;
 
 namespace Hayden.Consumers
 {
@@ -23,7 +27,7 @@ namespace Hayden.Consumers
 	{
 		protected ConsumerConfig ConsumerConfig { get; }
 		protected SourceConfig SourceConfig { get; }
-		protected DbContextOptions DbContextOptions { get; set; }
+		protected DbContextOptions<HaydenDbContext> DbContextOptions { get; set; }
 		protected IFileSystem FileSystem { get; set; }
 		protected IMediaInspector MediaInspector { get; set; }
 
@@ -52,12 +56,6 @@ namespace Hayden.Consumers
 
 		public async Task InitializeAsync()
 		{
-			if (!ConsumerConfig.FullImagesEnabled && ConsumerConfig.ThumbnailsEnabled)
-			{
-				throw new InvalidOperationException(
-					"Consumer cannot be used if thumbnails enabled and full images are not. Full images are required for proper hash calculation");
-			}
-
 			await using var context = GetDBContext();
 
 			if (context.Database.ProviderName != "Microsoft.EntityFrameworkCore.InMemory")
@@ -106,13 +104,14 @@ namespace Hayden.Consumers
 
 		protected virtual void SetUpDBContext()
 		{
-			var contextBuilder = new DbContextOptionsBuilder();
+			var contextBuilder = new DbContextOptionsBuilder<HaydenDbContext>();
 
 			if (ConsumerConfig.DatabaseType == DatabaseType.MySql)
 			{
 				contextBuilder.UseMySql(ConsumerConfig.ConnectionString, ServerVersion.AutoDetect(ConsumerConfig.ConnectionString), x =>
 				{
 					x.EnableIndexOptimizedBooleanColumns();
+					x.MaxBatchSize(1000);
 				});
 			}
 			else if (ConsumerConfig.DatabaseType == DatabaseType.Sqlite)
@@ -124,406 +123,476 @@ namespace Hayden.Consumers
 				throw new Exception("Unknown database type; not supported by HaydenConsumer");
 			}
 
+			contextBuilder.UseQueryTrackingBehavior(QueryTrackingBehavior.NoTracking);
+
 			DbContextOptions = contextBuilder.Options;
 		}
 
 		public Task CommitAsync() => Task.CompletedTask;
 
-		protected virtual HaydenDbContext GetDBContext() => new(DbContextOptions);
 
 		/// <inheritdoc/>
 		public async Task<IList<QueuedImageDownload>> ConsumeThread(ThreadUpdateInfo threadUpdateInfo)
 		{
-			List<QueuedImageDownload> imageDownloads = new List<QueuedImageDownload>();
-
 			await using var dbContext = GetDBContext();
 
-			string board = GetTranslatedBoardName(threadUpdateInfo.ThreadPointer.Board);
-			ushort boardId = BoardIdMappings[board];
+			// A lot of this will look a bit verbose and unclear, but it's to do with how EF Core handles entity tracking
+			// Basically, to maximise performance and minimise wasted cycles on change tracking, I follow a lot of practices here:
+			// https://learn.microsoft.com/en-us/ef/core/performance/advanced-performance-topics
+			// Which is very far away from how you'd expect normal EF Core code to be written. However this gives a +25% performance boost
 
-			//{ // delete this block when not testing
-			//	string threadDirectory = Path.Combine(Config.DownloadLocation, board, "thread");
-			//	string threadFileName = Path.Combine(threadDirectory, $"{threadUpdateInfo.ThreadPointer.ThreadId}.json");
-
-			//	Directory.CreateDirectory(threadDirectory);
-
-			//	YotsubaFilesystemThreadConsumer.PerformJsonThreadUpdate(threadUpdateInfo, threadFileName);
-			//}
-
-			async Task ProcessImages()
+			try
 			{
-				foreach (var post in threadUpdateInfo.Thread.Posts)
+				dbContext.ChangeTracker.AutoDetectChangesEnabled = false;
+
+				List<QueuedImageDownload> imageDownloads = new List<QueuedImageDownload>();
+
+				string board = GetTranslatedBoardName(threadUpdateInfo.ThreadPointer.Board);
+				ushort boardId = BoardIdMappings[board];
+
+				async Task ProcessImages()
 				{
-					if (post.Media == null)
-						continue;
+					// NOTE: There's an edge case I'm not handling here. If someone changes the config settings
+					//   for if full images or thumbnails should be downloaded, those changes will only be applied to posts detected as new.
+					// This could be handled by doing DB checks for unchanged posts, but it'll tank performance
 
-					foreach (var file in post.Media)
+					// Handle new image downloads
+					// Going to be doing this in a slightly weird way. We want to batch together as many inserts as we can
+
+					var fileMappingDict = new List<(DBFileMapping, DBFile, Media)>();
+
+					void QueueDownload(Media media, DBFile dbFile)
 					{
-						// TODO: performance could be improved here by batching these requests
-
-						var fileMapping = await dbContext.FileMappings.FirstOrDefaultAsync(x =>
-							x.BoardId == boardId && x.PostId == post.PostNumber && x.Index == file.Index);
-
-						if (fileMapping != null && fileMapping.FileId != null)
-						{
-							var dbFile = await dbContext.Files.FirstAsync(x => x.Id == fileMapping.FileId);
-
-							if (dbFile.FileExists)
-								continue;
-						}
-						
-						DBFile existingFile = null;
-
-						if (file.Sha256Hash != null)
-						{
-							existingFile = await dbContext.Files.FirstOrDefaultAsync(x =>
-								x.Sha256Hash == file.Sha256Hash
-								&& x.BoardId == boardId);
-						}
-
-						if (existingFile == null && file.Sha1Hash != null && !ConsumerConfig.IgnoreSha1Hash)
-						{
-							existingFile = await dbContext.Files.FirstOrDefaultAsync(x =>
-								x.Sha1Hash == file.Sha1Hash
-								&& x.BoardId == boardId);
-						}
-
-						if (existingFile == null && file.Md5Hash != null && !ConsumerConfig.IgnoreMd5Hash)
-						{
-							existingFile = await dbContext.Files.FirstOrDefaultAsync(x =>
-								x.Md5Hash == file.Md5Hash
-								&& x.BoardId == boardId);
-						}
-
-						if (fileMapping == null)
-						{
-							fileMapping = new DBFileMapping
-							{
-								BoardId = boardId,
-								PostId = post.PostNumber,
-								FileId = null,
-								Filename = file.Filename,
-								Index = file.Index,
-								IsDeleted = file.IsDeleted,
-								IsSpoiler = file.IsSpoiler.GetValueOrDefault(),
-								AdditionalMetadata = file.AdditionalMetadata?.Serialize()
-							};
-
-							dbContext.Add(fileMapping);
-						}
-						else
-						{
-							dbContext.Update(fileMapping);
-						}
-
-						if (existingFile != null)
-						{
-							// We know we have the file. Just attach it
-							fileMapping.FileId = existingFile.Id;
-
-							//if (existingFile.FileExists)
-							continue;
-						}
-
+						if (dbFile.FileBanned)
+							return;
 
 						Uri imageUrl = null, thumbUrl = null;
 
-						if (ConsumerConfig.FullImagesEnabled && file.FileUrl != null)
-							imageUrl = new Uri(file.FileUrl);
+						if (ConsumerConfig.FullImagesEnabled && media.FileUrl != null && !dbFile.FileExists)
+							imageUrl = new Uri(media.FileUrl);
 
-						if (ConsumerConfig.ThumbnailsEnabled && file.ThumbnailUrl != null)
-							thumbUrl = new Uri(file.ThumbnailUrl);
+						if (ConsumerConfig.ThumbnailsEnabled && media.ThumbnailUrl != null && !dbFile.ThumbnailExists)
+							thumbUrl = new Uri(media.ThumbnailUrl);
 
 						if (imageUrl != null || thumbUrl != null)
 						{
 							imageDownloads.Add(new QueuedImageDownload(imageUrl, thumbUrl, new()
 							{
-								["board"] = board,
-								["boardId"] = boardId,
-								["postNumber"] = post.PostNumber,
-								["media"] = file
+								["fileId"] = dbFile.Id,
+								["media"] = media
 							}));
 						}
-						else
+					}
+
+				
+
+					List<byte[]> Sha256Hashes = new List<byte[]>();
+					List<byte[]> Sha1Hashes = new List<byte[]>();
+					List<byte[]> Md5Hashes = new List<byte[]>();
+
+				
+					foreach (var post in threadUpdateInfo.NewPosts)
+					{
+						foreach (var media in post.Media)
 						{
-							AddMissingMappingMetadata(fileMapping, file);
+							if (media.Sha256Hash != null)
+								Sha256Hashes.Add(media.Sha256Hash);
+							if (media.Sha1Hash != null)
+								Sha1Hashes.Add(media.Sha1Hash);
+							if (media.Md5Hash != null)
+								Md5Hashes.Add(media.Md5Hash);
+						}
+					}
+
+					// do this in bulk so we're not doing thousands of sequential database calls
+					DBFile[] allMatchingFiles;
+
+					if (Sha256Hashes.Count > 0 || Sha1Hashes.Count > 0 || Md5Hashes.Count > 0)
+					{
+						allMatchingFiles = await dbContext.Files
+							.AsNoTracking()
+							.Where(file =>
+								Sha256Hashes.Contains(file.Sha256Hash)
+								|| Sha1Hashes.Contains(file.Sha256Hash)
+								|| Md5Hashes.Contains(file.Md5Hash))
+							.ToArrayAsync();
+					}
+					else
+					{
+						allMatchingFiles = Array.Empty<DBFile>();
+					}
+
+					foreach (var post in threadUpdateInfo.NewPosts)
+					{
+						foreach (var media in post.Media)
+						{
+							DBFile existingFile = null;
+
+							// Order is important here. We want to rely on SHA256 first, then SHA1, then MD5
+							if (media.Sha256Hash != null)
+							{
+								existingFile = allMatchingFiles.FirstOrDefault(x =>
+									x.Sha256Hash.ByteArrayEquals(media.Sha256Hash));
+							}
+
+							if (existingFile == null && media.Sha1Hash != null && !ConsumerConfig.IgnoreSha1Hash)
+							{
+								existingFile = allMatchingFiles.FirstOrDefault(x =>
+									x.Sha1Hash.ByteArrayEquals(media.Sha1Hash));
+							}
+
+							if (existingFile == null && media.Md5Hash != null && !ConsumerConfig.IgnoreMd5Hash)
+							{
+								existingFile = allMatchingFiles.FirstOrDefault(x =>
+									x.Md5Hash.ByteArrayEquals(media.Md5Hash));
+							}
+
+							var fileMapping = new DBFileMapping
+							{
+								BoardId = boardId,
+								PostId = post.PostNumber,
+								FileId = null,
+								Filename = media.Filename ?? "",
+								Index = media.Index,
+								IsDeleted = media.IsDeleted,
+								IsSpoiler = media.IsSpoiler.GetValueOrDefault(),
+								AdditionalMetadata = media.AdditionalMetadata?.Serialize()
+							};
+
+							if (existingFile != null)
+							{
+								// The file already exists in the DB.
+								fileMapping.FileId = existingFile.Id;
+
+								dbContext.Add(fileMapping);
+
+								QueueDownload(media, existingFile);
+							}
+							else if (media.AdditionalMetadata?.ExternalMediaUrl != null)
+							{
+								// Dealing with an embed. Put it in the mapping, but don't create or assign a file for it
+								dbContext.Add(fileMapping);
+							}
+							else
+							{
+								// Need to create a new file and attach the mapping. Can't attach it to the mapping until it gets saved
+								//   to the database, so keep track of it in a dictionary
+
+								var newFile = new DBFile
+								{
+									Sha256Hash = media.Sha256Hash,
+									Sha1Hash = media.Sha1Hash,
+									Md5Hash = media.Md5Hash,
+									FileExists = false,
+									ThumbnailExists = false,
+									Size = media.FileSize ?? 0,
+									Extension = media.FileExtension,
+									ThumbnailExtension = media.ThumbnailExtension
+								};
+
+								dbContext.Add(newFile);
+
+								fileMappingDict.Add((fileMapping, newFile, media));
+							}
+						}
+					}
+
+					dbContext.ChangeTracker.DetectChanges();
+					await dbContext.SaveChangesAsync();
+					dbContext.ChangeTracker.Clear();
+
+					// files will have assigned IDs now
+					foreach (var (mapping, file, media) in fileMappingDict)
+					{
+						mapping.FileId = file.Id;
+						dbContext.Add(mapping);
+
+						QueueDownload(media, file);
+					}
+
+					// update deletion statuses for modified posts
+
+					if (threadUpdateInfo.UpdatedPosts.Count > 0)
+					{
+						var postIds = threadUpdateInfo.UpdatedPosts.Select(x => x.PostNumber).ToArray();
+
+						var existingFileMappings = await dbContext.FileMappings
+							.AsNoTracking()
+							.Where(x => x.BoardId == boardId && postIds.Contains(x.PostId))
+							.ToArrayAsync();
+
+						foreach (var post in threadUpdateInfo.UpdatedPosts)
+						{
+							var postMappings = existingFileMappings.Where(x => x.PostId == post.PostNumber).ToArray();
+
+							if (post.Media.Length == 0)
+							{
+								foreach (var mapping in postMappings)
+								{
+									mapping.IsDeleted = true;
+									dbContext.Update(mapping);
+								}
+
+								continue;
+							}
+
+							if (post.Media.Length < postMappings.Length)
+							{
+								// We can probably add some heuristics here, but it'd be too much of a pain in the ass
+								Logger.Warning("Post /{postBoard}/{postNumber} has changed its file count from {prevNumber} to {postNumber}. A file deletion might have happened; it could not be determined which file",
+									threadUpdateInfo.ThreadPointer.Board, post.PostNumber, postMappings.Length, post.Media.Length);
+								continue;
+							}
+
+							foreach (var media in post.Media)
+							{
+								var existingFile = postMappings.First(x => x.Index == media.Index);
+
+								if (media.IsDeleted && existingFile.IsDeleted != media.IsDeleted)
+								{
+									existingFile.IsDeleted = media.IsDeleted;
+									dbContext.Update(existingFile);
+								}
+							}
 						}
 					}
 				}
-			}
 
-			if (threadUpdateInfo.IsNewThread)
-			{
-				var dbThread = new DBThread
+				if (threadUpdateInfo.IsNewThread)
 				{
-					BoardId = boardId,
-					ThreadId = threadUpdateInfo.ThreadPointer.ThreadId,
-					IsDeleted = threadUpdateInfo.Thread.AdditionalMetadata?.Deleted
-						?? threadUpdateInfo.Thread.Posts.FirstOrDefault(x => x.PostNumber == threadUpdateInfo.ThreadPointer.ThreadId)?.IsDeleted
-						?? false,
-					IsArchived = threadUpdateInfo.Thread.IsArchived,
-					LastModified = DateTime.MinValue,
-					Title = threadUpdateInfo.Thread.Title.TrimAndNullify(),
-					AdditionalMetadata = threadUpdateInfo.Thread.AdditionalMetadata?.Serialize()
-				};
+					var dbThread = new DBThread
+					{
+						BoardId = boardId,
+						ThreadId = threadUpdateInfo.ThreadPointer.ThreadId,
+						IsDeleted = threadUpdateInfo.Thread.AdditionalMetadata?.Deleted
+							?? threadUpdateInfo.Thread.Posts.FirstOrDefault(x => x.PostNumber == threadUpdateInfo.ThreadPointer.ThreadId)?.IsDeleted
+							?? false,
+						IsArchived = threadUpdateInfo.Thread.IsArchived,
+						LastModified = DateTime.MinValue,
+						Title = threadUpdateInfo.Thread.Title.TrimAndNullify(),
+						AdditionalMetadata = threadUpdateInfo.Thread.AdditionalMetadata?.Serialize()
+					};
 
-				dbContext.Add(dbThread);
-				await dbContext.SaveChangesAsync();
-			}
-
-			HashSet<ulong> postNumbersToSkip = null;
-
-			if (!threadUpdateInfo.IsNewThread && threadUpdateInfo.NewPosts.Any(x => x.IsDeleted == true))
-			{
-				var checkedPostIds = threadUpdateInfo.NewPosts.Where(x => x.IsDeleted == true)
-					.Select(x => x.PostNumber)
-					.ToArray();
-
-				var skippablePostIds = await dbContext.Posts
-					.Where(x => x.BoardId == boardId && checkedPostIds.Contains(x.PostId))
-					.Select(x => x.PostId)
-					.ToArrayAsync();
-
-				postNumbersToSkip = new HashSet<ulong>(skippablePostIds);
-			}
-			
-			foreach (var post in threadUpdateInfo.NewPosts)
-			{
-				if (postNumbersToSkip != null && postNumbersToSkip.Contains(post.PostNumber))
-				{
-					// due to limitations with the thread tracking method, deleted posts don't get processed correctly
-					
-					continue;
+					dbContext.Add(dbThread);
 				}
 
-				dbContext.Add(new DBPost
-				{
-					BoardId = boardId,
-					PostId = post.PostNumber,
-					ThreadId = threadUpdateInfo.ThreadPointer.ThreadId,
-					ContentHtml = post.ContentRendered.TrimAndNullify(),
-					ContentRaw = post.ContentRaw.TrimAndNullify(),
-					ContentType = post.ContentType,
-					IsDeleted = post.IsDeleted ?? false,
-					Author = post.Author == "Anonymous" ? null : post.Author.TrimAndNullify(),
-					Tripcode = post.Tripcode.TrimAndNullify(),
-					Email = post.Email.TrimAndNullify(),
-					DateTime = post.TimePosted.UtcDateTime,
-					AdditionalMetadata = post.AdditionalMetadata?.Serialize()
-				});
-			}
+				HashSet<ulong> postNumbersToSkip = null;
 
-			await dbContext.SaveChangesAsync();
+				if (!threadUpdateInfo.IsNewThread && threadUpdateInfo.NewPosts.Any(x => x.IsDeleted == true))
+				{
+					var checkedPostIds = threadUpdateInfo.NewPosts.Where(x => x.IsDeleted == true)
+						.Select(x => x.PostNumber)
+						.ToArray();
+
+					var skippablePostIds = await dbContext.Posts
+						.Where(x => x.BoardId == boardId && checkedPostIds.Contains(x.PostId))
+						.Select(x => x.PostId)
+						.ToArrayAsync();
+
+					postNumbersToSkip = new HashSet<ulong>(skippablePostIds);
+				}
 			
-			await ProcessImages();
-
-			await dbContext.SaveChangesAsync();
-
-			if (ConsumerConfig.ConsolidationMode == ConsolidationMode.Authoritative)
-				foreach (var post in threadUpdateInfo.UpdatedPosts)
+				foreach (var post in threadUpdateInfo.NewPosts)
 				{
-					Logger.Debug("Post /{board}/{postNumber} has been modified", board, post.PostNumber);
-
-					var dbPost = await dbContext.Posts.FirstAsync(x => x.BoardId == boardId && x.PostId == post.PostNumber);
-					var dbPostMappings = await dbContext.FileMappings.Where(x => x.BoardId == boardId && x.PostId == post.PostNumber).ToArrayAsync();
-					
-					//if (post.Comment != dbPost.ContentHtml)
-					if ((dbPost.ContentRaw != null && post.ContentRaw != dbPost.ContentRaw) || (dbPost.ContentRaw == null && post.ContentRendered != dbPost.ContentHtml))
+					if (postNumbersToSkip != null && postNumbersToSkip.Contains(post.PostNumber))
 					{
-						// this needs to be made more efficient
-						// this also doesn't cooperate well with deadlinks (why the fuck is that passed through the api html render?)
+						// due to limitations with the thread tracking method, deleted posts don't get processed correctly
+					
+						continue;
+					}
 
-						var jsonAdditionalMetadata = !string.IsNullOrWhiteSpace(dbPost.AdditionalMetadata)
-							? JObject.Parse(dbPost.AdditionalMetadata)
-							: new JObject();
+					dbContext.Add(new DBPost
+					{
+						BoardId = boardId,
+						PostId = post.PostNumber,
+						ThreadId = threadUpdateInfo.ThreadPointer.ThreadId,
+						ContentHtml = post.ContentRendered.TrimAndNullify(),
+						ContentRaw = post.ContentRaw.TrimAndNullify(),
+						ContentType = post.ContentType,
+						IsDeleted = post.IsDeleted ?? false,
+						Author = post.Author == "Anonymous" ? null : post.Author.TrimAndNullify(),
+						Tripcode = post.Tripcode.TrimAndNullify(),
+						Email = post.Email.TrimAndNullify(),
+						DateTime = post.TimePosted.UtcDateTime,
+						AdditionalMetadata = post.AdditionalMetadata?.Serialize()
+					});
+				}
 
-						const string jsonKey = "content_modifications";
+				if (ConsumerConfig.ConsolidationMode == ConsolidationMode.Authoritative)
+					foreach (var post in threadUpdateInfo.UpdatedPosts)
+					{
+						Logger.Debug("Post /{board}/{postNumber} has been modified", board, post.PostNumber);
 
-						var modificationsArray = jsonAdditionalMetadata.GetValue(jsonKey) as JArray ??
-												 new JArray();
+						var dbPost = await dbContext.Posts.FirstAsync(x => x.BoardId == boardId && x.PostId == post.PostNumber);
 
-						modificationsArray.Add(JToken.FromObject(new
+						//var dbPostMappings = await dbContext.FileMappings
+						//	.AsNoTracking()
+						//	.Where(x => x.BoardId == boardId && x.PostId == post.PostNumber).ToArrayAsync();
+					
+						if ((dbPost.ContentRaw != null && post.ContentRaw != dbPost.ContentRaw) || (dbPost.ContentRaw == null && post.ContentRendered != dbPost.ContentHtml))
 						{
-							time = DateTimeOffset.UtcNow,
-							old_content_raw = dbPost.ContentRaw,
-							old_content_html = dbPost.ContentHtml,
-							new_content_raw = post.ContentRaw,
-							new_content_html = post.ContentRendered
-						}));
+							// this needs to be made more efficient
+							// this also doesn't cooperate well with deadlinks (why the fuck is that passed through the api html render?)
 
-						jsonAdditionalMetadata[jsonKey] = modificationsArray;
-						dbPost.AdditionalMetadata = jsonAdditionalMetadata.ToString(Formatting.None);
+							var jsonAdditionalMetadata = !string.IsNullOrWhiteSpace(dbPost.AdditionalMetadata)
+								? JObject.Parse(dbPost.AdditionalMetadata)
+								: new JObject();
+
+							const string jsonKey = "content_modifications";
+
+							var modificationsArray = jsonAdditionalMetadata.GetValue(jsonKey) as JArray ??
+													 new JArray();
+
+							modificationsArray.Add(JToken.FromObject(new
+							{
+								time = DateTimeOffset.UtcNow,
+								old_content_raw = dbPost.ContentRaw,
+								old_content_html = dbPost.ContentHtml,
+								new_content_raw = post.ContentRaw,
+								new_content_html = post.ContentRendered
+							}));
+
+							jsonAdditionalMetadata[jsonKey] = modificationsArray;
+							dbPost.AdditionalMetadata = jsonAdditionalMetadata.ToString(Formatting.None);
 						
-						dbPost.ContentHtml = post.ContentRendered.TrimAndNullify();
-						dbPost.ContentRaw = post.ContentRaw.TrimAndNullify();
+							dbPost.ContentHtml = post.ContentRendered.TrimAndNullify();
+							dbPost.ContentRaw = post.ContentRaw.TrimAndNullify();
+						}
+
+						dbPost.IsDeleted = false;
+						dbContext.Update(dbPost);
+
+						//foreach (var dbPostMapping in dbPostMappings)
+						//{
+						//	if (post.Media == null
+						//		|| post.Media.Length == 0
+						//		|| post.Media.Any(x => x.Filename == dbPostMapping.Filename && x.IsDeleted)
+						//		|| post.Media.All(x => x.Filename != dbPostMapping.Filename))
+						//	{
+						//		dbPostMapping.IsDeleted = true;
+						//		dbContext.Update(dbPostMapping);
+						//	}
+						//}
 					}
 
-					dbPost.IsDeleted = false;
-
-					foreach (var dbPostMapping in dbPostMappings)
+				if (ConsumerConfig.ConsolidationMode == ConsolidationMode.Authoritative)
+					foreach (var postNumber in threadUpdateInfo.DeletedPosts)
 					{
-						if (post.Media == null
-							|| post.Media.Length == 0
-							|| post.Media.Any(x => x.Filename == dbPostMapping.Filename && x.IsDeleted)
-							|| post.Media.All(x => x.Filename != dbPostMapping.Filename))
-							dbPostMapping.IsDeleted = true;
+						Logger.Debug("Post /{board}/{postNumber} has been deleted", board, postNumber);
+
+						var dbPost = await dbContext.Posts.FirstAsync(x => x.BoardId == boardId && x.PostId == postNumber);
+
+						dbPost.IsDeleted = true;
+						dbContext.Update(dbPost);
 					}
-				}
-
-			if (ConsumerConfig.ConsolidationMode == ConsolidationMode.Authoritative)
-				foreach (var postNumber in threadUpdateInfo.DeletedPosts)
-				{
-					Logger.Debug("Post /{board}/{postNumber} has been deleted", board, postNumber);
-
-					var dbPost = await dbContext.Posts.FirstAsync(x => x.BoardId == boardId && x.PostId == postNumber);
-
-					dbPost.IsDeleted = true;
-				}
-
-			await dbContext.SaveChangesAsync();
-
-			await UpdateThread(board, threadUpdateInfo.ThreadPointer.ThreadId, false, threadUpdateInfo.Thread.IsArchived);
+				
+				dbContext.ChangeTracker.DetectChanges();
+				await dbContext.SaveChangesAsync();
+				dbContext.ChangeTracker.Clear();
 			
-			return imageDownloads;
+				await ProcessImages();
+			
+				dbContext.ChangeTracker.DetectChanges();
+				await dbContext.SaveChangesAsync();
+				dbContext.ChangeTracker.Clear();
+
+				await UpdateThread(board, threadUpdateInfo.ThreadPointer.ThreadId, false, threadUpdateInfo.Thread.IsArchived);
+			
+				return imageDownloads;
+
+			}
+			finally
+			{
+				dbContext.ChangeTracker.AutoDetectChangesEnabled = true;
+			}
 		}
 
 		/// <inheritdoc/>
 		public async Task ProcessFileDownload(QueuedImageDownload queuedImageDownload, string imageTempFilename, string thumbTempFilename)
 		{
-			if (!queuedImageDownload.TryGetProperty("board", out string board)
-				|| !queuedImageDownload.TryGetProperty("boardId", out ushort boardId)
-				|| !queuedImageDownload.TryGetProperty("postNumber", out ulong postNumber)
+			if (!queuedImageDownload.TryGetProperty("fileId", out uint fileId)
 				|| !queuedImageDownload.TryGetProperty("media", out Media media))
 			{
-				throw new InvalidOperationException("Queued image download did not have the required properties");
+				Logger.Error("Queued image download did not have the required properties. URL: {url}", queuedImageDownload.FullImageUri);
+				return;
 			}
 
 			await using var dbContext = GetDBContext();
 
-			var existingFileMapping = await dbContext.FileMappings
-				.FirstAsync(x => x.BoardId == boardId
-								 && x.PostId == postNumber
-								 && x.Index == media.Index);
+			var file = dbContext.Files.FirstOrDefault(x => x.Id == fileId);
 
-			if (imageTempFilename == null)
+			if (file == null)
 			{
-				//throw new InvalidOperationException("Full image required for hash calculation");
-				//Program.Log("Full image required for hash calculation");
-
-				AddMissingMappingMetadata(existingFileMapping, media);
-
-				dbContext.Update(existingFileMapping);
-				await dbContext.SaveChangesAsync();
-
-				// TODO: thumbnail-only handling
+				Logger.Error("Could not find relevant file in database for download. URL: {url}", queuedImageDownload.FullImageUri);
 				return;
 			}
 
-			await using var stream = FileSystem.File.OpenRead(imageTempFilename);
-
-			var fileSize = stream.Length;
-			var (md5Hash, sha1Hash, sha256Hash) = Utility.CalculateHashes(stream);
-
-			stream.Close();
-
-			uint fileId;
-
-			var existingFile = await dbContext.Files
-				.Where(x => x.Sha256Hash == sha256Hash
-							&& x.BoardId == boardId)
-				.FirstOrDefaultAsync();
-
-			if (existingFile?.FileBanned == true)
+			if (file.FileBanned)
 				return;
 
-			var imageFilename = Common.CalculateFilename(ConsumerConfig.DownloadLocation, board, Common.MediaType.Image, sha256Hash, media.FileExtension);
-
-			FileSystem.Directory.CreateDirectory(FileSystem.Path.GetDirectoryName(imageFilename));
-
-			if (!FileSystem.File.Exists(imageFilename))
-				FileSystem.File.Move(imageTempFilename, imageFilename);
-
-			if (thumbTempFilename != null)
+			if (imageTempFilename != null)
 			{
-				var thumbFilename = Common.CalculateFilename(ConsumerConfig.DownloadLocation, board, Common.MediaType.Thumbnail, sha256Hash, media.ThumbnailExtension);
+				await using var stream = FileSystem.File.OpenRead(imageTempFilename);
+
+				var fileSize = stream.Length;
+				var (md5Hash, sha1Hash, sha256Hash) = Utility.CalculateHashes(stream);
+
+				stream.Close();
+
+				// check if the file already exists. use SHA256, the others have collisions
+				var existingFile = await dbContext.Files.FirstOrDefaultAsync(x => x.Sha256Hash == sha256Hash && x.Id != file.Id);
+
+				if (existingFile != null)
+				{
+					// this file already exists unfortunately. try to merge it with the existing one, assuming it's not banned
+
+					await dbContext.FileMappings
+						.Where(x => x.FileId == fileId)
+						.ExecuteUpdateAsync(x => x.SetProperty(y => y.FileId, existingFile.Id));
+
+					dbContext.Remove(file);
+					await dbContext.SaveChangesAsync();
+
+					if (existingFile.FileBanned)
+						return;
+
+					file = existingFile;
+					fileId = existingFile.Id;
+				}
+
+				if (!file.FileExists)
+				{
+					var imageFilename = CalculateFilename(ConsumerConfig.DownloadLocation, MediaType.FullImage, fileId, media.FileExtension);
+
+					FileSystem.Directory.CreateDirectory(FileSystem.Path.GetDirectoryName(imageFilename));
+					
+					if (!FileSystem.File.Exists(imageFilename))
+						FileSystem.File.Move(imageTempFilename, imageFilename);
+					
+					await MediaInspector.DetermineMediaInfoAsync(imageFilename, file);
+
+					if (file.Size == 0)
+						file.Size = (uint)FileSystem.FileInfo.New(imageFilename).Length;
+
+					file.FileExists = true;
+					dbContext.Update(file);
+				}
+			}
+
+			if (thumbTempFilename != null && !file.ThumbnailExists)
+			{
+				var thumbFilename = CalculateFilename(ConsumerConfig.DownloadLocation, MediaType.Thumbnail, fileId, media.ThumbnailExtension);
 
 				FileSystem.Directory.CreateDirectory(FileSystem.Path.GetDirectoryName(thumbFilename));
 
 				if (!FileSystem.File.Exists(thumbFilename))
 					FileSystem.File.Move(thumbTempFilename, thumbFilename);
+
+				file.ThumbnailExists = true;
+				dbContext.Update(file);
 			}
-
-			string thumbnailExtension =
-				thumbTempFilename != null ? media.ThumbnailExtension.TrimStart('.').ToLower() : null;
-
-			if (existingFile == null)
-			{
-				var dbFile = new DBFile
-				{
-					BoardId = boardId,
-					Extension = media.FileExtension.TrimStart('.').ToLower(),
-					FileExists = true,
-					FileBanned = false,
-					ThumbnailExtension = thumbnailExtension,
-					Md5Hash = md5Hash,
-					Sha1Hash = sha1Hash,
-					Sha256Hash = sha256Hash,
-					Size = (uint)fileSize
-				};
-
-				await MediaInspector.DetermineMediaInfoAsync(imageFilename, dbFile);
-
-				dbContext.Add(dbFile);
-				await dbContext.SaveChangesAsync();
-
-				fileId = dbFile.Id;
-			}
-			else
-			{
-				fileId = existingFile.Id;
-
-				if (!existingFile.FileExists && imageTempFilename != null)
-				{
-					existingFile.FileExists = true;
-					dbContext.Update(existingFile);
-				}
-
-				if (existingFile.ThumbnailExtension == null && thumbTempFilename != null)
-				{
-					existingFile.ThumbnailExtension = thumbnailExtension;
-					dbContext.Update(existingFile);
-				}
-			}
-
-			existingFileMapping.FileId = fileId;
-
-			dbContext.Update(existingFileMapping);
 
 			await dbContext.SaveChangesAsync();
-		}
-
-		private static void AddMissingMappingMetadata(DBFileMapping existingFileMapping, Media media)
-		{
-			var metadata = existingFileMapping.AdditionalMetadata != null
-				? JObject.Parse(existingFileMapping.AdditionalMetadata)
-				: new JObject();
-
-			if (media.Md5Hash != null)
-				metadata["missing_md5hash"] = Convert.ToBase64String(media.Md5Hash);
-
-			if (media.Sha1Hash != null)
-				metadata["missing_sha1hash"] = Convert.ToBase64String(media.Sha1Hash);
-
-			if (media.Sha256Hash != null)
-				metadata["missing_sha256hash"] = Convert.ToBase64String(media.Sha256Hash);
-
-			if (!string.IsNullOrWhiteSpace(media.FileExtension))
-				metadata["missing_extension"] = media.FileExtension.TrimStart('.');
-
-			if (media.FileSize.HasValue)
-				metadata["missing_size"] = media.FileSize;
-			
-			existingFileMapping.AdditionalMetadata = metadata.Count > 0 ? metadata.ToString(Formatting.None) : null;
 		}
 
 		/// <inheritdoc/>
@@ -577,7 +646,9 @@ namespace Hayden.Consumers
 				
 				var postQuery =
 					dbContext.Posts.Where(x => x.BoardId == boardId && threadInfos.Keys.Contains(x.ThreadId) && (!excludeDeletedPosts || !x.IsDeleted))
-						.SelectMany(x => dbContext.FileMappings.Where(y => y.BoardId == boardId && y.PostId == x.PostId).DefaultIfEmpty(), (post, mapping) => new { post, mapping });
+						.SelectMany(x =>
+						dbContext.FileMappings.Where(y => y.BoardId == boardId && y.PostId == x.PostId).DefaultIfEmpty(),
+						(post, mapping) => new { post, mapping });
 
 				var allPosts = await postQuery.ToArrayAsync();
 
@@ -622,6 +693,18 @@ namespace Hayden.Consumers
 			}
 
 			return items;
+		}
+
+		public static string CalculateFilename(string baseFolder, MediaType mediaType, uint fileId, string extension)
+		{
+			string mediaTypeString = mediaType switch
+			{
+				MediaType.FullImage => "image",
+				MediaType.Thumbnail => "thumb",
+				_                   => throw new ArgumentOutOfRangeException(nameof(mediaType), mediaType, null)
+			};
+
+			return Path.Combine(baseFolder, mediaTypeString, $"{fileId}.{extension.TrimStart('.').ToLower()}");
 		}
 
 		public static uint CalculatePostHash(string postHtml, string postRawContent, int spoilerCount, int fileCount, int deletedFileCount)

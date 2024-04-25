@@ -32,34 +32,5 @@ namespace Hayden.WebServer.Controllers
 
 			return File(System.IO.File.OpenRead(fullPath), path.EndsWith("png") ? "image/png" : "image/jpeg");
 		}
-
-		/// <summary>
-		/// Serves an image by ID.
-		/// </summary>
-		[HttpGet]
-		[Route("id/{id}")]
-		public async Task<IActionResult> ImageId(uint id, [FromServices] HaydenDbContext dbContext)
-		{
-			var file = await dbContext.Files.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id);
-
-			if (file == null)
-				return NotFound();
-
-			var board = await dbContext.Boards.FindAsync(file.BoardId);
-
-			if (Config.Value.Data.ImagePrefix != null)
-			{
-				var urls = HaydenDataProvider.GenerateUrls(file, board.ShortName, Config.Value);
-				return Redirect(urls.imageUrl);
-			}
-
-			string fullPath = Common.CalculateFilename(Config.Value.Data.FileLocation, board.ShortName,
-				Common.MediaType.Image, file.Sha256Hash, file.Extension);
-
-			if (!System.IO.File.Exists(fullPath))
-				return NotFound();
-
-			return File(System.IO.File.OpenRead(fullPath), fullPath.EndsWith("png") ? "image/png" : "image/jpeg");
-		}
 	}
 }

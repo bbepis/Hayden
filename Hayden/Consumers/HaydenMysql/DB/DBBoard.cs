@@ -1,4 +1,4 @@
-﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
 namespace Hayden.Consumers.HaydenMysql.DB
@@ -26,5 +26,8 @@ namespace Hayden.Consumers.HaydenMysql.DB
 		public bool IsReadOnly { get; set; }
 		
 		public bool ShowsDeletedPosts { get; set; }
+
+		[Column(TypeName = "json")]
+		public string AdditionalMetadata { get; set; }
 	}
 }

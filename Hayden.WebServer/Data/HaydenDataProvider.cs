@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Threading.Tasks;
+using Hayden.Consumers;
 using Hayden.Consumers.HaydenMysql.DB;
 using Hayden.Models;
 using Hayden.WebServer.Controllers.Api;
@@ -191,10 +192,9 @@ namespace Hayden.WebServer.Data
 					current.Concat(dbContext.Posts.Where(x => x.BoardId == remainingItem.BoardId && x.PostId == remainingItem.PostId)));
 			
 			var items = from p in unionizedPosts
-				//join t in threadIdArray.Select(x => new { x.BoardId, x.PostId }) on new { p.BoardId, p.PostId } equals t
 				join b in dbContext.Boards on p.BoardId equals b.Id
 				from fm in dbContext.FileMappings.Where(x => x.BoardId == p.BoardId && x.PostId == p.PostId).DefaultIfEmpty()
-				from f in dbContext.Files.Where(x => x.BoardId == fm.BoardId && x.Id == fm.FileId).DefaultIfEmpty()
+				from f in dbContext.Files.Where(x => x.Id == fm.FileId).DefaultIfEmpty()
 				select new { p, b, fm, f };
 
 			var result = await items.AsNoTracking().ToArrayAsync();
@@ -335,10 +335,10 @@ namespace Hayden.WebServer.Data
 				{
 					file.FileBanned = true;
 
-					var fullFilename = Common.CalculateFilename(config.Value.Data.FileLocation, board.ShortName, Common.MediaType.Image,
-						file.Sha256Hash, file.Extension);
-					var thumbFilename = Common.CalculateFilename(config.Value.Data.FileLocation, board.ShortName, Common.MediaType.Thumbnail,
-						file.Sha256Hash, file.Extension);
+					var fullFilename = HaydenThreadConsumer.CalculateFilename(config.Value.Data.FileLocation,
+						Common.MediaType.FullImage,	file.Id, file.Extension);
+					var thumbFilename = HaydenThreadConsumer.CalculateFilename(config.Value.Data.FileLocation,
+						Common.MediaType.Thumbnail,	file.Id, file.Extension);
 
 					System.IO.File.Delete(fullFilename);
 					System.IO.File.Delete(thumbFilename);
@@ -378,7 +378,7 @@ namespace Hayden.WebServer.Data
 				: "/image";
 
 			var imageUrl = $"{prefix}/{board}/image/{b36Name}.{file.Extension}";
-			var thumbUrl = $"{prefix}/{board}/thumb/{b36Name}.jpg";
+			var thumbUrl = $"{prefix}/{board}/thumb/{b36Name}.{file.ThumbnailExtension}";
 
 			return (imageUrl, thumbUrl);
 		}

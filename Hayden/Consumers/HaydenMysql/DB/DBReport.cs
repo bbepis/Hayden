@@ -20,7 +20,7 @@ namespace Hayden.Consumers.HaydenMysql.DB
 		[Required]
 		public DateTime TimeReported { get; set; }
 
-		[FixedLength(255)]
+		[MaxLength(255)]
 		public string IPAddress { get; set; }
 
 		[Required]

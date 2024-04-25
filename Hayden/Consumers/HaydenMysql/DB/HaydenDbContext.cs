@@ -138,18 +138,11 @@ namespace Hayden.Consumers.HaydenMysql.DB
 
 				HasJsonConversion(x.Property(x => x.AdditionalMetadata));
 
-				x.HasIndex(x => new { x.Sha256Hash, x.BoardId }).IsUnique();
+				x.HasIndex(x => new { x.Sha256Hash });
 				x.HasIndex(x => new { x.Md5Hash });
 				x.HasIndex(x => new { x.Sha1Hash });
 				x.HasIndex(x => new { x.PerceptualHash });
 				x.HasIndex(x => new { x.StreamHash });
-
-				x.Property(x => x.Md5Hash)
-					.IsFixedLength();
-
-				x.HasOne<DBBoard>()
-					.WithMany()
-					.HasForeignKey(x => x.BoardId);
 			});
 
 			modelBuilder.Entity<DBModerator>(x =>
@@ -215,7 +208,7 @@ namespace Hayden.Consumers.HaydenMysql.DB
 				return (null, null);
 
 			var fileMappings = await (from mapping in FileMappings
-				from file in Files.Where(f => f.BoardId == mapping.BoardId && f.Id == mapping.FileId).DefaultIfEmpty()
+				from file in Files.Where(f => f.Id == mapping.FileId).DefaultIfEmpty()
 				where mapping.BoardId == boardId && mapping.PostId == postId
 				select new { mapping, file }).ToArrayAsync();
 
@@ -240,7 +233,7 @@ namespace Hayden.Consumers.HaydenMysql.DB
 
 			var fileMappings = await (from mapping in FileMappings
 				join post in Posts on new { mapping.BoardId, mapping.PostId } equals new { post.BoardId, post.PostId }
-				from file in Files.Where(f => f.BoardId == mapping.BoardId && f.Id == mapping.FileId).DefaultIfEmpty()
+				from file in Files.Where(f => f.Id == mapping.FileId).DefaultIfEmpty()
 				where post.BoardId == boardObj.Id && post.ThreadId == threadId
 				select new { mapping, file }).ToArrayAsync();
 

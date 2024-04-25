@@ -1,6 +1,8 @@
-﻿using System.Collections;
+using System.Collections;
 using Hayden.Consumers;
 using NUnit.Framework;
+
+using Assert = NUnit.Framework.Legacy.ClassicAssert;
 
 namespace Hayden.Tests.Consumers
 {

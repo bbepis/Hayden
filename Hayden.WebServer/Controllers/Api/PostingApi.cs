@@ -8,6 +8,7 @@ using System.Security.Cryptography;
 using System.Threading;
 using System.Threading.Tasks;
 using AngleSharp.Text;
+using Hayden.Consumers;
 using Hayden.Consumers.HaydenMysql.DB;
 using Hayden.MediaInfo;
 using Hayden.WebServer.Routing;
@@ -389,8 +390,7 @@ namespace Hayden.WebServer.Controllers.Api
 			using (var sha256 = SHA256.Create())
 				sha256Hash = sha256.ComputeHash(fileData);
 
-			var dbFile =
-				await dbContext.Files.FirstOrDefaultAsync(x => x.BoardId == boardInfo.Id && x.Sha256Hash == sha256Hash);
+			var dbFile = await dbContext.Files.FirstOrDefaultAsync(x => x.Sha256Hash == sha256Hash);
 
 			if (dbFile != null && (dbFile.FileExists || dbFile.FileBanned))
 				return (dbFile.Id, dbFile.FileBanned, false);
@@ -401,11 +401,11 @@ namespace Hayden.WebServer.Controllers.Api
 			using (var sha1 = SHA1.Create())
 				sha1Hash = sha1.ComputeHash(fileData);
 
-			var destinationFilename = Common.CalculateFilename(Config.Value.Data.FileLocation, boardInfo.ShortName,
-				Common.MediaType.Image, sha256Hash, extension);
+			var destinationFilename = HaydenThreadConsumer.CalculateFilename(Config.Value.Data.FileLocation,
+				Common.MediaType.FullImage, 1, extension);
 
-			var thumbnailFilename = Common.CalculateFilename(Config.Value.Data.FileLocation, boardInfo.ShortName,
-				Common.MediaType.Thumbnail, sha256Hash, "jpg");
+			var thumbnailFilename = HaydenThreadConsumer.CalculateFilename(Config.Value.Data.FileLocation,
+				Common.MediaType.Thumbnail, 1, "jpg");
 
 			if (!System.IO.File.Exists(destinationFilename))
 			{
@@ -484,7 +484,6 @@ namespace Hayden.WebServer.Controllers.Api
 
 			dbFile = new DBFile
 			{
-				BoardId = boardInfo.Id,
 				Extension = extension,
 				Md5Hash = md5Hash,
 				Sha1Hash = sha1Hash,

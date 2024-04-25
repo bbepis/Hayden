@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Diagnostics;
 using System.IO;
 using System.Threading.Tasks;
@@ -22,22 +22,8 @@ namespace Hayden
 
 		public enum MediaType
 		{
-            Image,
+            FullImage,
             Thumbnail
-		}
-
-		public static string CalculateFilename(string baseFolder, string board, MediaType mediaType, byte[] hash, string extension)
-		{
-			var base36Name = Utility.ConvertToBase(hash, 36);
-
-			string mediaTypeString = mediaType switch
-			{
-				MediaType.Image     => "image",
-				MediaType.Thumbnail => "thumb",
-				_                   => throw new ArgumentOutOfRangeException(nameof(mediaType), mediaType, null)
-			};
-
-			return Path.Combine(baseFolder, board, mediaTypeString, $"{base36Name}.{extension.TrimStart('.').ToLower()}");
 		}
 		
 		public static async Task<JObject> RunJsonCommandAsync(string executable, string arguments, Stream inputStream = null)

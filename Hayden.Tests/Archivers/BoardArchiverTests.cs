@@ -13,6 +13,9 @@ using Hayden.Models;
 using Hayden.Proxy;
 using Moq;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
+
+using Assert = NUnit.Framework.Legacy.ClassicAssert;
 
 namespace Hayden.Tests.Archivers
 {
@@ -45,7 +48,7 @@ namespace Hayden.Tests.Archivers
             var consumerMock = new Mock<IThreadConsumer>(MockBehavior.Strict);
             var sourceMock = new Mock<IFrontendApi>(MockBehavior.Strict);
 
-            var timestamp = (ulong)DateTimeOffset.Now.ToUnixTimeSeconds();
+            var lastModifiedTimestamp = (ulong)DateTimeOffset.Now.ToUnixTimeSeconds();
 
             consumerMock.Setup(x => x.CheckExistingThreads(It.IsAny<IEnumerable<ulong>>(), It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<MetadataMode>(), It.IsAny<bool>()))
                 .Returns(Task.FromResult<ICollection<ExistingThreadInfo>>(Array.Empty<ExistingThreadInfo>()));
@@ -62,7 +65,7 @@ namespace Hayden.Tests.Archivers
                         case "c":
                             pageThreads = ExpectedThreads
                                 .Where(x => x.Board == board)
-                                .Select(x => new PageThread(x.ThreadId, timestamp, "", ""))
+                                .Select(x => new PageThread(x.ThreadId, lastModifiedTimestamp, "", ""))
                                 .ToArray();
                             break;
                         default:

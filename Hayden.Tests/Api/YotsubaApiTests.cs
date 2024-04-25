@@ -9,6 +9,8 @@ using Moq;
 using Moq.Protected;
 using NUnit.Framework;
 
+using Assert = NUnit.Framework.Legacy.ClassicAssert;
+
 namespace Hayden.Tests.Api
 {
 	[TestFixture]

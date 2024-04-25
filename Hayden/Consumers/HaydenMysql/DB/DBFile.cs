@@ -1,4 +1,4 @@
-﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 using Newtonsoft.Json.Linq;
 
@@ -11,15 +11,13 @@ namespace Hayden.Consumers.HaydenMysql.DB
 		[DatabaseGenerated(DatabaseGeneratedOption.Identity)]
 		public uint Id { get; set; }
 
-		public ushort BoardId { get; set; }
-
-		[Required, FixedLength(16)]
+		[FixedLength(16)]
 		public byte[] Md5Hash { get; set; }
 
-		[Required, FixedLength(20)]
+		[FixedLength(20)]
 		public byte[] Sha1Hash { get; set; }
 
-		[Required, FixedLength(32)]
+		[FixedLength(32)]
 		public byte[] Sha256Hash { get; set; }
 
 		[FixedLength(40)]
@@ -28,13 +26,15 @@ namespace Hayden.Consumers.HaydenMysql.DB
 		[FixedLength(16)]
 		public byte[] StreamHash { get; set; }
 
-		[Required, MaxLength(4)]
+		[Required, MaxLength(16)]
 		public string Extension { get; set; }
 
-		[MaxLength(4)]
+		[MaxLength(16)]
 		public string ThumbnailExtension { get; set; }
 		
 		public bool FileExists { get; set; }
+
+		public bool ThumbnailExists { get; set; }
 		
 		public bool FileBanned { get; set; }
 

@@ -45,8 +45,9 @@ public class HaydenImporter : IImporter
 
 		using var dbContext = GetDbContext();
 
-		boardDictionary = dbContext.Boards.ToDictionary(x => x.ShortName, x => x.Id);
+		dbContext.UpgradeOrCreateAsync().Wait();
 
+		boardDictionary = dbContext.Boards.ToDictionary(x => x.ShortName, x => x.Id);
 		
 		this.dbContext = GetDbContext();
 	}
@@ -109,7 +110,7 @@ public class HaydenImporter : IImporter
 
 		var fileMappings = await (from mapping in dbContext.FileMappings
 			join post in dbContext.Posts on new { mapping.BoardId, mapping.PostId } equals new { post.BoardId, post.PostId }
-			from file in dbContext.Files.Where(f => f.BoardId == mapping.BoardId && f.Id == mapping.FileId).DefaultIfEmpty()
+			from file in dbContext.Files.Where(f => f.Id == mapping.FileId).DefaultIfEmpty()
 			where post.BoardId == boardId && post.ThreadId == pointer.ThreadId
 			select new { mapping, file }).ToArrayAsync();
 

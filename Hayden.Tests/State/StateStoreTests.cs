@@ -1,7 +1,8 @@
-﻿using Hayden.Cache;
+using Hayden.Cache;
 using Hayden.Contract;
 using Microsoft.Data.Sqlite;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using System;
 using System.Collections.Generic;
 using System.IO;

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
@@ -17,6 +17,7 @@ namespace Hayden.Consumers.HaydenMysql.DB
 
 		public bool IsArchived { get; set; }
 		public bool IsDeleted { get; set; }
+		public bool IsPinned { get; set; }
 
 		[Column(TypeName = "json")]
 		public string AdditionalMetadata { get; set; }
