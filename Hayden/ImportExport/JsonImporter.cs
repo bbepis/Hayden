@@ -1,6 +1,9 @@
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using Hayden.Config;
 using Hayden.Models;
 using Newtonsoft.Json;
@@ -25,7 +28,7 @@ public class JsonImporter : IForwardOnlyImporter
 		this.consumerConfig = consumerConfig;
 	}
 
-	private JsonTextReader GetJsonReader(string filename)
+	private Stream GetStream(string filename)
 	{
 		if (!File.Exists(filename))
 			throw new FileNotFoundException("Cannot find import file");
@@ -36,21 +39,26 @@ public class JsonImporter : IForwardOnlyImporter
 		if (filename.EndsWith(".zst"))
 			filestream = new ZstdSharp.DecompressionStream(filestream, leaveOpen: false);
 
-		return new JsonTextReader(new StreamReader(filestream, Encoding.UTF8));
+		return filestream;
 	}
 
 	private async IAsyncEnumerable<DumpedThread> InternalEnumerateEntries(string filename)
 	{
-		await using var jsonReader = GetJsonReader(filename);
+		await using var stream = GetStream(filename);
 
-		await jsonReader.ReadAsync();
-		
-		while (await jsonReader.ReadAsync() && jsonReader.TokenType != JsonToken.EndArray)
+		var deserializeOptions = new System.Text.Json.JsonSerializerOptions
 		{
-			var jObject = (JObject)await JToken.ReadFromAsync(jsonReader);
+			AllowTrailingCommas = true,
+			IncludeFields = true,
+			PropertyNameCaseInsensitive = true,
+			Converters =
+			{
+				new JsonStringEnumConverter()
+			}
+		};
 
-			yield return jObject.ToObject<DumpedThread>();
-		}
+		await foreach (var thread in System.Text.Json.JsonSerializer.DeserializeAsyncEnumerable<DumpedThread>(stream, deserializeOptions))
+			yield return thread;
 	}
 
 	public async IAsyncEnumerable<(ThreadPointer, Thread)> RetrieveThreads(string[] allowedBoards)
@@ -66,10 +74,19 @@ public class JsonImporter : IForwardOnlyImporter
 
 			foreach (var post in thread.Posts)
 			{
+				if (post == null)
+					continue;
+
+				if (post.Media == null)
+					post.Media = Array.Empty<Media>();
+
 				foreach (var file in post.Media)
 				{
 					if (string.IsNullOrWhiteSpace(file.Filename))
-						file.Filename = "[blank]";
+						file.Filename = "";
+
+					if (string.IsNullOrWhiteSpace(file.FileExtension))
+						file.FileExtension = "";
 				}
 			}
 
@@ -77,10 +94,5 @@ public class JsonImporter : IForwardOnlyImporter
 
 			yield return (threadPointer, thread);
 		}
-	}
-
-	public class DumpedThread : Thread
-	{
-		public string Board { get; set; }
 	}
 }

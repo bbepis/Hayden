@@ -248,4 +248,23 @@ namespace Hayden
 
 		public bool IsListBacked => SourceList != null;
 	}
+
+	public class DumpedThread : Models.Thread
+	{
+		public string Board { get; set; }
+
+		public static DumpedThread Create(Models.Thread thread, string board)
+		{
+			return new DumpedThread
+			{
+				Board = board,
+				Title = thread.Title,
+				AdditionalMetadata = thread.AdditionalMetadata,
+				IsArchived = thread.IsArchived,
+				OriginalObject = null,
+				Posts = thread.Posts,
+				ThreadId = thread.ThreadId
+			};
+		}
+	}
 }
