@@ -1,3 +1,4 @@
+using System;
 using Microsoft.EntityFrameworkCore;
 using MySqlConnector;
 using System.Collections.Generic;
@@ -5,6 +6,11 @@ using System.ComponentModel.DataAnnotations;
 using System.Data;
 using System.Linq;
 using System.Threading.Tasks;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
+using Pomelo.EntityFrameworkCore.MySql.Infrastructure.Internal;
+using static Hayden.Consumers.Asagi.AsagiDbContext;
 
 namespace Hayden.Consumers.Asagi;
 
@@ -15,9 +21,14 @@ public class AsagiDbContext : DbContext
 	public string[] Boards { get; private set; }
 	public string[] AllTables { get; private set; }
 
-	public AsagiDbContext(DbContextOptions<AsagiDbContext> options, AsagiDbContextOptions asagiDbContextOptions) : base(options)
+	public AsagiDbContext(DbContextOptions<AsagiDbContext> options) : base(options)
 	{
-		ConnectionString = asagiDbContextOptions.ConnectionString;
+		var extension = options.FindExtension<AsagiDbExtension>();
+
+		if (extension == null)
+			throw new InvalidOperationException("AsagiDbContext requires an attached AsagiDbExtension for connection metadata");
+
+		ConnectionString = extension.ConnectionString;
 	}
 
 	public (DbSet<AsagiDbPost> posts, DbSet<AsagiDbImage> images, DbSet<AsagiDbThread> threads, DbSet<AsagiDbPost> deleted) GetSets(string board)
@@ -30,6 +41,9 @@ public class AsagiDbContext : DbContext
 
 	public async Task<string[]> GetBoardTables()
 	{
+		if (Boards != null)
+			return Boards;
+
 		await using var dbConnection = new MySqlConnection(ConnectionString);
 		await dbConnection.OpenAsync();
 
@@ -48,7 +62,9 @@ public class AsagiDbContext : DbContext
 				tableNames.Add(tableName);
 		}
 
-		return tableNames.OrderBy(x => x).ToArray();
+		Boards = tableNames.OrderBy(x => x).ToArray();
+
+		return Boards;
 	}
 
 	protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -72,8 +88,13 @@ public class AsagiDbContext : DbContext
 		public uint subnum { get; set; }
 		public uint thread_num { get; set; }
 		public bool op { get; set; }
-		public uint timestamp { get; set; }
-		public uint timestamp_expired { get; set; }
+
+		private uint backing_timestamp;
+		[BackingField(nameof(backing_timestamp))]
+		public uint? timestamp { get => backing_timestamp; set => backing_timestamp = value.GetValueOrDefault(); }
+		private uint backing_timestamp_expired;
+		[BackingField(nameof(backing_timestamp_expired))]
+		public uint? timestamp_expired { get => backing_timestamp_expired; set => backing_timestamp_expired = value.GetValueOrDefault(); }
 
 		public string media_filename { get; set; }
 		public ushort media_w { get; set; }
@@ -118,8 +139,44 @@ public class AsagiDbContext : DbContext
 		public uint time_bump { get; set; }
 	}
 
-	public class AsagiDbContextOptions
+	public class AsagiDbExtension : IDbContextOptionsExtension
 	{
 		public string ConnectionString { get; set; }
+		public void ApplyServices(IServiceCollection services) { }
+
+		public void Validate(IDbContextOptions options)	{ }
+
+		public DbContextOptionsExtensionInfo Info { get; }
+
+		public AsagiDbExtension(string connectionString)
+		{
+			Info = new ExtensionInfo(this);
+
+			ConnectionString = connectionString;
+		}
+
+		public class ExtensionInfo : DbContextOptionsExtensionInfo
+		{
+			public ExtensionInfo(IDbContextOptionsExtension extension) : base(extension) { }
+
+			public override int GetServiceProviderHashCode() => 0;
+
+			public override bool ShouldUseSameServiceProvider(DbContextOptionsExtensionInfo other)
+				=> string.Equals(LogFragment, other.LogFragment, StringComparison.Ordinal);
+
+			public override void PopulateDebugInfo(IDictionary<string, string> debugInfo) {	}
+
+			public override bool IsDatabaseProvider { get; } = false;
+			public override string LogFragment { get; } = "AsagiDbContextExtension";
+		}
+	}
+}
+
+public static class AsagiDbContextExtensions
+{
+	public static DbContextOptionsBuilder AddAsagiConfig(this DbContextOptionsBuilder builder, string connectionString)
+	{
+		((IDbContextOptionsBuilderInfrastructure)builder).AddOrUpdateExtension(new AsagiDbExtension(connectionString));
+		return builder;
 	}
 }

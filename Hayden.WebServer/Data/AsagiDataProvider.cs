@@ -82,7 +82,7 @@ namespace Hayden.WebServer.Data
 				contentHtml = null,
 				contentRaw = post.comment,
 				deleted = post.deleted,
-				dateTime = Utility.ConvertNewYorkTimestamp(post.timestamp).UtcDateTime,
+				dateTime = Utility.ConvertNewYorkTimestamp(post.timestamp.Value).UtcDateTime,
 				files = image?.media == null
 					? Array.Empty<ApiController.JsonFileModel>()
 					: new[]
@@ -390,7 +390,7 @@ namespace Hayden.WebServer.Data
 					PostId = post.num,
 					ThreadId = post.thread_num,
 					IsOp = post.op,
-					PostDateUtc = Utility.ConvertNewYorkTimestamp(post.timestamp).UtcDateTime,
+					PostDateUtc = Utility.ConvertNewYorkTimestamp(post.timestamp.Value).UtcDateTime,
 					PostRawText = post.comment,
 					PosterID = post.poster_hash,
 					PosterName = post.name,

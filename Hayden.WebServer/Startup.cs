@@ -220,7 +220,6 @@ namespace Hayden.WebServer
 		public static IServiceCollection AddAsagiDataProvider(this IServiceCollection services, ServerConfig serverConfig)
 		{
 			services.AddScoped<IDataProvider, AsagiDataProvider>();
-			services.AddSingleton(new AsagiDbContext.AsagiDbContextOptions { ConnectionString = serverConfig.Data.DBConnectionString });
 
 			if (serverConfig.Data.DBType == DatabaseType.MySql)
 			{
@@ -230,7 +229,9 @@ namespace Hayden.WebServer
 						{
 							y.CommandTimeout(86400);
 							y.EnableIndexOptimizedBooleanColumns();
-						}));
+						})
+						.AddAsagiConfig(serverConfig.Data.DBConnectionString)
+					);
 			}
 			else
 			{
