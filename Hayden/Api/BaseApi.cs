@@ -117,8 +117,10 @@ namespace Hayden.Api
 		}
 
 		public abstract bool SupportsArchive { get; }
+		public abstract bool SupportsBoardLastModified { get; }
+		public abstract bool SupportsBoardReplyCount { get; }
 
-		public abstract Task<ApiResponse<PageThread[]>> GetBoard(string board, HttpClient client, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default);
+		public abstract Task<ApiResponse<ThreadOverviewInfo[]>> GetBoard(string board, HttpClient client, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default);
 		
 		public abstract Task<ApiResponse<ulong[]>> GetArchive(string board, HttpClient client, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default);
 

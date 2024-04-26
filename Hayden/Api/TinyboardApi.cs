@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using AngleSharp.Dom;
@@ -17,6 +18,13 @@ namespace Hayden
 {
 	public class TinyboardApi : BaseApi<IHtmlDocument>
 	{
+		// JSON API is disabled by default, and AFAIK no living Tinyboard site actually enables it
+		// https://github.com/savetheinternet/Tinyboard/blob/b0babb3323def8821330cb3b80166dbc1858ce1f/inc/config.php#L1409
+		// Supposedly it also had a lot of issues as well
+		// https://github.com/savetheinternet/Tinyboard/issues/156
+		// https://github.com/savetheinternet/Tinyboard/issues/157
+
+
 		public string ImageboardWebsite { get; }
 
 		public TinyboardApi(SourceConfig sourceConfig)
@@ -29,6 +37,9 @@ namespace Hayden
 
 		/// <inheritdoc />
 		public override bool SupportsArchive => false;
+
+		public override bool SupportsBoardLastModified => false;
+		public override bool SupportsBoardReplyCount => true;
 
 		/// <inheritdoc />
 		protected override async Task<ApiResponse<IHtmlDocument>> GetThreadInternal(string board, ulong threadNumber, HttpClient client, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default)
@@ -89,7 +100,7 @@ namespace Hayden
 
 				post.PostNumber = ulong.Parse(postElement.QuerySelector("p.intro").Id);
 				post.Author = postElement.QuerySelector("span.name").TextContent.TrimAndNullify();
-				
+
 				post.TimePosted = DateTimeOffset.Parse(postElement.QuerySelector("time").GetAttribute("datetime"));
 				//post.Tripcode = postElement.QuerySelector(".poster-trip").TextContent.TrimAndNullify();
 				
@@ -125,28 +136,51 @@ namespace Hayden
 		}
 
 		/// <inheritdoc />
-		public override async Task<ApiResponse<PageThread[]>> GetBoard(string board, HttpClient client, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default)
+		public override async Task<ApiResponse<ThreadOverviewInfo[]>> GetBoard(string board, HttpClient client, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default)
 		{
 			var result = await MakeHtmlCall(new Uri($"{ImageboardWebsite}{board}/catalog"), client, modifiedSince, cancellationToken);
 
 			if (result.ResponseType != ResponseType.Ok)
-				return new ApiResponse<PageThread[]>(result.ResponseType, null);
+				return new ApiResponse<ThreadOverviewInfo[]>(result.ResponseType, null);
 
-			return new ApiResponse<PageThread[]>(ResponseType.Ok, result.Data
+			return new ApiResponse<ThreadOverviewInfo[]>(ResponseType.Ok, result.Data
 				.QuerySelectorAll("body a.catalog-link")
-				.Select(x =>
+				.Select((x, i) =>
 				{
 					var rawPostId = x.GetAttribute("href").Replace($"/{board}/res/", "").Replace(".html", "");
 					var postId = ulong.Parse(rawPostId);
 
+					// In savetheinternet's infinite wisdom, there's no year attached to the timestamp that appears on the catalog page
+					// https://github.com/savetheinternet/Tinyboard/blob/b0babb3323def8821330cb3b80166dbc1858ce1f/templates/themes/catalog/catalog.html#L22
+
+					// We can try and reconstruct it. Relies on two assumptions:
+					//   1. The latest post was made in the current year
+					//   2. The posts are ordered by bump time
+					// We just have to track when the time jumps back chronologically, then subtract a year when it happens
+					// This is important to consider since we're looking at imageboards that have boards with threads that are 6+ years old
+
+					// However I'm choosing not to right now, and just opting to track reply count even if it's less efficient.
+					//   - There would be edge cases with the above method, when the year changes on the website, but there's a timezone difference from UTC/users computer
+					//   - For the sites I'm looking at, they're very sage heavy, so bump time would never get updated
+
 					//var updateDateTime = DateTime.SpecifyKind(DateTime.Parse(x.QuerySelector("img").GetAttribute("title")), DateTimeKind.Utc);
 					//var timestamp = Utility.GetGMTTimestamp(new DateTimeOffset(updateDateTime));
-					var timestamp = 0UL;
 
 					var subject = x.QuerySelector("div.subject")?.TextContent.TrimAndNullify();
 					var textContent = x.QuerySelector("div.replies")?.Text().TrimAndNullify();
 
-					return new PageThread(postId, timestamp, subject, textContent);
+					var replyCountText = x.QuerySelector("span.reply-count")!.Text().TrimAndNullify();
+					var replyCount = int.Parse(Regex.Match(replyCountText, @"(\d+) replies").Groups[1].Value);
+
+					return new ThreadOverviewInfo
+					{
+						ThreadId = postId,
+						Subject = subject,
+						ContentHtml = textContent,
+						LastModified = null,
+						Position = i,
+						ReplyCount = replyCount
+					};
 				})
 				.ToArray());
 		}
@@ -154,7 +188,7 @@ namespace Hayden
 		/// <inheritdoc />
 		public override async Task<ApiResponse<ulong[]>> GetArchive(string board, HttpClient client, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default)
 		{
-			throw new InvalidOperationException();
+			throw new InvalidOperationException("Does not have an archive");
 		}
 	}
 }

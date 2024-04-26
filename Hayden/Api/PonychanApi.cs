@@ -30,6 +30,9 @@ namespace Hayden
 		/// <inheritdoc />
 		public override bool SupportsArchive => false;
 
+		public override bool SupportsBoardLastModified => true;
+		public override bool SupportsBoardReplyCount => false;
+
 		/// <inheritdoc />
 		protected override Task<ApiResponse<PonychanThread>> GetThreadInternal(string board, ulong threadNumber, HttpClient client, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default)
 		{
@@ -53,20 +56,27 @@ namespace Hayden
 		}
 
 		/// <inheritdoc />
-		public override async Task<ApiResponse<PageThread[]>> GetBoard(string board, HttpClient client, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default)
+		public override async Task<ApiResponse<ThreadOverviewInfo[]>> GetBoard(string board, HttpClient client, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default)
 		{
 			var result = await MakeJsonApiCall<PonychanCatalogItem[]>(new Uri($"{ImageboardWebsite}api.php?req=catalog&board={board}"), client, modifiedSince, cancellationToken);
 
 			if (result.ResponseType != ResponseType.Ok)
-				return new ApiResponse<PageThread[]>(result.ResponseType, null);
+				return new ApiResponse<ThreadOverviewInfo[]>(result.ResponseType, null);
 
-			return new ApiResponse<PageThread[]>(ResponseType.Ok, result.Data
+			var info = result.Data
 				.SelectMany(x => x.Threads)
-				.Select(x => new PageThread(x.PostNumber,
-					Math.Max(x.UnixTimestamp, x.LastReplies.Max(y => y.UnixTimestamp, 0)),
-					x.Subject,
-					x.Comment))
-				.ToArray());
+				.Select((x, i) => new ThreadOverviewInfo
+				{
+					ThreadId = x.PostNumber,
+					ContentHtml = x.Comment,
+					Subject = x.Subject,
+					LastModified = DateTimeOffset.FromUnixTimeSeconds(x.LastReplies.Max(y => y.UnixTimestamp, 0)),
+					Position = i,
+					ReplyCount = null
+				})
+				.ToArray();
+
+			return new ApiResponse<ThreadOverviewInfo[]>(ResponseType.Ok, info);
 		}
 
 		/// <inheritdoc />

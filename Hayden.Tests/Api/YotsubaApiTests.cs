@@ -200,7 +200,7 @@ namespace Hayden.Tests.Api
 			Assert.AreEqual(2, result.Data.Length);
 
 			var firstThread = result.Data[0];
-			Assert.AreEqual(51971506UL, firstThread.ThreadNumber);
+			Assert.AreEqual(51971506UL, firstThread.ThreadId);
 			Assert.AreEqual(1576181967UL, firstThread.LastModified);
 		}
 

@@ -44,6 +44,9 @@ namespace Hayden
 		/// <inheritdoc />
 		public override bool SupportsArchive => false; // should be changed later
 
+		public override bool SupportsBoardLastModified => true;
+		public override bool SupportsBoardReplyCount => false;
+
 		/// <inheritdoc />
 		protected override async Task<ApiResponse<LynxChanThread>> GetThreadInternal(string board, ulong threadNumber, HttpClient client, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default)
 		{
@@ -80,18 +83,26 @@ namespace Hayden
 		}
 
 		/// <inheritdoc />
-		public override async Task<ApiResponse<PageThread[]>> GetBoard(string board, HttpClient client, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default)
+		public override async Task<ApiResponse<ThreadOverviewInfo[]>> GetBoard(string board, HttpClient client, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default)
 		{
 			var result = await MakeJsonApiCall<LynxChanCatalogItem[]>(new Uri($"{ImageboardWebsite}{board}/catalog.json"), client, modifiedSince, cancellationToken);
-
-			if (result.ResponseType != ResponseType.Ok)
-				return new ApiResponse<PageThread[]>(result.ResponseType, null);
 			
-			var response = new ApiResponse<PageThread[]>(ResponseType.Ok, result.Data.Select(x =>
-					new PageThread(x.threadId, (ulong)x.lastBump.ToUnixTimeSeconds(), x.subject, x.message))
-				.ToArray());
+			if (result.ResponseType != ResponseType.Ok)
+				return new ApiResponse<ThreadOverviewInfo[]>(result.ResponseType, null);
 
-			return response;
+			var info = result.Data
+				.Select((x, i) => new ThreadOverviewInfo
+				{
+					ThreadId = x.threadId,
+					ContentHtml = x.message,
+					Subject = x.subject,
+					LastModified = x.lastBump,
+					Position = i,
+					ReplyCount = null
+				})
+				.ToArray();
+
+			return new ApiResponse<ThreadOverviewInfo[]>(ResponseType.Ok, info);
 		}
 
 		/// <inheritdoc />

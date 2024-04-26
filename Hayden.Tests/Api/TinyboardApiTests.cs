@@ -83,7 +83,7 @@ namespace Hayden.Tests.Api
 
 			var firstThread = result.Data[0];
 			
-			Assert.AreEqual(30470UL, firstThread.ThreadNumber);
+			Assert.AreEqual(30470UL, firstThread.ThreadId);
 			//Assert.AreEqual(1576181967UL, firstThread.LastModified);
 			Assert.AreEqual("Lisa The Painful RPG", firstThread.Subject);
 		}

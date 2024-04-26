@@ -36,6 +36,9 @@ namespace Hayden
 		/// <inheritdoc />
 		public override bool SupportsArchive => false;
 
+		public override bool SupportsBoardLastModified => true;
+		public override bool SupportsBoardReplyCount => false;
+
 		/// <inheritdoc />
 		protected override async Task<ApiResponse<MegucaThread>> GetThreadInternal(string board, ulong threadNumber, HttpClient client, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default)
 		{
@@ -83,23 +86,32 @@ namespace Hayden
 		}
 
 		/// <inheritdoc />
-		public override async Task<ApiResponse<PageThread[]>> GetBoard(string board, HttpClient client, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default)
+		public override async Task<ApiResponse<ThreadOverviewInfo[]>> GetBoard(string board, HttpClient client, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default)
 		{
 			var response = await MakeHtmlCall(new Uri($"{ImageboardWebsite}{board}/catalog"), client, modifiedSince, cancellationToken);
 
 			if (response.ResponseType != ResponseType.Ok)
-				return new ApiResponse<PageThread[]>(response.ResponseType, null);
+				return new ApiResponse<ThreadOverviewInfo[]>(response.ResponseType, null);
 
 			var document = response.Data;
 
 			var json = document.GetElementById("post-data");
 
 			var catalog = JsonConvert.DeserializeObject<MegucaCatalog>(json.TextContent);
+			
+			var info = catalog.threads
+				.Select((x, i) => new ThreadOverviewInfo
+				{
+					ThreadId = x.id,
+					ContentHtml = x.body,
+					Subject = x.subject,
+					LastModified = DateTimeOffset.FromUnixTimeSeconds((long)x.bump_time),
+					Position = i,
+					ReplyCount = null
+				})
+				.ToArray();
 
-			var pageThreads = catalog.threads.Select(x =>
-				new PageThread(x.id, x.bump_time, x.subject, x.body)).ToArray();
-
-			return new ApiResponse<PageThread[]>(ResponseType.Ok, pageThreads);
+			return new ApiResponse<ThreadOverviewInfo[]>(ResponseType.Ok, info);
 		}
 
 		/// <inheritdoc />

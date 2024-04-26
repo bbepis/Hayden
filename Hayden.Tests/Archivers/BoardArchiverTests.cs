@@ -34,21 +34,36 @@ namespace Hayden.Tests.Archivers
         };
         private readonly ConsumerConfig ConsumerConfig = new ConsumerConfig();
 
-        private readonly ThreadPointer[] ExpectedThreads = new[]
-        {
-            new ThreadPointer("a", 123),
-            new ThreadPointer("a", 126),
-            new ThreadPointer("a", 128),
-            new ThreadPointer("b", 170),
-            new ThreadPointer("c", 1456),
-        };
+		private Dictionary<ThreadPointer, ThreadOverviewInfo> CreateMockThreadData()
+		{
+			var sampleThreads = new[]
+			{
+				new ThreadPointer("a", 123),
+				new ThreadPointer("a", 126),
+				new ThreadPointer("a", 128),
+				new ThreadPointer("b", 170),
+				new ThreadPointer("c", 1456),
+			};
 
-        private (Mock<IThreadConsumer> consumerMock, Mock<IFrontendApi> sourceMock) CreateMocks()
+			var seededRandom = new Random(1234);
+
+			return sampleThreads.ToDictionary(x => x,
+				x => new ThreadOverviewInfo
+				{
+					ThreadId = x.ThreadId,
+					ContentHtml = null,
+					Subject = null,
+					Position = 0, // shouldn't matter?
+					LastModified = DateTimeOffset.UtcNow - TimeSpan.FromMinutes(seededRandom.Next(5, 500)),
+					ReplyCount = seededRandom.Next(5, 500)
+				});
+		}
+
+        private (Mock<IThreadConsumer> consumerMock, Mock<IFrontendApi> sourceMock) CreateMocks(
+			Dictionary<ThreadPointer, ThreadOverviewInfo> mockData, bool replyCountMode = false)
         {
             var consumerMock = new Mock<IThreadConsumer>(MockBehavior.Strict);
             var sourceMock = new Mock<IFrontendApi>(MockBehavior.Strict);
-
-            var lastModifiedTimestamp = (ulong)DateTimeOffset.Now.ToUnixTimeSeconds();
 
             consumerMock.Setup(x => x.CheckExistingThreads(It.IsAny<IEnumerable<ulong>>(), It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<MetadataMode>(), It.IsAny<bool>()))
                 .Returns(Task.FromResult<IList<ExistingThreadInfo>>(Array.Empty<ExistingThreadInfo>()));
@@ -56,24 +71,19 @@ namespace Hayden.Tests.Archivers
             sourceMock.Setup(x => x.GetBoard(It.IsAny<string>(), It.IsAny<HttpClient>(), It.IsAny<DateTimeOffset?>(), It.IsAny<CancellationToken>()))
                 .Returns((string board, HttpClient client, DateTimeOffset? since, CancellationToken token) => {
 
-                    PageThread[] pageThreads;
+					if (!SourceConfig.Boards.ContainsKey(board))
+						throw new ArgumentOutOfRangeException("board", "Board argument was not expected");
 
-                    switch (board)
-                    {
-                        case "a":
-                        case "b":
-                        case "c":
-                            pageThreads = ExpectedThreads
-                                .Where(x => x.Board == board)
-                                .Select(x => new PageThread(x.ThreadId, lastModifiedTimestamp, "", ""))
-                                .ToArray();
-                            break;
-                        default:
-                            throw new ArgumentOutOfRangeException("Board argument was not expected");
-                    }
+					var threadInfos = mockData
+						.Where(x => x.Key.Board == board)
+						.Select(x => x.Value)
+						.ToArray();
 
-                    return Task.FromResult(new ApiResponse<PageThread[]>(ResponseType.Ok, pageThreads));
+                    return Task.FromResult(new ApiResponse<ThreadOverviewInfo[]>(ResponseType.Ok, threadInfos));
                 });
+
+			sourceMock.SetupGet(x => x.SupportsBoardLastModified).Returns(!replyCountMode);
+			sourceMock.SetupGet(x => x.SupportsBoardReplyCount).Returns(replyCountMode);
 
             return (consumerMock, sourceMock);
         }
@@ -81,7 +91,8 @@ namespace Hayden.Tests.Archivers
         [Test, Timeout(10_000)]
         public async Task EnqueuesThreadsWhenExpected()
         {
-            var (consumerMock, sourceMock) = CreateMocks();
+			var mockData = CreateMockThreadData();
+            var (consumerMock, sourceMock) = CreateMocks(mockData);
             var fileSystem = new MockFileSystem();
 
             var cts = new CancellationTokenSource();
@@ -90,7 +101,7 @@ namespace Hayden.Tests.Archivers
 
             var threadList = await boardArchiver.ReadBoards(true, cts.Token);
 
-            CollectionAssert.AreEquivalent(ExpectedThreads, await threadList.ToListAsync());
+            CollectionAssert.AreEquivalent(mockData.Keys, await threadList.ToListAsync());
 
             threadList = await boardArchiver.ReadBoards(false, cts.Token);
 
@@ -100,7 +111,8 @@ namespace Hayden.Tests.Archivers
         [Test, Timeout(10_000)]
         public async Task EnqueuesThreadsThatArePresumedMissing()
         {
-            var (consumerMock, sourceMock) = CreateMocks();
+	        var mockData = CreateMockThreadData();
+            var (consumerMock, sourceMock) = CreateMocks(mockData);
             var fileSystem = new MockFileSystem();
 
             var cts = new CancellationTokenSource();
@@ -113,15 +125,28 @@ namespace Hayden.Tests.Archivers
 
             var threadList = await boardArchiver.ReadBoards(true, cts.Token);
 
-            CollectionAssert.AreEquivalent(ExpectedThreads.Append(fallenOffThread), await threadList.ToListAsync());
+            CollectionAssert.AreEquivalent(mockData.Keys.Append(fallenOffThread), await threadList.ToListAsync());
         }
 
-        [Test, Timeout(10_000)]
-        public async Task ScrapesThreads()
+        [Timeout(10_000)]
+		[TestCase(false, TestName = "ScrapesThreads - LastModified mode")]
+		[TestCase(true, TestName = "ScrapesThreads - ReplyCount mode")]
+        public async Task ScrapesThreads(bool replyCountMode)
         {
-            var (consumerMock, sourceMock) = CreateMocks();
+	        var mockData = CreateMockThreadData();
+            var (consumerMock, sourceMock) = CreateMocks(mockData, replyCountMode);
 
-            var fileSystem = new MockFileSystem();
+			// make sure that it's not accidentally using the other data, when it might not be available in actual usage
+			foreach (var thread in mockData.Values)
+			{
+				if (replyCountMode)
+					thread.LastModified = null;
+				else
+					thread.ReplyCount = null;
+			}
+
+
+			var fileSystem = new MockFileSystem();
 
             consumerMock.Setup(x => x.CalculateHash(It.IsAny<Post>()))
                 .Returns((Post post) => (uint)post.PostNumber);
@@ -149,11 +174,22 @@ namespace Hayden.Tests.Archivers
 
             var threadList = await boardArchiver.ReadBoards(true, cts.Token);
 
-            CollectionAssert.AreEquivalent(ExpectedThreads, await threadList.ToListAsync());
+            CollectionAssert.AreEquivalent(mockData.Keys, await threadList.ToListAsync());
 
             threadList = await boardArchiver.ReadBoards(false, cts.Token);
 
             CollectionAssert.IsEmpty(await threadList.ToListAsync());
+
+			var updatedThreadPointer = mockData.Keys.First();
+
+			if (replyCountMode)
+				mockData[updatedThreadPointer].ReplyCount += 10;
+			else
+				mockData[updatedThreadPointer].LastModified = DateTimeOffset.Now;
+
+			threadList = await boardArchiver.ReadBoards(false, cts.Token);
+
+			CollectionAssert.AreEquivalent(new[] { updatedThreadPointer }, await threadList.ToListAsync());
         }
 
         private class BoardArchiverTestable : BoardArchiver

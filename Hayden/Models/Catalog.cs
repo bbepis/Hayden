@@ -1,8 +1,8 @@
-﻿using Newtonsoft.Json;
+using Newtonsoft.Json;
 
 namespace Hayden.Models
 {
-	public struct PageThread
+	public class PageThread
 	{
 		public PageThread(ulong threadNumber, ulong lastModified, string subject, string html)
 		{
@@ -26,7 +26,7 @@ namespace Hayden.Models
 	}
 
 
-	public struct Page
+	public class Page
 	{
 		[JsonProperty("page")]
 		public uint PageNumber { get; set; }

@@ -35,6 +35,9 @@ namespace Hayden
 		/// <inheritdoc />
 		public override bool SupportsArchive => true;
 
+		public override bool SupportsBoardLastModified => true;
+		public override bool SupportsBoardReplyCount => false;
+
 		/// <inheritdoc />
 		protected override Task<ApiResponse<YotsubaThread>> GetThreadInternal(string board, ulong threadNumber, HttpClient client, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default)
 		{
@@ -59,14 +62,27 @@ namespace Hayden
 		}
 
 		/// <inheritdoc />
-		public override async Task<ApiResponse<PageThread[]>> GetBoard(string board, HttpClient client, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default)
+		public override async Task<ApiResponse<ThreadOverviewInfo[]>> GetBoard(string board, HttpClient client, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default)
 		{
 			var result = await MakeJsonApiCall<Page[]>(new Uri($"https://a.4cdn.org/{board}/catalog.json?v={Guid.NewGuid().ToString("N")}"), client, modifiedSince, cancellationToken);
 
 			if (result.ResponseType != ResponseType.Ok)
-				return new ApiResponse<PageThread[]>(result.ResponseType, null);
+				return new ApiResponse<ThreadOverviewInfo[]>(result.ResponseType, null);
 
-			return new ApiResponse<PageThread[]>(ResponseType.Ok, result.Data.SelectMany(x => x.Threads).ToArray());
+			var info = result.Data
+				.SelectMany(x => x.Threads)
+				.Select((x, i) => new ThreadOverviewInfo
+				{
+					ThreadId = x.ThreadNumber,
+					ContentHtml = x.Html,
+					Subject = x.Subject,
+					LastModified = DateTimeOffset.FromUnixTimeSeconds((long)x.LastModified),
+					Position = i,
+					ReplyCount = null
+				})
+				.ToArray();
+
+			return new ApiResponse<ThreadOverviewInfo[]>(ResponseType.Ok, info);
 		}
 
 		/// <inheritdoc />

@@ -30,6 +30,9 @@ namespace Hayden
 		/// <inheritdoc />
 		public override bool SupportsArchive => true;
 
+		public override bool SupportsBoardLastModified => true;
+		public override bool SupportsBoardReplyCount => false;
+
 		/// <inheritdoc />
 		protected override async Task<ApiResponse<IHtmlDocument>> GetThreadInternal(string board, ulong threadNumber, HttpClient client, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default)
 		{
@@ -128,20 +131,27 @@ namespace Hayden
 		}
 
 		/// <inheritdoc />
-		public override async Task<ApiResponse<PageThread[]>> GetBoard(string board, HttpClient client, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default)
+		public override async Task<ApiResponse<ThreadOverviewInfo[]>> GetBoard(string board, HttpClient client, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default)
 		{
 			var result = await MakeHtmlCall(new Uri($"{ImageboardWebsite}{board}/catalog"), client, modifiedSince, cancellationToken);
 
 			if (result.ResponseType != ResponseType.Ok)
-				return new ApiResponse<PageThread[]>(result.ResponseType, null);
+				return new ApiResponse<ThreadOverviewInfo[]>(result.ResponseType, null);
 
-			return new ApiResponse<PageThread[]>(ResponseType.Ok, result.Data
+			var info = result.Data
 				.QuerySelectorAll("#catalog > .catalog-thread")
-				.Select(x => new PageThread(ulong.Parse(x.GetAttribute("data-id")),
-					ulong.Parse(x.GetAttribute("data-bumptime")),
-					x.QuerySelector(".catalog-thread-subject").TextContent,
-					x.QuerySelector(".catalog-thread-body").InnerHtml))
-				.ToArray());
+				.Select((x, i) => new ThreadOverviewInfo
+				{
+					ThreadId = ulong.Parse(x.GetAttribute("data-id")),
+					ContentHtml = x.QuerySelector(".catalog-thread-body").InnerHtml,
+					Subject = x.QuerySelector(".catalog-thread-subject").TextContent,
+					LastModified = DateTimeOffset.FromUnixTimeSeconds(long.Parse(x.GetAttribute("data-bumptime"))),
+					Position = i,
+					ReplyCount = null
+				})
+				.ToArray();
+
+			return new ApiResponse<ThreadOverviewInfo[]>(ResponseType.Ok, info);
 		}
 
 		/// <inheritdoc />

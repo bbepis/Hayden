@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Net.Http;
 using System.Threading;
@@ -12,9 +12,19 @@ namespace Hayden.Contract
 	public interface IFrontendApi
 	{
 		/// <summary>
-		/// Value specifying whether or not the frontend supports / has an archive.
+		/// Value specifying whether the frontend supports / has an archive.
 		/// </summary>
 		bool SupportsArchive { get; }
+
+		/// <summary>
+		/// Whether the board API can return last modified times on threads
+		/// </summary>
+		bool SupportsBoardLastModified { get; }
+
+		/// <summary>
+		/// Whether the board API can return reply counts on threads
+		/// </summary>
+		bool SupportsBoardReplyCount { get; }
 
 		/// <summary>
 		/// Retrieves a thread and its posts from the frontend API.
@@ -33,7 +43,7 @@ namespace Hayden.Contract
 		/// <param name="client">The <see cref="HttpClient"/> to make this request with.</param>
 		/// <param name="modifiedSince">The value to use in the If-Modified-Since header. Returns NotModified if the thread has not been updated since this time.</param>
 		/// <param name="cancellationToken">The cancellation token to use with this request.</param>
-		Task<ApiResponse<PageThread[]>> GetBoard(string board, HttpClient client, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default);
+		Task<ApiResponse<ThreadOverviewInfo[]>> GetBoard(string board, HttpClient client, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default);
 
 		/// <summary>
 		/// Retrieves a list of a board's archive's threads from the frontend API.
@@ -59,7 +69,7 @@ namespace Hayden.Contract
 		/// <param name="client">The <see cref="HttpClient"/> to make this request with.</param>
 		/// <param name="modifiedSince">The value to use in the If-Modified-Since header. Returns NotModified if the thread has not been updated since this time.</param>
 		/// <param name="cancellationToken">The cancellation token to use with this request.</param>
-		Task<ApiResponse<IAsyncEnumerable<PageThread>>> GetBoardPaginated(string board, HttpClient client, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default);
+		Task<ApiResponse<IAsyncEnumerable<ThreadOverviewInfo>>> GetBoardPaginated(string board, HttpClient client, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default);
 	}
 
 	public class SearchQuery

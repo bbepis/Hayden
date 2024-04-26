@@ -35,6 +35,9 @@ namespace Hayden
 		/// <inheritdoc />
 		public override bool SupportsArchive => false;
 
+		public override bool SupportsBoardLastModified => true;
+		public override bool SupportsBoardReplyCount => false;
+
 		/// <inheritdoc />
 		protected override async Task<ApiResponse<FoolFuukaThread>> GetThreadInternal(string board, ulong threadNumber, HttpClient client, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default)
 		{
@@ -74,12 +77,12 @@ namespace Hayden
 		}
 
 		/// <inheritdoc />
-		public override Task<ApiResponse<PageThread[]>> GetBoard(string board, HttpClient client, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default)
+		public override Task<ApiResponse<ThreadOverviewInfo[]>> GetBoard(string board, HttpClient client, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default)
 		{
 			throw new InvalidOperationException("Not supported");
 		}
 
-		public async Task<ApiResponse<IAsyncEnumerable<PageThread>>> GetBoardPaginated(string board, HttpClient client, DateTimeOffset? modifiedSince = null,
+		public async Task<ApiResponse<IAsyncEnumerable<ThreadOverviewInfo>>> GetBoardPaginated(string board, HttpClient client, DateTimeOffset? modifiedSince = null,
 			CancellationToken cancellationToken = default)
 		{
 			var collectedThreadIds = new HashSet<ulong>();
@@ -89,9 +92,9 @@ namespace Hayden
 			var testResponse = await MakeJsonApiCall<JToken>(new Uri($"{ImageboardWebsite}_/api/chan/index/?board={board}&page={pageNumber}"), client, modifiedSince, cancellationToken);
 
 			if (testResponse.ResponseType != ResponseType.Ok)
-				return new ApiResponse<IAsyncEnumerable<PageThread>>(testResponse.ResponseType, null);
+				return new ApiResponse<IAsyncEnumerable<ThreadOverviewInfo>>(testResponse.ResponseType, null);
 
-			async IAsyncEnumerable<PageThread> InternalGetEnumerable()
+			async IAsyncEnumerable<ThreadOverviewInfo> InternalGetEnumerable()
 			{
 				while (!cancellationToken.IsCancellationRequested)
 				{
@@ -112,7 +115,16 @@ namespace Hayden
 					{
 						if (!collectedThreadIds.Contains(thread.op.PostNumber))
 						{
-							yield return new PageThread(thread.op.PostNumber, 0, thread.op.Title, thread.op.SanitizedComment);
+							yield return new ThreadOverviewInfo
+							{
+								ThreadId = thread.op.PostNumber,
+								Subject = thread.op.Title,
+								ContentHtml = thread.op.SanitizedComment,
+								LastModified = DateTimeOffset.FromUnixTimeSeconds(thread.posts.Max(x => x.UnixTimestamp)),
+								Position = -1,
+								ReplyCount = null // thread.posts.Length (i think this is only for the catalog page? so 3 replies max
+							};
+
 							collectedThreadIds.Add(thread.op.PostNumber);
 						}
 					}
@@ -121,7 +133,7 @@ namespace Hayden
 				}
 			}
 
-			return new ApiResponse<IAsyncEnumerable<PageThread>>(ResponseType.Ok, InternalGetEnumerable());
+			return new ApiResponse<IAsyncEnumerable<ThreadOverviewInfo>>(ResponseType.Ok, InternalGetEnumerable());
 		}
 
 		/// <inheritdoc />

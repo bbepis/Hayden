@@ -1,5 +1,4 @@
 using System;
-using System.Buffers;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
@@ -13,7 +12,6 @@ using Hayden.Api;
 using Hayden.Cache;
 using Hayden.Config;
 using Hayden.Contract;
-using Hayden.Models;
 using Hayden.Proxy;
 using Nito.AsyncEx;
 using Polly;
@@ -56,11 +54,7 @@ namespace Hayden
 		/// </summary>
 		public TimeSpan ApiCooldownTimespan { get; set; }
 
-		/// <summary>
-		/// Keeps track of the last time we scraped a board, and therefore determines which threads we should scrape.
-		/// </summary>
-		protected SortedList<string, DateTimeOffset> LastBoardCheckTimes;
-
+		protected IBoardTracker BoardTracker { get; set; }
 
 		/// <summary>
 		/// The download client to use when downloading images.
@@ -80,6 +74,8 @@ namespace Hayden
 			ProxyProvider = proxyProvider ?? new NullProxyProvider();
 			StateStore = stateStore ?? new NullStateStore();
 
+			BoardTracker = FrontendApi.SupportsBoardLastModified ? new LastModifiedBoardTracker() : new ReplyCountBoardTracker();
+
 			ApiCooldownTimespan = TimeSpan.FromSeconds(sourceConfig.ApiDelay ?? 1);
 			BoardUpdateTimespan = TimeSpan.FromSeconds(sourceConfig.BoardScrapeDelay ?? 30);
 
@@ -88,7 +84,6 @@ namespace Hayden
 				BoardRules[board] = new BoardRules(boardConfig);
 			}
 
-			LastBoardCheckTimes = new SortedList<string, DateTimeOffset>(SourceConfig.Boards.Count);
 			ImageDownloadClient = new HttpClientProxy(ProxyProvider.CreateNewClient(), "baseconnection/image");
 
 			LoopArchive = !sourceConfig.SingleScan;
@@ -143,17 +138,8 @@ namespace Hayden
 			{
 				token.ThrowIfCancellationRequested();
 
-				DateTimeOffset lastDateTimeCheck;
-
-				lock (LastBoardCheckTimes)
-					if (!LastBoardCheckTimes.TryGetValue(board, out lastDateTimeCheck))
-						lastDateTimeCheck = DateTimeOffset.MinValue;
-
-				// Set this time now before we do the network calls, as it's safer and we won't miss any threads that update in-between
-				DateTimeOffset beforeCheckTime = DateTimeOffset.Now;
-
 				// Get a list of threads to be scraped
-				var (threads, lastReportedTimestamp) = await GetBoardThreads(token, board, lastDateTimeCheck, firstRun);
+				var threads = await GetBoardThreads(token, board, firstRun);
 
 				if (threads != null)
 					lock (threadQueue)
@@ -162,21 +148,17 @@ namespace Hayden
 				if (firstRun && SourceConfig.ReadArchive && FrontendApi.SupportsArchive)
 				{
 					// Get a list of archived threads to include to be scraped.
-					var archivedThreads = await GetArchivedBoardThreads(token, board, lastDateTimeCheck);
+					var archivedThreads = await GetArchivedBoardThreads(token, board);
 
 					lock (threadQueue)
 						threadQueue.Add(new MaybeAsyncEnumerable<ThreadPointer>(archivedThreads));
 				}
+				
+				var atomicCount = Interlocked.Increment(ref currentBoardCount);
 
-				lock (LastBoardCheckTimes)
+				if (atomicCount % 5 == 0 || atomicCount == SourceConfig.Boards.Count)
 				{
-					if (threads != null)
-						LastBoardCheckTimes[board] = lastReportedTimestamp.HasValue ? Utility.ConvertGMTTimestamp((uint)lastReportedTimestamp.Value) : beforeCheckTime;
-
-					if (++currentBoardCount % 5 == 0 || currentBoardCount == SourceConfig.Boards.Count)
-					{
-						Log.Information("{currentBoardCount} / {SourceConfigBoardsCount} boards polled", currentBoardCount, SourceConfig.Boards.Count);
-					}
+					Log.Information("{currentBoardCount} / {SourceConfigBoardsCount} boards polled", currentBoardCount, SourceConfig.Boards.Count);
 				}
 			});
 
@@ -595,7 +577,7 @@ namespace Hayden
 		/// <param name="board">The board to retrieve threads from.</param>
 		/// <param name="lastDateTimeCheck">The time to compare the thread's updated time to.</param>
 		/// <returns>A list of thread IDs.</returns>
-		private async Task<IList<ThreadPointer>> GetArchivedBoardThreads(CancellationToken token, string board, DateTimeOffset lastDateTimeCheck)
+		private async Task<IList<ThreadPointer>> GetArchivedBoardThreads(CancellationToken token, string board)
 		{
 			var cooldownTask = Task.Delay(ApiCooldownTimespan, token);
 
@@ -605,7 +587,7 @@ namespace Hayden
 			{
 				token.ThrowIfCancellationRequested();
 				await using var boardClient = await ProxyProvider.RentHttpClient();
-				return await FrontendApi.GetArchive(board, boardClient.Object.Client, lastDateTimeCheck, token);
+				return await FrontendApi.GetArchive(board, boardClient.Object.Client, null, token);
 			});
 
 			switch (archiveRequest.ResponseType)
@@ -673,17 +655,15 @@ namespace Hayden
 		/// </summary>
 		/// <param name="token">Token to cancel the request.</param>
 		/// <param name="board">The board to retrieve threads from.</param>
-		/// <param name="lastDateTimeCheck">The time to compare the thread's updated time to.</param>
 		/// <param name="firstRun">True if this is the first cycle in the archival loop, otherwise false. Controls whether or not the database is called to find existing threads</param>
 		/// <returns>A list of thread IDs.</returns>
-		protected async Task<(MaybeAsyncEnumerable<ThreadPointer> enumerable, ulong? lastTimestamp)> GetBoardThreads(CancellationToken token, string board, DateTimeOffset lastDateTimeCheck, bool firstRun)
+		protected async Task<MaybeAsyncEnumerable<ThreadPointer>> GetBoardThreads(CancellationToken token, string board, bool firstRun)
 		{
 			var cooldownTask = Task.Delay(ApiCooldownTimespan, token);
 
 			MaybeAsyncEnumerable<ThreadPointer> threads = null;
-			ulong? lastTimestamp = null;
 
-			var pagesRequest = await NetworkPolicies.GenericRetryPolicy<ApiResponse<MaybeAsyncEnumerable<PageThread>>>(99999).ExecuteAsync(async (requestToken) =>
+			var pagesRequest = await NetworkPolicies.GenericRetryPolicy<ApiResponse<MaybeAsyncEnumerable<ThreadOverviewInfo>>>(99999).ExecuteAsync(async (requestToken) =>
 			{
 				requestToken.ThrowIfCancellationRequested();
 				Log.Information("Requesting threads from board /{board}/...", board);
@@ -693,48 +673,49 @@ namespace Hayden
 				{
 					var response = await paginatedApi.GetBoardPaginated(board,
 						boardClient.Object.Client,
-						lastDateTimeCheck,
+						null, // TODO: maybe track modified-since times?
 						requestToken);
 
-					return new ApiResponse<MaybeAsyncEnumerable<PageThread>>(response.ResponseType,
-						response.Data == null ? null : new MaybeAsyncEnumerable<PageThread>(response.Data));
+					return new ApiResponse<MaybeAsyncEnumerable<ThreadOverviewInfo>>(response.ResponseType,
+						response.Data == null ? null : new MaybeAsyncEnumerable<ThreadOverviewInfo>(response.Data));
 				}
 
 				var collectionResponse = await FrontendApi.GetBoard(board,
 					boardClient.Object.Client,
-					lastDateTimeCheck,
+					null, // TODO: maybe track modified-since times?
 					requestToken);
 
-				return new ApiResponse<MaybeAsyncEnumerable<PageThread>>(collectionResponse.ResponseType,
-					collectionResponse.Data == null ? null : new MaybeAsyncEnumerable<PageThread>(collectionResponse.Data));
+				return new ApiResponse<MaybeAsyncEnumerable<ThreadOverviewInfo>>(collectionResponse.ResponseType,
+					collectionResponse.Data == null ? null : new MaybeAsyncEnumerable<ThreadOverviewInfo>(collectionResponse.Data));
 			}, token);
 
 			switch (pagesRequest.ResponseType)
 			{
 				case ResponseType.Ok:
 
-					uint lastCheckTimestamp = firstRun
-						? 0
-						: Utility.GetGMTTimestamp(lastDateTimeCheck);
+					if (FrontendApi is IPaginatedFrontEndApi)
+						throw new NotImplementedException("Haven't fixed this for search APIs");
 
 					async IAsyncEnumerable<ThreadPointer> ProcessThreadPointers()
 					{
 						var allThreadIds = new HashSet<ulong>();
 
-						// Flatten all threads.
+						// Preliminary filter
 						var threadList = pagesRequest.Data
 							.Where(x =>
 								ThreadIdFilter(new ThreadPointer(board,
-									x.ThreadNumber)) // Exclude any that are already blacklisted
-								&& ThreadFilter(x.Subject, x.Html, board)); // and exclude any that don't conform to our filter(s)
-						
+									x.ThreadId)) // Exclude any that are already blacklisted
+								&& ThreadFilter(x.Subject, x.ContentHtml, board)); // and exclude any that don't conform to our filter(s)
+
+						var threadsToFilter = new List<ThreadOverviewInfo>();
+
 						await foreach (var thread in threadList)
 						{
 							if (firstRun)
 							{
 								// Check for threads that have already been downloaded by the consumer, noting the last time they were downloaded.
 								// TODO: this should be batched to make it not bound to database calls, however it's a bit difficult here
-								var existingThreads = await ThreadConsumer.CheckExistingThreads(new[] {thread.ThreadNumber}, //threadList.Select(x => x.ThreadNumber)
+								var existingThreads = await ThreadConsumer.CheckExistingThreads(new[] {thread.ThreadId}, //threadList.Select(x => x.ThreadNumber)
 									board,
 									false,
 									MetadataMode.FullHashMetadata);
@@ -745,7 +726,7 @@ namespace Hayden
 								{
 									// Skip threads that we 100% know haven't been changed since they were archived.
 									// This is much less lenient than the last modified check down below, in a regular loop
-									if (thread.LastModified <= Utility.GetGMTTimestamp(existingThread.LastPostTime) && thread.LastModified > 0)
+									if (thread.LastModified.HasValue && thread.LastModified <= existingThread.LastPostTime)
 									{
 										skipThread = true;
 										break;
@@ -762,22 +743,12 @@ namespace Hayden
 									continue;
 							}
 
-							allThreadIds.Add(thread.ThreadNumber);
-
-							// Perform a last modified time check, remove any threads that have not changed since the last time we've checked (passed in via lastCheckTimestamp)
-							if (thread.LastModified <= lastCheckTimestamp && thread.LastModified > 0)
-							{
-								Log.Verbose("Thread /{board}/{threadId} has not changed (timestamp {timestamp}, last {lastCheckTimestamp}, current {currentTimestamp})",
-									board, thread.ThreadNumber, thread.LastModified, lastCheckTimestamp, Utility.GetGMTTimestamp(DateTimeOffset.Now));
-
-								continue;
-							}
-
-							Log.Verbose("Thread /{board}/{threadId} has changed (timestamp {timestamp}, last {lastCheckTimestamp}, current {currentTimestamp})",
-								board, thread.ThreadNumber, thread.LastModified, lastCheckTimestamp, Utility.GetGMTTimestamp(DateTimeOffset.Now));
-
-							yield return new ThreadPointer(board, thread.ThreadNumber);
+							allThreadIds.Add(thread.ThreadId);
+							threadsToFilter.Add(thread);
 						}
+
+						foreach (var threadPointer in BoardTracker.DetermineThreadsToCheck(board, threadsToFilter))
+							yield return threadPointer;
 						
 						// Examine the threads we are tracking to find any that have fallen off.
 						// This is the only way we can find out if a thread has been archived or deleted in this polling model
@@ -805,10 +776,8 @@ namespace Hayden
 					{
 						var computedThreads = await threadList.ToListAsync();
 
-						lastTimestamp = await pagesRequest.Data.MaxAsync(x => x.LastModified);
-
-						Log.Information("Enqueued {computedThreadsCount} threads from board /{board}/ past timestamp {lastCheckTimestamp}",
-							computedThreads.Count, board, lastCheckTimestamp);
+						Log.Information("Enqueued {computedThreadsCount} threads from board /{board}/",
+							computedThreads.Count, board);
 
 						threads = new MaybeAsyncEnumerable<ThreadPointer>(computedThreads);
 					}
@@ -832,7 +801,7 @@ namespace Hayden
 
 			await cooldownTask;
 
-			return (threads, lastTimestamp);
+			return threads;
 		}
 
 		protected virtual async Task<ApiResponse<Thread>> RetrieveThreadAsync(ThreadPointer pointer, HttpClientProxy client,
