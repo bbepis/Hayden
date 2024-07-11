@@ -338,7 +338,7 @@ namespace Hayden.WebServer.Data
 					var fullFilename = Common.CalculateFilename(config.Value.Data.FileLocation, board.ShortName, Common.MediaType.Image,
 						file.Sha256Hash, file.Extension);
 					var thumbFilename = Common.CalculateFilename(config.Value.Data.FileLocation, board.ShortName, Common.MediaType.Thumbnail,
-						file.Sha256Hash, file.Extension);
+						file.Sha256Hash, "jpg");
 
 					System.IO.File.Delete(fullFilename);
 					System.IO.File.Delete(thumbFilename);
