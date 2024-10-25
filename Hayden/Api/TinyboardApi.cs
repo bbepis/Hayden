@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
@@ -24,6 +25,7 @@ namespace Hayden
 		// https://github.com/savetheinternet/Tinyboard/issues/156
 		// https://github.com/savetheinternet/Tinyboard/issues/157
 
+		private static readonly Regex MediaSizeRegex = new(@"\((?:Spoiler Image,\s*)?((?:\d+)?(?:[\.,]\d+)?)\s?(\w+), (\d+x\d+|[Pp][Dd][Ff])?", RegexOptions.Compiled);
 
 		public string ImageboardWebsite { get; }
 
@@ -51,7 +53,7 @@ namespace Hayden
 		{
 			var thread = new Thread();
 
-			var threadElement = page.QuerySelector("body > form > div");
+			var threadElement = page.QuerySelector("div.post.op").ParentElement;
 
 			var postElements = threadElement.QuerySelectorAll("div.post");
 
@@ -61,30 +63,38 @@ namespace Hayden
 			{
 				var post = new Post();
 				post.ContentType = ContentType.Tinyboard;
-
+				
+				post.PostNumber = ulong.Parse(postElement.QuerySelector("p.intro").Id);
 
 				string fileUrl = null;
 				string thumbUrl = null;
 				string youtubeUrl = null;
 
-				if (postElement.ClassList.Contains("op"))
+				bool isOp = postElement.ClassList.Contains("op");
+
+				if (isOp)
 				{
-					var anchor = (IHtmlAnchorElement)threadElement.Children.First(x => x.TagName.Equals("a", StringComparison.OrdinalIgnoreCase));
-
-					fileUrl = anchor.Href;
-					thumbUrl = ((IHtmlImageElement)anchor.FirstElementChild).Source;
-
 					post.Subject = postElement.QuerySelector("span.subject")?.TextContent.TrimAndNullify();
 				}
-				else
-				{
-					var anchor = (IHtmlAnchorElement)postElement.Children.FirstOrDefault(x => x.TagName.Equals("a", StringComparison.OrdinalIgnoreCase));
 
-					if (anchor != null)
+				var fileContainerElement = isOp ? threadElement : postElement;
+				var anchor = (IHtmlAnchorElement)fileContainerElement.Children.FirstOrDefault(x =>
+					x.TagName.Equals("a", StringComparison.OrdinalIgnoreCase)
+					&& x.ChildElementCount > 0); // seems to be a bug on lolcow.farm where there are empty <a></a> tags. could potentially be deleted files
+
+				if (anchor != null)
+				{
+					fileUrl = anchor.Href;
+
+					if (fileUrl.Contains("player.php"))
 					{
-						fileUrl = anchor.Href;
-						thumbUrl = ((IHtmlImageElement)anchor.FirstElementChild).Source;
+						// TODO: this shit needs to be FIXED
 					}
+
+					if (anchor.FirstElementChild is IHtmlVideoElement videoElement)
+						thumbUrl = videoElement.Source;
+					else
+						thumbUrl = ((IHtmlImageElement)anchor.FirstElementChild).Source;
 				}
 
 				if (fileUrl != null)
@@ -98,32 +108,97 @@ namespace Hayden
 					}
 				}
 
-				post.PostNumber = ulong.Parse(postElement.QuerySelector("p.intro").Id);
-				post.Author = postElement.QuerySelector("span.name").TextContent.TrimAndNullify();
+				var nameElement = postElement.QuerySelector("span.name");
+				post.Author = nameElement.TextContent.TrimAndNullify();
 
+				if (nameElement.ParentElement.ClassList.Contains("email"))
+					post.Email = nameElement.ParentElement.GetAttribute("href").Replace("mailto:", "").TrimAndNullify();
+
+				post.AdditionalMetadata.Capcode =
+					postElement.QuerySelector("span.capcode")?.TextContent.TrimAndNullify() // crystal.cafe / lolcow.farm
+					?? postElement.QuerySelector("span.capcode-owner")?.TextContent.TrimAndNullify() // crystal.cafe
+					?? postElement.QuerySelector("span.capcode-shaymin")?.TextContent.TrimAndNullify() // lolcow.farm
+					?? postElement.QuerySelector("span.capcode-farmhand")?.TextContent.TrimAndNullify(); // lolcow.farm
+
+				if (post.AdditionalMetadata.Capcode != null)
+				{
+					post.AdditionalMetadata.Capcode = post.AdditionalMetadata.Capcode.TrimStart(' ', '#');
+				}
+				
 				post.TimePosted = DateTimeOffset.Parse(postElement.QuerySelector("time").GetAttribute("datetime"));
 				//post.Tripcode = postElement.QuerySelector(".poster-trip").TextContent.TrimAndNullify();
 				
 				post.ContentRendered = postElement.QuerySelector("div.body").InnerHtml.TrimAndNullify();
 
-				post.Media = fileUrl == null
-					? Array.Empty<Media>()
-					: new Media[1]
+				if (fileUrl != null)
+				{
+					var fileInfo = postElement.QuerySelector("p.fileinfo");
+					var actualFileInfo = fileInfo?.QuerySelector("span.unimportant");
+
+					if (actualFileInfo != null)
 					{
-						new Media
-						{
-							Index = 0,
-							FileUrl = fileUrl,
-							ThumbnailUrl = thumbUrl,
-							Filename = "unavailable",
-							FileExtension = Path.GetExtension(fileUrl),
-							ThumbnailExtension = Path.GetExtension(thumbUrl),
-							AdditionalMetadata = new()
+						//var actualFilename = actualFileInfo.QuerySelector("a")!.GetAttribute("download")!;
+						var filenameElement = actualFileInfo.QuerySelector("span.postfilename");
+						var actualFilename = actualFileInfo.QuerySelector("span.postfilename")!.GetAttribute("title")
+							?? filenameElement.TextContent;
+
+						var mediaInfoMatch = MediaSizeRegex.Match(actualFileInfo.TextContent);
+
+						decimal fileSize = decimal.Parse(mediaInfoMatch.Groups[1].Value.Replace(',', '.'), CultureInfo.InvariantCulture);
+
+						var sizeMultiplier = mediaInfoMatch.Groups[2].Value;
+
+						if (sizeMultiplier == "MB")
+							fileSize *= 1024 * 1024;
+						else if (sizeMultiplier == "KB")
+							fileSize *= 1024;
+						else if (sizeMultiplier != "B")
+							throw new Exception($"Post {post.PostNumber}: unknown size multiplier {sizeMultiplier}");
+
+						post.Media =
+						[
+							new Media
 							{
-								ExternalMediaUrl = youtubeUrl
+								Index = 0,
+								FileUrl = fileUrl,
+								ThumbnailUrl = thumbUrl,
+								Filename = Path.GetFileNameWithoutExtension(actualFilename),
+								FileExtension = Path.GetExtension(fileUrl),
+								ThumbnailExtension = Path.GetExtension(thumbUrl),
+								FileSize = (uint)fileSize,
+								IsSpoiler = thumbUrl?.Contains("spoiler", StringComparison.OrdinalIgnoreCase), // supposedly we can check the file info element, but this hasn't failed me yet
+								AdditionalMetadata = new()
+								{
+									ExternalMediaUrl = youtubeUrl
+								}
 							}
-						}
-					};
+						];
+					}
+					else
+					{
+						post.Media =
+						[
+							new Media
+							{
+								Index = 0,
+								FileUrl = fileUrl,
+								ThumbnailUrl = thumbUrl,
+								Filename = "<blank>",
+								IsSpoiler = thumbUrl?.Contains("spoiler", StringComparison.OrdinalIgnoreCase),
+								FileExtension = Path.GetExtension(fileUrl),
+								ThumbnailExtension = Path.GetExtension(thumbUrl),
+								AdditionalMetadata = new()
+								{
+									ExternalMediaUrl = youtubeUrl
+								}
+							}
+						];
+					}
+				}
+				else
+				{
+					post.Media = Array.Empty<Media>();
+				}
 
 				postList.Add(post);
 			}
@@ -147,7 +222,7 @@ namespace Hayden
 				.QuerySelectorAll("body a.catalog-link")
 				.Select((x, i) =>
 				{
-					var rawPostId = x.GetAttribute("href").Replace($"/{board}/res/", "").Replace(".html", "");
+					var rawPostId = Regex.Match(x.GetAttribute("href"), @"(\d+).html").Groups[1].Value;
 					var postId = ulong.Parse(rawPostId);
 
 					// In savetheinternet's infinite wisdom, there's no year attached to the timestamp that appears on the catalog page
@@ -170,7 +245,7 @@ namespace Hayden
 					var textContent = x.QuerySelector("div.replies")?.Text().TrimAndNullify();
 
 					var replyCountText = x.QuerySelector("span.reply-count")!.Text().TrimAndNullify();
-					var replyCount = int.Parse(Regex.Match(replyCountText, @"(\d+) replies").Groups[1].Value);
+					var replyCount = int.Parse(Regex.Match(replyCountText, @"(\d+) repl(?:y|ies)").Groups[1].Value);
 
 					return new ThreadOverviewInfo
 					{
