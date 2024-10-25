@@ -1,3 +1,4 @@
+using Hayden.Contract;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -6,6 +7,9 @@ namespace Hayden;
 public interface IBoardTracker
 {
 	List<ThreadPointer> DetermineThreadsToCheck(string board, ICollection<ThreadOverviewInfo> threadOverviewInfos);
+
+	void LoadExistingThreadInfo(string board, ExistingThreadInfo existingThreadInfo);
+	void StopTrackingThread(ThreadPointer threadPointer);
 
 	// TODO: add method to remove thread pointers once they're stopped being tracked
 }
@@ -44,6 +48,24 @@ public class LastModifiedBoardTracker : IBoardTracker
 			//Log.Verbose("Thread /{board}/{threadId} has changed (timestamp {timestamp}, last {lastCheckTimestamp}, current {currentTimestamp})",
 			//	board, thread.ThreadId, thread.LastModified, lastCheckTimestamp, Utility.GetGMTTimestamp(DateTimeOffset.Now));
 		}
+	}
+
+	public void LoadExistingThreadInfo(string board, ExistingThreadInfo existingThreadInfo)
+	{
+		lock (BoardCheckTimes)
+		{
+			if (!BoardCheckTimes.TryGetValue(board, out var existingCheckTime))
+				existingCheckTime = DateTimeOffset.MinValue;
+
+
+			if (existingThreadInfo.LastPostTime > existingCheckTime)
+				BoardCheckTimes[board] = existingThreadInfo.LastPostTime;
+		}
+	}
+
+	public void StopTrackingThread(ThreadPointer threadPointer)
+	{
+		// no-op, we're tracking on a board-wide basis
 	}
 }
 
@@ -85,6 +107,26 @@ public class ReplyCountBoardTracker : IBoardTracker
 
 			//Log.Verbose("Thread /{board}/{threadId} has changed (timestamp {timestamp}, last {lastCheckTimestamp}, current {currentTimestamp})",
 			//	board, thread.ThreadId, thread.LastModified, lastCheckTimestamp, Utility.GetGMTTimestamp(DateTimeOffset.Now));
+		}
+	}
+
+	public void LoadExistingThreadInfo(string board, ExistingThreadInfo existingThreadInfo)
+	{
+		var threadPointer = new ThreadPointer(board, existingThreadInfo.ThreadId);
+
+		lock (ReplyCounts)
+		{
+			if (!ReplyCounts.ContainsKey(threadPointer))
+				ReplyCounts[threadPointer] = existingThreadInfo.PostHashes.Count - 1;
+		}
+	}
+
+	public void StopTrackingThread(ThreadPointer threadPointer)
+	{
+		lock (ReplyCounts)
+		{
+			if (ReplyCounts.ContainsKey(threadPointer))
+				ReplyCounts.Remove(threadPointer);
 		}
 	}
 }

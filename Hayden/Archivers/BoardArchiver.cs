@@ -74,7 +74,8 @@ namespace Hayden
 			ProxyProvider = proxyProvider ?? new NullProxyProvider();
 			StateStore = stateStore ?? new NullStateStore();
 
-			BoardTracker = FrontendApi.SupportsBoardLastModified ? new LastModifiedBoardTracker() : new ReplyCountBoardTracker();
+			if (FrontendApi != null)
+				BoardTracker = FrontendApi.SupportsBoardLastModified ? new LastModifiedBoardTracker() : new ReplyCountBoardTracker();
 
 			ApiCooldownTimespan = TimeSpan.FromSeconds(sourceConfig.ApiDelay ?? 1);
 			BoardUpdateTimespan = TimeSpan.FromSeconds(sourceConfig.BoardScrapeDelay ?? 30);
@@ -107,7 +108,12 @@ namespace Hayden
 			{
 				if (firstRun || LoopArchive)
 				{
+					var temp = queuedThreads;
+
 					queuedThreads = await ReadBoards(firstRun, token);
+
+					if (temp != null)
+						queuedThreads.Append(temp);
 				}
 				
 				if (queuedThreads.Count.HasValue)
@@ -564,6 +570,8 @@ namespace Hayden
 			lock (ThreadIdBlacklist)
 				if (ThreadIdBlacklist.Contains(threadPointer))
 					ThreadIdBlacklist.Remove(threadPointer);
+
+			BoardTracker.StopTrackingThread(threadPointer);
 		}
 
 		#endregion
@@ -577,7 +585,7 @@ namespace Hayden
 		/// <param name="board">The board to retrieve threads from.</param>
 		/// <param name="lastDateTimeCheck">The time to compare the thread's updated time to.</param>
 		/// <returns>A list of thread IDs.</returns>
-		private async Task<IList<ThreadPointer>> GetArchivedBoardThreads(CancellationToken token, string board)
+		private async Task<List<ThreadPointer>> GetArchivedBoardThreads(CancellationToken token, string board)
 		{
 			var cooldownTask = Task.Delay(ApiCooldownTimespan, token);
 
@@ -686,7 +694,7 @@ namespace Hayden
 					requestToken);
 
 				return new ApiResponse<MaybeAsyncEnumerable<ThreadOverviewInfo>>(collectionResponse.ResponseType,
-					collectionResponse.Data == null ? null : new MaybeAsyncEnumerable<ThreadOverviewInfo>(collectionResponse.Data));
+					collectionResponse.Data == null ? null : new MaybeAsyncEnumerable<ThreadOverviewInfo>(collectionResponse.Data.ToList()));
 			}, token);
 
 			switch (pagesRequest.ResponseType)
@@ -709,13 +717,13 @@ namespace Hayden
 
 						var threadsToFilter = new List<ThreadOverviewInfo>();
 
-						await foreach (var thread in threadList)
+						await foreach (var threadBatch in threadList.Batch(20))
 						{
 							if (firstRun)
 							{
 								// Check for threads that have already been downloaded by the consumer, noting the last time they were downloaded.
-								// TODO: this should be batched to make it not bound to database calls, however it's a bit difficult here
-								var existingThreads = await ThreadConsumer.CheckExistingThreads(new[] {thread.ThreadId}, //threadList.Select(x => x.ThreadNumber)
+								var existingThreads = await ThreadConsumer.CheckExistingThreads(
+									threadBatch.Select(x => x.ThreadId).ToArray(),
 									board,
 									false,
 									MetadataMode.FullHashMetadata);
@@ -724,9 +732,11 @@ namespace Hayden
 
 								foreach (var existingThread in existingThreads)
 								{
+									var overviewInfo = threadBatch.First(x => x.ThreadId == existingThread.ThreadId);
+
 									// Skip threads that we 100% know haven't been changed since they were archived.
 									// This is much less lenient than the last modified check down below, in a regular loop
-									if (thread.LastModified.HasValue && thread.LastModified <= existingThread.LastPostTime)
+									if (overviewInfo.LastModified.HasValue && overviewInfo.LastModified <= existingThread.LastPostTime)
 									{
 										skipThread = true;
 										break;
@@ -737,14 +747,19 @@ namespace Hayden
 									lock (TrackedThreads)
 										TrackedThreads[new ThreadPointer(board, existingThread.ThreadId)] =
 											TrackedThread.StartTrackingThread(ThreadConsumer.CalculateHash, existingThread);
+
+									BoardTracker.LoadExistingThreadInfo(board, existingThread);
 								}
 
 								if (skipThread)
 									continue;
 							}
 
-							allThreadIds.Add(thread.ThreadId);
-							threadsToFilter.Add(thread);
+							foreach (var thread in threadBatch)
+							{
+								allThreadIds.Add(thread.ThreadId);
+								threadsToFilter.Add(thread);
+							}
 						}
 
 						foreach (var threadPointer in BoardTracker.DetermineThreadsToCheck(board, threadsToFilter))
@@ -759,7 +774,7 @@ namespace Hayden
 								.Where(x => x.Key.Board == board && !allThreadIds.Contains(x.Key.ThreadId))
 								.ToArray();
 
-						// This thread is missing from the board listing, but the last time we checked it it was still alive.
+						// This thread is missing from the board listing, but the last time we checked it was still alive.
 						// Add it to the re-examination queue
 						foreach (var missingThread in missingTrackedThreads)
 						{
@@ -912,9 +927,7 @@ namespace Hayden
 						var threadUpdateInfo = trackedThread.ProcessThreadUpdates(threadPointer, response.Data);
 
 						Log.Verbose($"{workerId,-2}: Thread /{board}/{threadNumber}: New {threadUpdateInfo.NewPosts.Count} / updated {threadUpdateInfo.UpdatedPosts.Count} / deleted {threadUpdateInfo.DeletedPosts.Count}");
-
-						threadUpdateInfo.IsNewThread = isNewThread;
-
+						
 						if (!threadUpdateInfo.HasChanges && !threadUpdateInfo.Thread.IsArchived)
 						{
 							return new ThreadUpdateTaskResult(true, Array.Empty<QueuedImageDownload>(), ThreadUpdateStatus.NotModified, 0);

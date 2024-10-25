@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using Hayden.Contract;
@@ -36,7 +36,7 @@ namespace Hayden
 		/// <returns>A <see cref="ThreadUpdateInfo{,}"/> object calculated from <param name="updatedThread">updatedThread</param>.</returns>
 		public virtual ThreadUpdateInfo ProcessThreadUpdates(in ThreadPointer threadPointer, Thread updatedThread, bool processModifications = true)
 		{
-			var updateInfo = new ThreadUpdateInfo(threadPointer, updatedThread, false);
+			var updateInfo = new ThreadUpdateInfo(threadPointer, updatedThread, PostCount == 0);
 
 			foreach (var post in updatedThread.Posts)
 			{

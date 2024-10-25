@@ -432,21 +432,16 @@ namespace Hayden
 
 						TrackedThread trackedThread;
 
-						bool isNewThread;
-
 						if (existing.Count == 1)
 						{
 							trackedThread = TrackedThread.StartTrackingThread(ThreadConsumer.CalculateHash, existing.First());
-							isNewThread = false;
 						}
 						else
 						{
 							trackedThread = TrackedThread.StartTrackingThread(ThreadConsumer.CalculateHash);
-							isNewThread = true;
 						}
 
 						var threadUpdateInfo = trackedThread.ProcessThreadUpdates(threadPointer, response.Data);
-						threadUpdateInfo.IsNewThread = isNewThread;
 
 						if (!threadUpdateInfo.HasChanges)
 						{
