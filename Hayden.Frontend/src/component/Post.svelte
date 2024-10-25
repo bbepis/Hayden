@@ -9,7 +9,6 @@
 	import { moderatorUserStore } from "../data/stores";
 	import ExpandableVideo from "./ExpandableVideo.svelte";
 
-	export let threadId: number;
 	export let post: PostModel;
 	export let board: BoardModel;
 	export let subject: string = null;
@@ -69,7 +68,7 @@
 			{time.local().format("ddd DD/MM/yy h:mm:ss A")}
 		</span>
 		<span>
-			<a href="/{board.shortName}/thread/{threadId}#p{post.postId}"
+			<a href="/{board.shortName}/thread/{post.threadId}#p{post.postId}"
 				>No. {post.postId}</a
 			>
 		</span>

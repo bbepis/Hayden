@@ -52,4 +52,14 @@ export class Api {
     {
         return <Promise<BoardModel[]>>Utility.FetchData("/board/all/info");
     }
+
+    static async GetReportsAsync(page: number): Promise<BoardModel[]>
+    {
+        return <Promise<BoardModel[]>>Utility.FetchData("/moderator/getreports", { page });
+    }
+
+    static async MarkReportResolvedAsync(reportId: number): Promise<void>
+    {
+        return Utility.FetchData("/moderator/markreportresolved", { reportId });
+    }
 }

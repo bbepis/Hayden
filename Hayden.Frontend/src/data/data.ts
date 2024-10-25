@@ -52,6 +52,7 @@ export class ThreadModel {
 
 export class PostModel {
     postId: number;
+    threadId: number;
 
     contentHtml: string | null;
     contentRaw: string | null;
@@ -88,6 +89,21 @@ export class FileModel {
 
     imageUrl: string;
     thumbnailUrl: string;
+}
+
+export class ReportedPostModel {
+	post: PostModel;
+	board: BoardModel;
+
+	reports: ReportModel[];
+}
+
+export class ReportModel {
+    id: number;
+	ipAddress: string;
+	reason: string;
+	severity: number;
+	resolved: boolean = false;
 }
 
 export enum ModeratorRole {

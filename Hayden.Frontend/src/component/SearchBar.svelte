@@ -112,7 +112,7 @@
 			<div class="d-flex">
 				<button type="button" class="search-button" on:click={() => Search(false)}>Search</button>
 				<button type="button" class="search-button mx-2" on:click={() => Search(true)}>Search on all boards</button>
-				<button type="button" class="search-button ml-auto" on:click={() => GoToPostNumber()}>Go to post number</button>
+				<button disabled type="button" class="search-button ml-auto" on:click={() => GoToPostNumber()}>Go to post number</button>
 			</div>
 
 			<div class="d-flex mt-2">
@@ -177,13 +177,13 @@
 					<span class="px-2 text-right align-middle d-flex" style="width: 80px; background-color: var(--box-header-background-color); justify-content: end; align-items: center;">
 						Date start
 					</span>
-					<input class="flex-grow-1" type="date" bind:value={dateStartText}/>
+					<input disabled class="flex-grow-1" type="date" bind:value={dateStartText}/>
 				</div>
 				<div class="d-flex" style="width: 50%">
 					<span class="px-2 text-right align-middle d-flex" style="width: 80px; background-color: var(--box-header-background-color); justify-content: end; align-items: center;">
 						Date end
 					</span>
-					<input class="flex-grow-1" type="date" bind:value={dateEndText} />
+					<input disabled class="flex-grow-1" type="date" bind:value={dateEndText} />
 				</div>
 			</div>
 
@@ -192,7 +192,7 @@
 					<span class="px-2 text-right align-middle d-flex" style="width: 80px; background-color: var(--box-header-background-color); justify-content: end; align-items: center;">
 						Post type
 					</span>
-					<select class="flex-grow-1" bind:value={postType}>
+					<select disabled class="flex-grow-1" bind:value={postType}>
 						<option value="" selected>Any</option>
 						<option value="op">OP only</option>
 						<option value="replies">Replies only</option>
