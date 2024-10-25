@@ -8,8 +8,6 @@ using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Options;
-using Pomelo.EntityFrameworkCore.MySql.Infrastructure.Internal;
 using static Hayden.Consumers.Asagi.AsagiDbContext;
 
 namespace Hayden.Consumers.Asagi;
@@ -30,13 +28,23 @@ public class AsagiDbContext : DbContext
 
 		ConnectionString = extension.ConnectionString;
 	}
+	private DbSet<TEntity> TryRetrieveDbSet<TEntity>(string tableName) where TEntity : class
+	{
+		if (AllTables == null)
+			throw new Exception("Table list has not been determined yet");
+
+		if (AllTables.Contains(tableName))
+			return Set<TEntity>(tableName);
+
+		return null;
+	}
 
 	public (DbSet<AsagiDbPost> posts, DbSet<AsagiDbImage> images, DbSet<AsagiDbThread> threads, DbSet<AsagiDbPost> deleted) GetSets(string board)
 	{
-		return (Set<AsagiDbPost>(board),
-			Set<AsagiDbImage>($"{board}_images"),
-			Set<AsagiDbThread>($"{board}_threads"),
-			Set<AsagiDbPost>($"{board}_deleted"));
+		return (TryRetrieveDbSet<AsagiDbPost>(board),
+			TryRetrieveDbSet<AsagiDbImage>($"{board}_images"),
+			TryRetrieveDbSet<AsagiDbThread>($"{board}_threads"),
+			TryRetrieveDbSet<AsagiDbPost>($"{board}_deleted"));
 	}
 
 	public async Task<string[]> GetBoardTables()
@@ -44,6 +52,13 @@ public class AsagiDbContext : DbContext
 		if (Boards != null)
 			return Boards;
 
+		await RetrieveTables();
+
+		return Boards;
+	}
+
+	private async Task RetrieveTables()
+	{
 		await using var dbConnection = new MySqlConnection(ConnectionString);
 		await dbConnection.OpenAsync();
 
@@ -58,13 +73,13 @@ public class AsagiDbContext : DbContext
 		{
 			string tableName = (string)reader[0];
 
-			if (!tableName.Contains('_'))
-				tableNames.Add(tableName);
+			tableNames.Add(tableName);
 		}
 
-		Boards = tableNames.OrderBy(x => x).ToArray();
+		tableNames.Sort();
 
-		return Boards;
+		AllTables = tableNames.ToArray();
+		Boards = tableNames.Where(x => !x.Contains('_')).ToArray();
 	}
 
 	protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -76,6 +91,7 @@ public class AsagiDbContext : DbContext
 			modelBuilder.SharedTypeEntity<AsagiDbPost>(board);
 			modelBuilder.SharedTypeEntity<AsagiDbImage>($"{board}_images");
 			modelBuilder.SharedTypeEntity<AsagiDbThread>($"{board}_threads");
+			modelBuilder.SharedTypeEntity<AsagiDbPost>($"{board}_deleted");
 		}
 	}
 

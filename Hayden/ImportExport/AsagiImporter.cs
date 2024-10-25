@@ -59,16 +59,41 @@ public class AsagiImporter : IImporter
 	public async IAsyncEnumerable<ThreadPointer> GetThreadList(string board, long? minId = null, long? maxId = null)
 	{
 		await using var dbContext = GetDbContext();
-		
-		var query = dbContext.GetSets(board).posts.AsNoTracking();
 
-		if (minId.HasValue)
-			query = query.Where(x => x.thread_num >= minId);
+		var (posts, _, threads, _) = dbContext.GetSets(board);
 
-		if (maxId.HasValue)
-			query = query.Where(x => x.thread_num <= maxId);
+		if (posts == null)
+			throw new Exception($"Tried to retrieve posts from a board that doesn't exist: {board}");
 
-		await foreach (var threadId in query.Select(x => x.thread_num).Distinct().AsAsyncEnumerable())
+		IAsyncEnumerable<uint> threadIdEnumerable;
+
+		// checking the *_threads table is significantly faster, if it exists
+		if (threads != null)
+		{
+			var query = threads.AsNoTracking();
+
+			if (minId.HasValue)
+				query = query.Where(x => x.thread_num >= minId);
+
+			if (maxId.HasValue)
+				query = query.Where(x => x.thread_num <= maxId);
+
+			threadIdEnumerable = query.Select(x => x.thread_num).AsAsyncEnumerable();
+		}
+		else
+		{
+			var query = posts.AsNoTracking();
+
+			if (minId.HasValue)
+				query = query.Where(x => x.thread_num >= minId);
+
+			if (maxId.HasValue)
+				query = query.Where(x => x.thread_num <= maxId);
+
+			threadIdEnumerable = query.Select(x => x.thread_num).Distinct().AsAsyncEnumerable();
+		}
+
+		await foreach (var threadId in threadIdEnumerable)
 		{
 			yield return new ThreadPointer(board, threadId);
 		}
@@ -78,12 +103,36 @@ public class AsagiImporter : IImporter
 	{
 		await using var dbContext = GetDbContext();
 
-		var (posts, images, threads, _) = dbContext.GetSets(pointer.Board);
+		var (posts, images, _, _) = dbContext.GetSets(pointer.Board);
 
-		var threadPosts = await (from p in posts.AsNoTracking()
-								 where p.thread_num == (uint)pointer.ThreadId && p.subnum == 0
-								 orderby p.num
-								 select new { p }).ToArrayAsync();
+		var query = posts.AsNoTracking()
+			.Where(post => post.thread_num == (uint)pointer.ThreadId && post.subnum == 0);
+
+		(AsagiDbContext.AsagiDbPost post, AsagiDbContext.AsagiDbImage image)[] threadPosts;
+
+		// change depending on dataset capabilities
+		if (images != null)
+		{
+			// left join
+			// https://medium.com/@zabavnov/implementation-of-left-outer-join-for-entity-framework-b47469633e2f
+			threadPosts = await query.GroupJoin(images,
+				post => post.media_id,
+				image => image.media_id,
+				(post, image) => new { post, image })
+			.SelectMany(
+				g => g.image.DefaultIfEmpty(),
+				(x, g) => new { x.post, image = g })
+			.OrderBy(x => x.post.num)
+			.ToAsyncEnumerable()
+			.Select(x => (x.post, x.image)).ToArrayAsync();
+		}
+		else
+		{
+			threadPosts = await query.OrderBy(x => x.num)
+				.ToAsyncEnumerable()
+				.Select(x => (x, (AsagiDbContext.AsagiDbImage)null)).ToArrayAsync();
+		}
+
 
 		//var threadPosts = await posts
 		//	.Where(x => (x.parent == (uint)pointer.ThreadId || x.num == (uint)pointer.ThreadId) && x.subnum == 0)
@@ -100,49 +149,50 @@ public class AsagiImporter : IImporter
 		{
 			ThreadId = pointer.ThreadId,
 			IsArchived = false,
-			Title = threadPosts[0].p.title,
+			Title = threadPosts[0].post.title,
 			Posts = threadPosts.Select(x => new Post
 			{
-				PostNumber = x.p.num,
-				TimePosted = Utility.ConvertNewYorkTimestamp(x.p.timestamp.Value),
-				Author = x.p.name,
-				Tripcode = x.p.trip,
-				Email = x.p.email,
-				Subject = x.p.title,
-				ContentRaw = x.p.comment,
+				PostNumber = x.post.num,
+				TimePosted = Utility.ConvertNewYorkTimestamp(x.post.timestamp.Value),
+				Author = x.post.name,
+				Tripcode = x.post.trip,
+				Email = x.post.email,
+				Subject = x.post.title,
+				ContentRaw = x.post.comment,
 				ContentRendered = null,
 				ContentType = ContentType.Yotsuba,
-				IsDeleted = x.p.deleted,
+				IsDeleted = x.post.deleted,
 				OriginalObject = x,
-				Media = x.p.media_hash == null
+				Media = x.post.media_hash == null
 					? Array.Empty<Media>()
 					: new[]
 					{
 						new Media
 						{
-							Filename = HttpUtility.HtmlDecode(Path.GetFileNameWithoutExtension(x.p.media_filename)),
-							FileExtension = Path.GetExtension(x.p.media_filename),
+							Filename = HttpUtility.HtmlDecode(Path.GetFileNameWithoutExtension(x.post.media_filename)),
+							FileExtension = Path.GetExtension(x.post.media_filename),
 							Index = 0,
-							FileSize = x.p.media_size,
-							IsSpoiler = x.p.spoiler,
+							FileSize = x.post.media_size,
+							IsSpoiler = x.post.spoiler,
 							//ThumbnailExtension = x.i == null ? null : Path.GetExtension(x.i.preview_op ?? x.i.preview_reply),
-							Md5Hash = TryConvertBase64(x.p.media_hash),
+							Md5Hash = TryConvertBase64(x.post.media_hash),
 							//FileUrl = $"{CdnUrl}data/{pointer.Board}/img/{radix}/{x.media_filename}",
 							//ThumbnailUrl = $"{CdnUrl}data/{pointer.Board}/thumb/{radix}/{x.preview}"
+							
 						}
 					},
 				AdditionalMetadata = new()
 				{
-					Capcode = x.p.capcode == "N" || x.p.capcode == null ? null : x.p.capcode,
-					CountryCode = x.p.poster_country,
-					PosterID = x.p.poster_hash,
-					AsagiExif = !string.IsNullOrWhiteSpace(x.p.exif) ? x.p.exif : null
+					Capcode = x.post.capcode == "N" || x.post.capcode == null ? null : x.post.capcode,
+					CountryCode = x.post.poster_country,
+					PosterID = x.post.poster_hash,
+					AsagiExif = !string.IsNullOrWhiteSpace(x.post.exif) ? x.post.exif : null
 				}
 			}).ToArray(),
 			AdditionalMetadata = new()
 			{
-				Locked = threadPosts[0].p.locked,
-				TimeExpired = threadPosts[0].p.timestamp_expired,
+				Locked = threadPosts[0].post.locked,
+				TimeExpired = threadPosts[0].post.timestamp_expired,
 			}
 		};
 	}
