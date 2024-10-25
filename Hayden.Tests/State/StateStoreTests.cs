@@ -80,12 +80,4 @@ namespace Hayden.Tests.State
             return new SqliteStateStore(connection);
         }
     }
-
-    public class LiteDBStateStoreTests : BaseStateStoreTests
-    {
-        protected override IStateStore CreateStateStore()
-        {
-            return new LiteDbStateStore(new MemoryStream());
-        }
-    }
 }
