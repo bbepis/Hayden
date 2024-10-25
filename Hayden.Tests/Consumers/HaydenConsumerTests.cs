@@ -114,7 +114,7 @@ namespace Hayden.Tests.Consumers
 			Assert.AreEqual(post.Tripcode, dbPost.Tripcode);
 			Assert.AreEqual(post.Email, dbPost.Email);
 			Assert.AreEqual(post.TimePosted.UtcDateTime, dbPost.DateTime);
-			Assert.AreEqual(post.IsDeleted, dbPost.IsDeleted);
+			Assert.AreEqual(post.IsDeleted ?? false, dbPost.IsDeleted);
 
 			if (post.AdditionalMetadata.Serialize() == null)
 				Assert.AreEqual(null, dbPost.AdditionalMetadata);
@@ -162,7 +162,6 @@ namespace Hayden.Tests.Consumers
 
 			var threadTracker = TrackedThread.StartTrackingThread(consumer.CalculateHash);
 			var threadUpdate = threadTracker.ProcessThreadUpdates(threadPointer, thread);
-			threadUpdate.IsNewThread = true;
 
 			var pendingDownloads = await consumer.ConsumeThread(threadUpdate);
 
@@ -266,8 +265,6 @@ namespace Hayden.Tests.Consumers
 
 			var threadTracker = TrackedThread.StartTrackingThread(consumer.CalculateHash);
 			var threadUpdate = threadTracker.ProcessThreadUpdates(threadPointer, thread);
-			threadUpdate.IsNewThread = true;
-
 			var pendingDownloads = await consumer.ConsumeThread(threadUpdate);
 
 			if (anyImages)
@@ -383,7 +380,6 @@ namespace Hayden.Tests.Consumers
 
 			var threadTracker = TrackedThread.StartTrackingThread(consumer.CalculateHash);
 			var threadUpdate = threadTracker.ProcessThreadUpdates(threadPointer, thread);
-			threadUpdate.IsNewThread = true;
 
 			var pendingDownloads = await consumer.ConsumeThread(threadUpdate);
 
@@ -407,6 +403,159 @@ namespace Hayden.Tests.Consumers
 			
 			CollectionAssert.IsEmpty(mockFilesystem.AllFiles, "Unexpected changes were made to the filesystem.");
 		}
+
+		[Test]
+		public async Task IngestPosts_PostDeleted_Test()
+		{
+			var options = TestCommon.CreateMemoryContextOptions();
+			var mockFilesystem = new MockFileSystem();
+
+			using var consumer = await CreateHaydenConsumerAsync(options, mockFilesystem);
+
+			var (thread, threadPointer) = TestCommon.GenerateThread();
+
+			var threadTracker = TrackedThread.StartTrackingThread(consumer.CalculateHash);
+			var threadUpdate = threadTracker.ProcessThreadUpdates(threadPointer, thread);
+
+			await consumer.ConsumeThread(threadUpdate);
+
+			// simulate post deletion
+			var deletedPost = thread.Posts[1];
+			thread.Posts = new[]
+			{
+				thread.Posts[0]
+			};
+
+			threadUpdate = threadTracker.ProcessThreadUpdates(threadPointer, thread);
+			await consumer.ConsumeThread(threadUpdate);
+
+			await using (var context = new HaydenDbContext(options))
+			{
+				var deletedDbPost = context.Posts.First(x => x.PostId == deletedPost.PostNumber);
+
+				Assert.IsTrue(deletedDbPost.IsDeleted);
+			}
+		}
+
+		[Test]
+		public async Task IngestPosts_ThreadDeleted_Test()
+		{
+			var options = TestCommon.CreateMemoryContextOptions();
+			var mockFilesystem = new MockFileSystem();
+
+			using var consumer = await CreateHaydenConsumerAsync(options, mockFilesystem);
+
+			var (thread, threadPointer) = TestCommon.GenerateThread();
+
+			var threadTracker = TrackedThread.StartTrackingThread(consumer.CalculateHash);
+			var threadUpdate = threadTracker.ProcessThreadUpdates(threadPointer, thread);
+
+			await consumer.ConsumeThread(threadUpdate);
+
+			await consumer.ThreadUntracked(threadPointer.ThreadId, threadPointer.Board, true);
+
+			await using (var context = new HaydenDbContext(options))
+			{
+				var dbThread = context.Threads.First(x => x.ThreadId == threadPointer.ThreadId);
+
+				Assert.IsTrue(dbThread.IsDeleted);
+			}
+		}
+
+		[Test]
+		public async Task IngestPosts_ThreadArchived_Test()
+		{
+			var options = TestCommon.CreateMemoryContextOptions();
+			var mockFilesystem = new MockFileSystem();
+
+			using var consumer = await CreateHaydenConsumerAsync(options, mockFilesystem);
+
+			var (thread, threadPointer) = TestCommon.GenerateThread();
+
+			var threadTracker = TrackedThread.StartTrackingThread(consumer.CalculateHash);
+			var threadUpdate = threadTracker.ProcessThreadUpdates(threadPointer, thread);
+
+			await consumer.ConsumeThread(threadUpdate);
+
+
+			thread.IsArchived = true;
+
+			threadUpdate = threadTracker.ProcessThreadUpdates(threadPointer, thread);
+			await consumer.ConsumeThread(threadUpdate);
+
+			await using (var context = new HaydenDbContext(options))
+			{
+				var dbThread = context.Threads.First(x => x.ThreadId == threadPointer.ThreadId);
+
+				Assert.IsTrue(dbThread.IsArchived);
+				Assert.IsFalse(dbThread.IsDeleted);
+			}
+		}
+
+		[Test]
+		public async Task IngestPosts_ThreadLastModified_Test()
+		{
+			var options = TestCommon.CreateMemoryContextOptions();
+			var mockFilesystem = new MockFileSystem();
+
+			using var consumer = await CreateHaydenConsumerAsync(options, mockFilesystem);
+
+			var (thread, threadPointer) = TestCommon.GenerateThread();
+
+			var threadTracker = TrackedThread.StartTrackingThread(consumer.CalculateHash);
+			var threadUpdate = threadTracker.ProcessThreadUpdates(threadPointer, thread);
+
+			await consumer.ConsumeThread(threadUpdate);
+
+
+			await using (var context = new HaydenDbContext(options))
+			{
+				var dbThread = context.Threads.First(x => x.ThreadId == threadPointer.ThreadId);
+
+				Assert.AreEqual(thread.Posts[1].TimePosted.UtcDateTime, dbThread.LastModified);
+			}
+
+			var newPost = new Post
+			{
+				PostNumber = thread.Posts[1].PostNumber + 10,
+				TimePosted = thread.Posts[1].TimePosted + TimeSpan.FromMinutes(10),
+				Media = Array.Empty<Media>()
+			};
+
+			thread.Posts = new[]
+			{
+				thread.Posts[0],
+				thread.Posts[1],
+				newPost
+			};
+
+			threadUpdate = threadTracker.ProcessThreadUpdates(threadPointer, thread);
+			await consumer.ConsumeThread(threadUpdate);
+
+			await using (var context = new HaydenDbContext(options))
+			{
+				var dbThread = context.Threads.First(x => x.ThreadId == threadPointer.ThreadId);
+
+				Assert.AreEqual(newPost.TimePosted.UtcDateTime, dbThread.LastModified);
+			}
+
+			// simulate post deletion, to ensure the updated bump time remains in DB
+			thread.Posts = new[]
+			{
+				thread.Posts[0],
+				thread.Posts[1]
+			};
+
+			threadUpdate = threadTracker.ProcessThreadUpdates(threadPointer, thread);
+			await consumer.ConsumeThread(threadUpdate);
+
+			await using (var context = new HaydenDbContext(options))
+			{
+				var dbThread = context.Threads.First(x => x.ThreadId == threadPointer.ThreadId);
+
+				Assert.AreEqual(newPost.TimePosted.UtcDateTime, dbThread.LastModified);
+			}
+		}
 		
 		/// <summary>
 		/// Tests if files marked as missing from disk can be redownloaded if found in another thread
@@ -423,7 +572,6 @@ namespace Hayden.Tests.Consumers
 
 			var threadTracker = TrackedThread.StartTrackingThread(consumer.CalculateHash);
 			var threadUpdate = threadTracker.ProcessThreadUpdates(threadPointer, thread);
-			threadUpdate.IsNewThread = true;
 
 			var pendingDownloads = await consumer.ConsumeThread(threadUpdate);
 
@@ -458,7 +606,7 @@ namespace Hayden.Tests.Consumers
 
 			threadTracker = TrackedThread.StartTrackingThread(consumer.CalculateHash);
 			threadUpdate = threadTracker.ProcessThreadUpdates(threadPointer, thread);
-			threadUpdate.IsNewThread = true;
+
 			pendingDownloads = await consumer.ConsumeThread(threadUpdate);
 			
 			Assert.AreEqual(2, pendingDownloads.Count);
@@ -520,7 +668,6 @@ namespace Hayden.Tests.Consumers
 
 			var threadTracker = TrackedThread.StartTrackingThread(consumer.CalculateHash);
 			var threadUpdate = threadTracker.ProcessThreadUpdates(threadPointer, thread);
-			threadUpdate.IsNewThread = true;
 
 			var pendingDownloads = await consumer.ConsumeThread(threadUpdate);
 
@@ -551,7 +698,6 @@ namespace Hayden.Tests.Consumers
 
 			var threadTracker = TrackedThread.StartTrackingThread(consumer.CalculateHash);
 			var threadUpdate = threadTracker.ProcessThreadUpdates(threadPointer, thread);
-			threadUpdate.IsNewThread = true;
 
 			await consumer.ConsumeThread(threadUpdate);
 
@@ -631,7 +777,6 @@ namespace Hayden.Tests.Consumers
 
 			var threadTracker = TrackedThread.StartTrackingThread(consumer.CalculateHash);
 			var threadUpdate = threadTracker.ProcessThreadUpdates(threadPointer, thread);
-			threadUpdate.IsNewThread = true;
 
 			var pendingDownloads = await consumer.ConsumeThread(threadUpdate);
 			Assert.AreEqual(2, pendingDownloads.Count);
@@ -706,7 +851,6 @@ namespace Hayden.Tests.Consumers
 
 			var threadTracker = TrackedThread.StartTrackingThread(consumer.CalculateHash);
 			var threadUpdate = threadTracker.ProcessThreadUpdates(threadPointer, thread);
-			threadUpdate.IsNewThread = true;
 
 			var pendingDownloads = await consumer.ConsumeThread(threadUpdate);
 
@@ -753,7 +897,6 @@ namespace Hayden.Tests.Consumers
 
 			var threadTracker = TrackedThread.StartTrackingThread(consumer.CalculateHash);
 			var threadUpdate = threadTracker.ProcessThreadUpdates(threadPointer, thread);
-			threadUpdate.IsNewThread = true;
 
 			var pendingDownloads = await consumer.ConsumeThread(threadUpdate);
 			
@@ -810,7 +953,6 @@ namespace Hayden.Tests.Consumers
 
 			var threadTracker = TrackedThread.StartTrackingThread(consumer.CalculateHash);
 			var threadUpdate = threadTracker.ProcessThreadUpdates(threadPointer, thread);
-			threadUpdate.IsNewThread = true;
 
 			await consumer.ConsumeThread(threadUpdate);
 

@@ -55,7 +55,6 @@ namespace Hayden.Tests
 						ContentRaw = "My first post",
 						ContentRendered = "<b>My first post</b>",
 						Email = "email@example.com",
-						IsDeleted = false,
 						ContentType = ContentType.Yotsuba, // non-zero
 						Media = new[]
 						{
@@ -108,7 +107,6 @@ namespace Hayden.Tests
 						ContentRaw = "Reply",
 						ContentRendered = "Reply",
 						Email = null,
-						IsDeleted = false,
 						ContentType = ContentType.Yotsuba, // non-zero
 						Media = Array.Empty<Media>()
 					}
