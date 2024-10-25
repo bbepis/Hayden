@@ -117,26 +117,26 @@ namespace Hayden.Consumers.HaydenMysql.DB.Migrations
 				nullable: true)
 				.MarkUtf8(ActiveProvider);
 
-			//migrationBuilder.CreateTable(
-			//    name: "reports",
-			//    columns: table => new
-			//    {
-			//        Id = table.Column<uint>(type: isSqlite ? "INTEGER" : "int unsigned", nullable: false)
-			//            .MarkAutoincrement(ActiveProvider),
-			//        BoardId = table.Column<ushort>(type: isSqlite ? "INTEGER" : "smallint unsigned", nullable: false),
-			//        PostId = table.Column<ulong>(type: isSqlite ? "INTEGER" : "bigint unsigned", nullable: false),
-			//        TimeReported = table.Column<DateTime>(type: isSqlite ? "TEXT" : "datetime(6)", nullable: false),
-			//        IPAddress = table.Column<string>(type: isSqlite ? "TEXT" : "varchar(255)", fixedLength: false, maxLength: 255, nullable: true)
-			//            .MarkUtf8(ActiveProvider),
-			//        Category = table.Column<byte>(type: isSqlite ? "INTEGER" : "tinyint unsigned", nullable: false),
-			//        Reason = table.Column<string>(type: "TEXT", nullable: true)
-			//            .MarkUtf8(ActiveProvider),
-			//        Resolved = table.Column<bool>(type: isSqlite ? "INTEGER" : "tinyint(1)", nullable: false)
-			//    },
-			//    constraints: table =>
-			//    {
-			//        table.PrimaryKey("PK_reports", x => x.Id);
-			//    });
+			migrationBuilder.CreateTable(
+				name: "reports",
+				columns: table => new
+				{
+					Id = table.Column<uint>(type: isSqlite ? "INTEGER" : "int unsigned", nullable: false)
+						.MarkAutoincrement(ActiveProvider),
+					BoardId = table.Column<ushort>(type: isSqlite ? "INTEGER" : "smallint unsigned", nullable: false),
+					PostId = table.Column<ulong>(type: isSqlite ? "INTEGER" : "bigint unsigned", nullable: false),
+					TimeReported = table.Column<DateTime>(type: isSqlite ? "TEXT" : "datetime(6)", nullable: false),
+					IPAddress = table.Column<string>(type: isSqlite ? "TEXT" : "varchar(255)", fixedLength: false, maxLength: 255, nullable: true)
+						.MarkUtf8(ActiveProvider),
+					Category = table.Column<byte>(type: isSqlite ? "INTEGER" : "tinyint unsigned", nullable: false),
+					Reason = table.Column<string>(type: "TEXT", nullable: true)
+						.MarkUtf8(ActiveProvider),
+					Resolved = table.Column<bool>(type: isSqlite ? "INTEGER" : "tinyint(1)", nullable: false)
+				},
+				constraints: table =>
+				{
+					table.PrimaryKey("PK_reports", x => x.Id);
+				});
 
 			migrationBuilder.CreateIndex(
 				name: "IX_files_Sha256Hash",
