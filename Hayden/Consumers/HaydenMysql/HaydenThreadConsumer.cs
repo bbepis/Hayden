@@ -290,8 +290,8 @@ namespace Hayden.Consumers
 									FileExists = false,
 									ThumbnailExists = false,
 									Size = media.FileSize ?? 0,
-									Extension = media.FileExtension,
-									ThumbnailExtension = media.ThumbnailExtension
+									Extension = media.FileExtension.TrimStart('.'),
+									ThumbnailExtension = media.ThumbnailExtension.TrimStart('.')
 								};
 
 								dbContext.Add(newFile);
@@ -362,22 +362,52 @@ namespace Hayden.Consumers
 					}
 				}
 
-				if (threadUpdateInfo.IsNewThread)
+				void CreateThread()
 				{
 					var dbThread = new DBThread
 					{
 						BoardId = boardId,
 						ThreadId = threadUpdateInfo.ThreadPointer.ThreadId,
 						IsDeleted = threadUpdateInfo.Thread.AdditionalMetadata?.Deleted
-							?? threadUpdateInfo.Thread.Posts.FirstOrDefault(x => x.PostNumber == threadUpdateInfo.ThreadPointer.ThreadId)?.IsDeleted
-							?? false,
+						            ?? threadUpdateInfo.Thread.Posts.FirstOrDefault(x => x.PostNumber == threadUpdateInfo.ThreadPointer.ThreadId)?.IsDeleted
+						            ?? false,
 						IsArchived = threadUpdateInfo.Thread.IsArchived,
-						LastModified = DateTime.MinValue,
+						LastModified = threadUpdateInfo.Thread.Posts.DefaultIfEmpty().Max(x => x.TimePosted).UtcDateTime,
 						Title = threadUpdateInfo.Thread.Title.TrimAndNullify(),
 						AdditionalMetadata = threadUpdateInfo.Thread.AdditionalMetadata?.Serialize()
 					};
 
 					dbContext.Add(dbThread);
+				}
+
+				if (threadUpdateInfo.IsNewThread)
+				{
+					CreateThread();
+				}
+				else if (threadUpdateInfo.NewPosts.Count > 0
+					|| threadUpdateInfo.Thread.IsArchived
+					|| threadUpdateInfo.Thread.Posts[0].IsDeleted == true)
+				{
+					var dbThread = await dbContext.Threads.FirstOrDefaultAsync(x =>
+						x.BoardId == boardId && x.ThreadId == threadUpdateInfo.ThreadPointer.ThreadId);
+
+					if (dbThread != null)
+					{
+						dbThread.IsDeleted = threadUpdateInfo.Thread.Posts[0].IsDeleted ?? false;
+						dbThread.IsArchived = threadUpdateInfo.Thread.IsArchived;
+
+						var newLastModified = threadUpdateInfo.Thread.Posts.Max(x => x.TimePosted).UtcDateTime;
+
+						// it's possible a newer post exists in the DB that we don't have here
+						if (newLastModified > dbThread.LastModified)
+							dbThread.LastModified = newLastModified;
+
+						dbContext.Update(dbThread);
+					}
+					else
+					{
+						CreateThread();
+					}
 				}
 
 				HashSet<ulong> postNumbersToSkip = null;
@@ -499,8 +529,6 @@ namespace Hayden.Consumers
 				dbContext.ChangeTracker.DetectChanges();
 				await dbContext.SaveChangesAsync();
 				dbContext.ChangeTracker.Clear();
-
-				await UpdateThread(board, threadUpdateInfo.ThreadPointer.ThreadId, false, threadUpdateInfo.Thread.IsArchived);
 			
 				return imageDownloads;
 
@@ -602,11 +630,9 @@ namespace Hayden.Consumers
 		/// <inheritdoc/>
 		public async Task ThreadUntracked(ulong threadId, string board, bool deleted)
 		{
-			await UpdateThread(GetTranslatedBoardName(board), threadId, deleted, !deleted);
-		}
-		
-		protected async Task UpdateThread(string board, ulong threadId, bool deleted, bool archived)
-		{
+			if (!deleted)
+				return;
+
 			ushort boardId = BoardIdMappings[GetTranslatedBoardName(board)];
 
 			await using var dbContext = GetDBContext();
@@ -619,13 +645,8 @@ namespace Hayden.Consumers
 				return;
 			}
 
-			thread.IsDeleted = deleted;
-			thread.IsArchived = archived;
-
-			thread.LastModified = await dbContext.Posts.Where(x => x.BoardId == boardId && x.ThreadId == threadId)
-				.Select(x => x.DateTime)
-				.DefaultIfEmpty()
-				.MaxAsync();
+			thread.IsDeleted = true;
+			dbContext.Update(thread);
 
 			await dbContext.SaveChangesAsync();
 		}
