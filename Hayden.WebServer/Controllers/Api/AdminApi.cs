@@ -7,6 +7,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using Hayden.WebServer.Data;
 using Microsoft.Extensions.DependencyInjection;
+using System.Collections.Generic;
 
 namespace Hayden.WebServer.Controllers.Api
 {
@@ -48,14 +49,15 @@ namespace Hayden.WebServer.Controllers.Api
 
 		private class ReportedPostInfo
 		{
-			public ushort BoardId { get; set; }
-			public ulong PostId { get; set; }
+			public JsonPostModel Post { get; set; }
+			public DBBoard Board { get; set; }
 
 			public ReportInfo[] Reports { get; set; }
 
 			public class ReportInfo
 			{
-				public string Severity { get; set; }
+				public uint Id { get; set; }
+				public int Severity { get; set; }
 				public string IPAddress { get; set; }
 				public string Reason { get; set; }
 			}
@@ -64,8 +66,8 @@ namespace Hayden.WebServer.Controllers.Api
 		[AdminAccessFilter(ModeratorRole.Moderator, ModeratorRole.Admin)]
 		[HttpPost("moderator/getreports")]
 		public async Task<IActionResult> GetReports(int page,
-			[FromServices] IServiceProvider serviceProvider
-			)
+			[FromServices] IServiceProvider serviceProvider,
+			[FromServices] IDataProvider dataProvider)
 		{
 			const int pageSize = 20;
 
@@ -88,21 +90,31 @@ namespace Hayden.WebServer.Controllers.Api
 					(post, report) => report)
 				.ToListAsync();
 
-			var reportList = reportedPosts
-				.GroupBy(x => new { x.BoardId, x.PostId })
-				.Select(x => new ReportedPostInfo()
+			var boards = await dbContext.Boards.ToArrayAsync();
+
+			var reports = new List<ReportedPostInfo>();
+
+			foreach (var grouping in reportedPosts.GroupBy(x => (x.BoardId, x.PostId)))
+			{
+				var board = boards.First(x => x.Id == grouping.Key.BoardId);
+
+				var post = await dataProvider.GetPost(board.ShortName, grouping.Key.PostId);
+
+				reports.Add(new ReportedPostInfo()
 				{
-					BoardId = x.Key.BoardId,
-					PostId = x.Key.PostId,
-					Reports = x.Select(y => new ReportedPostInfo.ReportInfo()
+					Post = post,
+					Board = board,
+					Reports = grouping.Select(y => new ReportedPostInfo.ReportInfo
 					{
+						Id = y.Id,
 						IPAddress = y.IPAddress,
 						Reason = y.Reason,
-						Severity = y.Category.ToString()
+						Severity = (int)y.Category
 					}).ToArray()
-				}).ToArray();
+				});
+			}
 
-            return Ok(reportList);
+            return Ok(reports);
 		}
 
 		[AdminAccessFilter(ModeratorRole.Moderator, ModeratorRole.Admin)]

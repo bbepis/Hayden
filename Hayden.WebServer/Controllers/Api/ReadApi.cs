@@ -186,6 +186,7 @@ namespace Hayden.WebServer.Controllers.Api
 		public class JsonPostModel
 		{
 			public ulong postId { get; set; }
+			public ulong threadId { get; set; }
 
 			public string contentHtml { get; set; }
 			public string contentRaw { get; set; }
@@ -202,6 +203,7 @@ namespace Hayden.WebServer.Controllers.Api
 			public JsonPostModel(DBPost post, JsonFileModel[] files)
 			{
 				postId = post.PostId;
+				threadId = post.ThreadId;
 				contentHtml = post.ContentHtml;
 				contentRaw = post.ContentRaw;
 				author = post.Author;
