@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
+using System.Security;
 using System.Threading;
 using System.Threading.Tasks;
 using Hayden.Api;
@@ -170,8 +171,8 @@ namespace Hayden
 		[JsonProperty("country_name")]
 		public string CountryName { get; set; }
 
-		[JsonProperty("custom_spoiler")]
-		public byte? CustomSpoiler { get; set; }
+		[JsonProperty("embed")]
+		public string Embed { get; set; }
 
 		[JsonProperty("replies")]
 		public uint? TotalReplies { get; set; }
@@ -228,14 +229,25 @@ namespace Hayden
 						IsSpoiler = null, // Vichan API does not expose this
 						Md5Hash = Convert.FromBase64String(file.FileMd5),
 						OriginalObject = this,
-						AdditionalMetadata = new()
-						{
-							CustomSpoiler = CustomSpoiler
-						}
+						AdditionalMetadata = null
 					}));
 				}
 
 				media = mediaList.ToArray();
+			}
+			else if (!string.IsNullOrEmpty(Embed))
+			{
+				media = new[]
+				{
+					new Media
+					{
+						Index = 0,
+						AdditionalMetadata = new()
+						{
+							ExternalMediaUrl = Embed
+						}
+					}
+				};
 			}
 
 			return new Post
