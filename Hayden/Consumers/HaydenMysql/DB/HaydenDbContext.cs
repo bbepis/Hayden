@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using System.Text.RegularExpressions;
@@ -34,7 +35,7 @@ namespace Hayden.Consumers.HaydenMysql.DB
 		public virtual DbSet<DBModerator> Moderators { get; set; }
 		public virtual DbSet<DBReport> Reports { get; set; }
 
-		private HaydenDbContext() { }
+		protected HaydenDbContext() { }
 		public HaydenDbContext(DbContextOptions options) : base(options) { }
 
 		protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -162,13 +163,6 @@ namespace Hayden.Consumers.HaydenMysql.DB
 			});
 
 			modelBuilder.HasCharSet(CharSet.Utf8Mb4.Name, DelegationModes.ApplyToColumns);
-		}
-
-		protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
-		{
-			base.OnConfiguring(optionsBuilder);
-
-			optionsBuilder.ReplaceService<IMigrationsIdGenerator, VersionedMigrationIdGenerator>();
 		}
 
 		public async Task UpgradeOrCreateAsync()
@@ -316,7 +310,7 @@ namespace Hayden.Consumers.HaydenMysql.DB
 		}
 	}
 
-	class VersionedMigrationIdGenerator : IMigrationsIdGenerator
+	public class VersionedMigrationIdGenerator : IMigrationsIdGenerator
 	{
 		private static readonly Regex versionRegex = new (@"^v(\d+)_");
 

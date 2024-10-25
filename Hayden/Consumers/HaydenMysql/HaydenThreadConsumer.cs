@@ -28,6 +28,7 @@ namespace Hayden.Consumers
 		protected ConsumerConfig ConsumerConfig { get; }
 		protected SourceConfig SourceConfig { get; }
 		protected DbContextOptions<HaydenDbContext> DbContextOptions { get; set; }
+		protected PooledDbContextFactory<HaydenDbContext> DbContextPool { get; set; }
 		protected IFileSystem FileSystem { get; set; }
 		protected IMediaInspector MediaInspector { get; set; }
 
@@ -123,13 +124,16 @@ namespace Hayden.Consumers
 				throw new Exception("Unknown database type; not supported by HaydenConsumer");
 			}
 
+			contextBuilder.ReplaceService<IMigrationsIdGenerator, VersionedMigrationIdGenerator>();
 			contextBuilder.UseQueryTrackingBehavior(QueryTrackingBehavior.NoTracking);
 
 			DbContextOptions = contextBuilder.Options;
+			DbContextPool = new PooledDbContextFactory<HaydenDbContext>(DbContextOptions);
 		}
 
 		public Task CommitAsync() => Task.CompletedTask;
 
+		protected virtual HaydenDbContext GetDBContext() => DbContextPool.CreateDbContext(); // new(DbContextOptions); 
 
 		/// <inheritdoc/>
 		public async Task<IList<QueuedImageDownload>> ConsumeThread(ThreadUpdateInfo threadUpdateInfo)

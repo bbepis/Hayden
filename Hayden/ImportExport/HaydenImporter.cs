@@ -6,6 +6,8 @@ using System.Threading.Tasks;
 using Hayden.Config;
 using Hayden.Consumers.HaydenMysql.DB;
 using Hayden.Models;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using Serilog;
@@ -15,7 +17,8 @@ namespace Hayden.ImportExport;
 public class HaydenImporter : IImporter
 {
 	private SourceConfig sourceConfig;
-	private DbContextOptions dbContextOptions;
+	private DbContextOptions<HaydenDbContext> dbContextOptions;
+	protected PooledDbContextFactory<HaydenDbContext> DbContextPool { get; set; }
 	private Dictionary<string, ushort> boardDictionary;
 
 	private ILogger Logger { get; } = SerilogManager.CreateSubLogger("HaydenDB");
@@ -24,7 +27,7 @@ public class HaydenImporter : IImporter
 	{
 		this.sourceConfig = sourceConfig;
 
-		var optionsBuilder = new DbContextOptionsBuilder();
+		var optionsBuilder = new DbContextOptionsBuilder<HaydenDbContext>();
 
 		if (sourceConfig.DbConnectionString.StartsWith("Data Source"))
 		{
@@ -41,18 +44,20 @@ public class HaydenImporter : IImporter
 				});
 		}
 
+		optionsBuilder.ReplaceService<IMigrationsIdGenerator, VersionedMigrationIdGenerator>();
+		optionsBuilder.UseQueryTrackingBehavior(QueryTrackingBehavior.NoTracking);
+
 		dbContextOptions = optionsBuilder.Options;
+		DbContextPool = new PooledDbContextFactory<HaydenDbContext>(dbContextOptions);
 
 		using var dbContext = GetDbContext();
 
 		dbContext.UpgradeOrCreateAsync().Wait();
 
 		boardDictionary = dbContext.Boards.ToDictionary(x => x.ShortName, x => x.Id);
-		
-		this.dbContext = GetDbContext();
 	}
 
-	private HaydenDbContext GetDbContext() => new(dbContextOptions);
+	private HaydenDbContext GetDbContext() => DbContextPool.CreateDbContext(); //new(dbContextOptions);
 		
 	public async Task<string[]> GetBoardList()
 	{
@@ -85,10 +90,11 @@ public class HaydenImporter : IImporter
 		}
 	}
 
-	private HaydenDbContext dbContext;
 	public async Task<Thread> RetrieveThread(ThreadPointer pointer)
 	{
 		var boardId = boardDictionary[pointer.Board];
+
+		using var dbContext = GetDbContext();
 
 		var stopwatch = System.Diagnostics.Stopwatch.StartNew();
 
