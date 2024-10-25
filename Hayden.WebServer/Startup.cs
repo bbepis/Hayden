@@ -202,7 +202,8 @@ namespace Hayden.WebServer
 						{
 							y.CommandTimeout(86400);
 							y.EnableIndexOptimizedBooleanColumns();
-						}));
+						})
+					.AddQueryHints());
 			}
 			else if (serverConfig.Data.DBType == DatabaseType.Sqlite)
 			{
