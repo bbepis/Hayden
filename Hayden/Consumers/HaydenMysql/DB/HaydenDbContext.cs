@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Reflection;
 using System.Text.RegularExpressions;
@@ -36,6 +37,8 @@ namespace Hayden.Consumers.HaydenMysql.DB
 		public virtual DbSet<DBReport> Reports { get; set; }
 
 		protected HaydenDbContext() { }
+
+		[DynamicDependency(DynamicallyAccessedMemberTypes.All, typeof(VersionedMigrationIdGenerator))]
 		public HaydenDbContext(DbContextOptions options) : base(options) { }
 
 		protected override void OnModelCreating(ModelBuilder modelBuilder)

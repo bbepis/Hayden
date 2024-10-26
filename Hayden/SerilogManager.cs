@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using Serilog;
 using Serilog.Core;
@@ -10,6 +11,7 @@ namespace Hayden;
 
 public static class SerilogManager
 {
+	[DynamicDependency(DynamicallyAccessedMemberTypes.All, typeof(LoggingFunctions))]
 	private static readonly ExpressionTemplate expressionTemplate = new(
 		"[{@t:dd-MMM HH:mm:ss} {@l:t5}]{FilterSourceContext(SourceContext)} {@m}{#if IsError()}\n{requestInfo}{#end}\n{@x}",
 		new CultureInfo("en-GB"), theme: TemplateTheme.Code,
