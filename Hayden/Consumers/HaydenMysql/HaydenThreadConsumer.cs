@@ -291,7 +291,7 @@ namespace Hayden.Consumers
 									ThumbnailExists = false,
 									Size = media.FileSize ?? 0,
 									Extension = media.FileExtension.TrimStart('.'),
-									ThumbnailExtension = media.ThumbnailExtension.TrimStart('.')
+									ThumbnailExtension = media.ThumbnailExtension?.TrimStart('.')
 								};
 
 								dbContext.Add(newFile);
