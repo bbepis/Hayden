@@ -224,15 +224,9 @@ namespace Hayden.WebServer
 
 			if (serverConfig.Data.DBType == DatabaseType.MySql)
 			{
-				services.AddDbContext<AsagiDbContext>(x =>
-					x.UseMySql(serverConfig.Data.DBConnectionString, ServerVersion.AutoDetect(serverConfig.Data.DBConnectionString),
-						y =>
-						{
-							y.CommandTimeout(86400);
-							y.EnableIndexOptimizedBooleanColumns();
-						})
-						.AddAsagiConfig(serverConfig.Data.DBConnectionString)
-					);
+				services.AddDbContext<AsagiDbContext>(builder =>
+					((DbContextOptionsBuilder<AsagiDbContext>)builder)
+					.ConfigureAsagiMysql(serverConfig.Data.DBConnectionString));
 			}
 			else
 			{

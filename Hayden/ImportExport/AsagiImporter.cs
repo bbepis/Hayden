@@ -23,22 +23,8 @@ public class AsagiImporter : IImporter
 		this.sourceConfig = sourceConfig;
 
 		dbContextOptions = (DbContextOptions<AsagiDbContext>)new DbContextOptionsBuilder<AsagiDbContext>()
-			.UseMySql(sourceConfig.DbConnectionString,
-				ServerVersion.AutoDetect(sourceConfig.DbConnectionString), o =>
-				{
-					o.EnableIndexOptimizedBooleanColumns();
-				})
-			//.LogTo(s => Program.Log(s))
-			.Options
-			.WithExtension(new AsagiDbContext.AsagiDbExtension(sourceConfig.DbConnectionString));
-		//using var dbContext = GetDbContext();
-
-		//boardTables = dbContext.GetBoardTables().Result;
-		
-		//var cdnUrl = sourceConfig.ImageboardWebsite;
-
-		//if (!cdnUrl.EndsWith('/'))
-		//	cdnUrl += "/";
+			.ConfigureAsagiMysql(sourceConfig.DbConnectionString)
+			.Options;
 
 		contextPool = new PooledDbContextFactory<AsagiDbContext>(dbContextOptions);
 	}
@@ -53,7 +39,7 @@ public class AsagiImporter : IImporter
 	{
 		await using var dbContext = GetDbContext();
 
-		return await dbContext.GetBoardTables();
+		return dbContext.GetBoardTables();
 	}
 
 	public async IAsyncEnumerable<ThreadPointer> GetThreadList(string board, long? minId = null, long? maxId = null)

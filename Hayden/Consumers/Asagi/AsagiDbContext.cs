@@ -9,15 +9,17 @@ using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
 using static Hayden.Consumers.Asagi.AsagiDbContext;
+using LiteDB;
 
 namespace Hayden.Consumers.Asagi;
 
 public class AsagiDbContext : DbContext
 {
-	private string ConnectionString { get; set; }
+	private AsagiDbExtension infoExtension { get; set; }
 
-	public string[] Boards { get; private set; }
-	public string[] AllTables { get; private set; }
+	private string ConnectionString => infoExtension.ConnectionString;
+	private string[] Boards => infoExtension.Boards;
+	private string[] AllTables => infoExtension.AllTables;
 
 	public AsagiDbContext(DbContextOptions<AsagiDbContext> options) : base(options)
 	{
@@ -26,7 +28,7 @@ public class AsagiDbContext : DbContext
 		if (extension == null)
 			throw new InvalidOperationException("AsagiDbContext requires an attached AsagiDbExtension for connection metadata");
 
-		ConnectionString = extension.ConnectionString;
+		infoExtension = extension;
 	}
 	private DbSet<TEntity> TryRetrieveDbSet<TEntity>(string tableName) where TEntity : class
 	{
@@ -47,44 +49,14 @@ public class AsagiDbContext : DbContext
 			TryRetrieveDbSet<AsagiDbPost>($"{board}_deleted"));
 	}
 
-	public async Task<string[]> GetBoardTables()
+	public string[] GetBoardTables()
 	{
-		if (Boards != null)
-			return Boards;
-
-		await RetrieveTables();
-
 		return Boards;
-	}
-
-	private async Task RetrieveTables()
-	{
-		await using var dbConnection = new MySqlConnection(ConnectionString);
-		await dbConnection.OpenAsync();
-
-		await using var dbCommand = dbConnection.CreateCommand();
-
-		dbCommand.CommandText = "SHOW TABLES;";
-
-		await using var reader = await dbCommand.ExecuteReaderAsync(CommandBehavior.Default);
-
-		var tableNames = new List<string>();
-		while (await reader.ReadAsync())
-		{
-			string tableName = (string)reader[0];
-
-			tableNames.Add(tableName);
-		}
-
-		tableNames.Sort();
-
-		AllTables = tableNames.ToArray();
-		Boards = tableNames.Where(x => !x.Contains('_')).ToArray();
 	}
 
 	protected override void OnModelCreating(ModelBuilder modelBuilder)
 	{
-		var boards = GetBoardTables().Result;
+		var boards = GetBoardTables();
 
 		foreach (var board in boards)
 		{
@@ -158,17 +130,23 @@ public class AsagiDbContext : DbContext
 	public class AsagiDbExtension : IDbContextOptionsExtension
 	{
 		public string ConnectionString { get; set; }
+
+		public string[] AllTables { get; set; }
+		public string[] Boards { get; set; }
+
 		public void ApplyServices(IServiceCollection services) { }
 
 		public void Validate(IDbContextOptions options)	{ }
 
 		public DbContextOptionsExtensionInfo Info { get; }
 
-		public AsagiDbExtension(string connectionString)
+		public AsagiDbExtension(string connectionString, string[] allTables, string[] boards)
 		{
 			Info = new ExtensionInfo(this);
 
 			ConnectionString = connectionString;
+			AllTables = allTables;
+			Boards = boards;
 		}
 
 		public class ExtensionInfo : DbContextOptionsExtensionInfo
@@ -190,9 +168,50 @@ public class AsagiDbContext : DbContext
 
 public static class AsagiDbContextExtensions
 {
-	public static DbContextOptionsBuilder AddAsagiConfig(this DbContextOptionsBuilder builder, string connectionString)
+	public static DbContextOptionsBuilder<AsagiDbContext> ConfigureAsagiMysql(this DbContextOptionsBuilder<AsagiDbContext> builder, string connectionString)
 	{
-		((IDbContextOptionsBuilderInfrastructure)builder).AddOrUpdateExtension(new AsagiDbExtension(connectionString));
+		return builder
+			.UseMySql(connectionString, ServerVersion.AutoDetect(connectionString),
+				y =>
+				{
+					y.CommandTimeout(86400);
+					y.EnableIndexOptimizedBooleanColumns();
+				})
+			.AddAsagiConfig(connectionString);
+	}
+
+	public static async Task<(string[] allTables, string[] boards)> RetrieveTableList(string connectionString)
+	{
+		await using var dbConnection = new MySqlConnection(connectionString);
+		await dbConnection.OpenAsync();
+
+		await using var dbCommand = dbConnection.CreateCommand();
+
+		dbCommand.CommandText = "SHOW TABLES;";
+
+		await using var reader = await dbCommand.ExecuteReaderAsync(CommandBehavior.Default);
+
+		var tableNames = new List<string>();
+		while (await reader.ReadAsync())
+		{
+			string tableName = (string)reader[0];
+
+			tableNames.Add(tableName);
+		}
+
+		tableNames.Sort();
+
+		var allTables = tableNames.ToArray();
+		var boards = tableNames.Where(x => !x.Contains('_')).ToArray();
+
+		return (allTables, boards);
+	}
+
+	public static DbContextOptionsBuilder<AsagiDbContext> AddAsagiConfig(this DbContextOptionsBuilder<AsagiDbContext> builder, string connectionString)
+	{
+		var (allTables, boards) = RetrieveTableList(connectionString).Result;
+
+		((IDbContextOptionsBuilderInfrastructure)builder).AddOrUpdateExtension(new AsagiDbExtension(connectionString, allTables, boards));
 		return builder;
 	}
 }

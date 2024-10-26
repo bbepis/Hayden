@@ -153,7 +153,7 @@ namespace Hayden.WebServer.Data
 					? AuxiliaryDbContext.BoardIndexes.AsEnumerable().Select(x => (x.Id, x.ShortName)).ToArray()
 					: Array.Empty<(ushort, string)>();
 
-				var boardList = await tempContext.GetBoardTables();
+				var boardList = tempContext.GetBoardTables();
 
 				foreach (var existingTable in indexes)
 				{
