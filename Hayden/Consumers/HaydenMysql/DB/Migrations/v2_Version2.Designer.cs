@@ -53,7 +53,7 @@ namespace Hayden.Consumers.HaydenMysql.DB.Migrations
 
 					b.HasKey("ID");
 
-					b.ToTable("bans_user");
+					b.ToTable("web.bans_user");
 				});
 
 			modelBuilder.Entity("Hayden.Consumers.HaydenMysql.DB.DBBoard", b =>
@@ -237,7 +237,7 @@ namespace Hayden.Consumers.HaydenMysql.DB.Migrations
 
 					b.HasKey("Id");
 
-					b.ToTable("moderators");
+					b.ToTable("web.moderators");
 				});
 
 			modelBuilder.Entity("Hayden.Consumers.HaydenMysql.DB.DBPost", b =>
@@ -324,7 +324,7 @@ namespace Hayden.Consumers.HaydenMysql.DB.Migrations
 
 					b.HasKey("Id");
 
-					b.ToTable("reports");
+					b.ToTable("web.reports");
 				});
 
 			modelBuilder.Entity("Hayden.Consumers.HaydenMysql.DB.DBThread", b =>

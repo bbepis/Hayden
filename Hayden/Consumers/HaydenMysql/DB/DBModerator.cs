@@ -1,9 +1,9 @@
-﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
 namespace Hayden.Consumers.HaydenMysql.DB
 {
-	[Table("moderators")]
+	[Table(HaydenDbContext.WebRelatedPrefix + "moderators")]
 	public class DBModerator
 	{
 		[Key]

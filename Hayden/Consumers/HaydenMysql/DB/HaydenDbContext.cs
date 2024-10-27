@@ -23,6 +23,8 @@ namespace Hayden.Consumers.HaydenMysql.DB
 {
 	public class HaydenDbContext : DbContext
 	{
+		public const string WebRelatedPrefix = "web.";
+
 		public virtual DbSet<DBBoard> Boards { get; set; }
 		public virtual DbSet<DBThread> Threads { get; set; }
 		public virtual DbSet<DBPost> Posts { get; set; }

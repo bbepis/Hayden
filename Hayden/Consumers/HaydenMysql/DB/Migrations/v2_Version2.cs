@@ -118,7 +118,7 @@ namespace Hayden.Consumers.HaydenMysql.DB.Migrations
 				.MarkUtf8(ActiveProvider);
 
 			migrationBuilder.CreateTable(
-				name: "reports",
+				name: "web.reports",
 				columns: table => new
 				{
 					Id = table.Column<uint>(type: isSqlite ? "INTEGER" : "int unsigned", nullable: false)
@@ -138,6 +138,9 @@ namespace Hayden.Consumers.HaydenMysql.DB.Migrations
 					table.PrimaryKey("PK_reports", x => x.Id);
 				});
 
+			migrationBuilder.RenameTable("moderators", newName: "web.moderators");
+			migrationBuilder.RenameTable("bans_user", newName: "web.bans_user");
+
 			migrationBuilder.CreateIndex(
 				name: "IX_files_Sha256Hash",
 				table: "files",
@@ -148,7 +151,10 @@ namespace Hayden.Consumers.HaydenMysql.DB.Migrations
 		protected override void Down(MigrationBuilder migrationBuilder)
 		{
 			migrationBuilder.DropTable(
-				name: "reports");
+				name: "web.reports");
+
+			migrationBuilder.RenameTable("web.moderators", newName: "moderators");
+			migrationBuilder.RenameTable("web.bans_user", newName: "bans_user");
 
 			migrationBuilder.DropIndex(
 				name: "IX_files_Sha256Hash",

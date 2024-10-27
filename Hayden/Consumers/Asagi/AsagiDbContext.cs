@@ -9,7 +9,6 @@ using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
 using static Hayden.Consumers.Asagi.AsagiDbContext;
-using LiteDB;
 
 namespace Hayden.Consumers.Asagi;
 

@@ -4,7 +4,7 @@ using System.ComponentModel.DataAnnotations.Schema;
 
 namespace Hayden.Consumers.HaydenMysql.DB
 {
-	[Table("reports")]
+	[Table(HaydenDbContext.WebRelatedPrefix + "reports")]
 	public class DBReport
 	{
 		[Key]

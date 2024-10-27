@@ -1,10 +1,10 @@
-﻿using System;
+using System;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
 namespace Hayden.Consumers.HaydenMysql.DB
 {
-	[Table("bans_user")]
+	[Table(HaydenDbContext.WebRelatedPrefix + "bans_user")]
 	public class DBBannedPoster
 	{
 		[Key]
