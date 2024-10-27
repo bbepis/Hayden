@@ -27,27 +27,10 @@ public class HaydenImporter : IImporter
 	{
 		this.sourceConfig = sourceConfig;
 
-		var optionsBuilder = new DbContextOptionsBuilder<HaydenDbContext>();
+		dbContextOptions = new DbContextOptionsBuilder<HaydenDbContext>()
+			.SetupHaydenDb(sourceConfig)
+			.Options;
 
-		if (sourceConfig.DbConnectionString.StartsWith("Data Source"))
-		{
-			optionsBuilder.UseSqlite(sourceConfig.DbConnectionString);
-		}
-		else
-		{
-			optionsBuilder.UseMySql(sourceConfig.DbConnectionString,
-				ServerVersion.AutoDetect(sourceConfig.DbConnectionString),
-				y =>
-				{
-					y.CommandTimeout(86400);
-					y.EnableIndexOptimizedBooleanColumns();
-				});
-		}
-
-		optionsBuilder.ReplaceService<IMigrationsIdGenerator, VersionedMigrationIdGenerator>();
-		optionsBuilder.UseQueryTrackingBehavior(QueryTrackingBehavior.NoTracking);
-
-		dbContextOptions = optionsBuilder.Options;
 		DbContextPool = new PooledDbContextFactory<HaydenDbContext>(dbContextOptions);
 
 		using var dbContext = GetDbContext();

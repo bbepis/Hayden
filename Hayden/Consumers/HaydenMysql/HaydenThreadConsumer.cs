@@ -105,29 +105,10 @@ namespace Hayden.Consumers
 
 		protected virtual void SetUpDBContext()
 		{
-			var contextBuilder = new DbContextOptionsBuilder<HaydenDbContext>();
+			DbContextOptions = new DbContextOptionsBuilder<HaydenDbContext>()
+				.SetupHaydenDb(consumerConfig: ConsumerConfig)
+				.Options;
 
-			if (ConsumerConfig.DatabaseType == DatabaseType.MySql)
-			{
-				contextBuilder.UseMySql(ConsumerConfig.ConnectionString, ServerVersion.AutoDetect(ConsumerConfig.ConnectionString), x =>
-				{
-					x.EnableIndexOptimizedBooleanColumns();
-					x.MaxBatchSize(1000);
-				});
-			}
-			else if (ConsumerConfig.DatabaseType == DatabaseType.Sqlite)
-			{
-				contextBuilder.UseSqlite(ConsumerConfig.ConnectionString);
-			}
-			else
-			{
-				throw new Exception("Unknown database type; not supported by HaydenConsumer");
-			}
-
-			contextBuilder.ReplaceService<IMigrationsIdGenerator, VersionedMigrationIdGenerator>();
-			contextBuilder.UseQueryTrackingBehavior(QueryTrackingBehavior.NoTracking);
-
-			DbContextOptions = contextBuilder.Options;
 			DbContextPool = new PooledDbContextFactory<HaydenDbContext>(DbContextOptions);
 		}
 

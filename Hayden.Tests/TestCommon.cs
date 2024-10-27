@@ -2,8 +2,6 @@ using Hayden.Consumers.HaydenMysql.DB;
 using Hayden.Models;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Migrations;
-using Newtonsoft.Json.Linq;
 using System;
 
 namespace Hayden.Tests
@@ -24,9 +22,8 @@ namespace Hayden.Tests
 			bool logEfCore = false;
 
 			var builder = new DbContextOptionsBuilder<HaydenDbContext>()
-				.UseSqlite(new SqliteConnection("Data Source=:memory:"))
-				.UseQueryTrackingBehavior(QueryTrackingBehavior.NoTracking)
-				.ReplaceService<IMigrationsIdGenerator, VersionedMigrationIdGenerator>();
+				.SetupHaydenDb(Config.DatabaseType.None, null)
+				.UseSqlite(new SqliteConnection("Data Source=:memory:"));
 
 			if (logEfCore)
 			{
