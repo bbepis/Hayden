@@ -20,7 +20,7 @@ using Assert = NUnit.Framework.Legacy.ClassicAssert;
 
 namespace Hayden.Tests.Consumers
 {
-	internal class HaydenConsumerTests
+	internal partial class HaydenConsumerTests
 	{
 		const string file1path = @"C:\temp\temp1.jpg";
 		const string file1Thumbpath = @"C:\temp\temp1-thumb.jpg";
