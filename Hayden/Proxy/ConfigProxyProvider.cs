@@ -6,19 +6,19 @@ using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using Hayden.Api;
-using Newtonsoft.Json.Linq;
+using Hayden.Config;
 
 namespace Hayden.Proxy
 {
 	public class ConfigProxyProvider : ProxyProvider
 	{
-		protected JArray JsonArray { get; set; }
+		protected ProxyConfig Config { get; set; }
 		protected bool ResolveDnsLocally { get; set; }
 
-		public ConfigProxyProvider(JArray jsonArray, bool resolveDnsLocally, Action<HttpClientHandler> configureClientHandlerAction = null) : base(configureClientHandlerAction)
+		public ConfigProxyProvider(ProxyConfig config, Action<HttpClientHandler> configureClientHandlerAction = null) : base(configureClientHandlerAction)
 		{
-			JsonArray = jsonArray;
-			ResolveDnsLocally = resolveDnsLocally;
+			Config = config;
+			ResolveDnsLocally = Config.ResolveDnsLocally;
 		}
 
 		private int _proxyCount = 0;
@@ -30,34 +30,52 @@ namespace Hayden.Proxy
 
 			int localCount = 1;
 
-			if (JsonArray != null)
-				foreach (JObject obj in JsonArray)
+			foreach (string url in Config.Proxies)
+			{
+				if (string.IsNullOrWhiteSpace(url) )
+					throw new Exception("Proxy URL must be specified and not empty.");
+
+				if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
+					throw new Exception($"Proxy URL must be valid: {url}");
+
+				if (url == "local")
 				{
-					string url = obj["url"]?.Value<string>();
-
-					if (string.IsNullOrWhiteSpace(url))
-						throw new Exception("Proxy URL must be specified and not empty.");
-
-					if (url == "local")
-					{
-						proxies.Add(new HttpClientProxy(CreateNewClient((IWebProxy)null), $"baseconnection/p{localCount++}"));
-					}
-					else
-					{
-						string username = obj["username"]?.Value<string>();
-						string password = obj["password"]?.Value<string>();
-
-						IWebProxy proxy = username != null
-							? new WebProxy(url, false, Array.Empty<string>(),
-								new NetworkCredential(username, password))
-							: new WebProxy(url);
-
-						proxies.Add(new HttpClientProxy(CreateNewClient(proxy), $"{username}@{url}"));
-					}
+					proxies.Add(new HttpClientProxy(CreateNewClient((IWebProxy)null), $"baseconnection/p{localCount++}"));
 				}
+				else
+				{
+					string username = null, password = null;
 
-			// add a direct connection client too
-			proxies.Add(new HttpClientProxy(CreateNewClient((IWebProxy)null), "baseconnection/none"));
+					if (!string.IsNullOrWhiteSpace(uri.UserInfo))
+					{
+						if (uri.UserInfo.Contains(':'))
+						{
+							var split = uri.UserInfo.Split(':');
+							username = split[0];
+							password = split[1];
+						}
+						else
+						{
+							username = uri.UserInfo;
+						}
+					}
+
+					var uriBuilder = new UriBuilder(uri);
+					uriBuilder.UserName = null;
+					uriBuilder.Password = null;
+					var realUrl = uriBuilder.Uri.AbsoluteUri;
+
+					IWebProxy proxy = username != null
+						? new WebProxy(realUrl, false, Array.Empty<string>(),
+							new NetworkCredential(username, password))
+						: new WebProxy(realUrl);
+
+					proxies.Add(new HttpClientProxy(CreateNewClient(proxy), $"{username}@{realUrl}"));
+				}
+			}
+
+			if (Config.EnableLocalConnection)
+				proxies.Add(new HttpClientProxy(CreateNewClient((IWebProxy)null), "baseconnection/none"));
 
 			if (!needsToTest)
 			{

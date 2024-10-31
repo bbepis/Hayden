@@ -83,7 +83,6 @@ public class Program
 			{
 				DebugLogging = false,
 				ScraperType = "Archive",
-				ResolveDnsLocally = true
 			},
 			Source = new Config.SourceConfig()
 			{
@@ -111,6 +110,12 @@ public class Program
 				ThumbnailsEnabled = false,
 				FullImagesEnabled = false,
 				ConsolidationMode = Config.ConsolidationMode.Authoritative
+			},
+			Proxy = new()
+			{
+				EnableLocalConnection = true,
+				ResolveDnsLocally = false,
+				Proxies = new string[0]
 			}
 		};
 
@@ -231,9 +236,9 @@ public class Program
 
 		ProxyProvider proxyProvider = null;
 
-		if (rawConfigFile["proxies"] != null)
+		if (configFile.Proxy != null)
 		{
-			proxyProvider = new ConfigProxyProvider((JArray)rawConfigFile["proxies"], configFile.Hayden.ResolveDnsLocally);
+			proxyProvider = new ConfigProxyProvider(configFile.Proxy);
 			await proxyProvider.InitializeAsync(usingConsumer);
 			serviceCollection.AddSingleton<ProxyProvider>(proxyProvider);
 		}
