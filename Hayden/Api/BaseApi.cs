@@ -7,7 +7,6 @@ using System.Threading.Tasks;
 using AngleSharp;
 using AngleSharp.Html.Dom;
 using Hayden.Contract;
-using Hayden.Models;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using Polly;
@@ -116,9 +115,7 @@ namespace Hayden.Api
 			return new ApiResponse<Thread>(response.ResponseType, ConvertThread(response.Data, board));
 		}
 
-		public abstract bool SupportsArchive { get; }
-		public abstract bool SupportsBoardLastModified { get; }
-		public abstract bool SupportsBoardReplyCount { get; }
+		public abstract Task<ApiCapabilities> DetermineCapabilitiesAsync(HttpClient client);
 
 		public abstract Task<ApiResponse<ThreadOverviewInfo[]>> GetBoard(string board, HttpClient client, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default);
 		

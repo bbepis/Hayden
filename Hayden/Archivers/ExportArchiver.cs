@@ -56,6 +56,8 @@ public class ExportArchiver : IArchiver
 		throw new Exception("Expected .json.zst or .json file");
 	}
 
+	public Task Initialize() => Task.CompletedTask;
+
 	public async Task Execute(CancellationToken token)
 	{
 		_ = Task.Run(() => ReportingTask(CancellationToken.None));

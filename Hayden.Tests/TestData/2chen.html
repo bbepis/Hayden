@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <!-- 1730513411 -->
+    <script>
+      function handleImageClick(event) {
+        if (event.metaKey) {
+          window.open(event.currentTarget.getAttribute("media_url"), "_blank");
+
+          event.preventDefault();
+        }
+      }
+    </script>
+    <style>
+      body {
+        font: 13px/1.231 arial, helvetica, clean, sans-serif;
+        width: 45em;
+        margin: auto;
+        background-image: linear-gradient(
+          #d9f0d6,
+          #f4ffee,
+          #f4ffee,
+          white,
+          white
+        );
+        background-attachment: fixed;
+      }
+      img {
+        display: block;
+        margin: auto;
+        max-width: 20em;
+        padding-top: 1em;
+      }
+      .m_box {
+        border: 1px solid #2f4d0c;
+        margin: 1em;
+        background-color: white;
+      }
+      .m_box_red {
+        border: 1px solid #800000;
+        margin: 1em;
+        background-color: #ffe;
+      }
+      p a {
+        color: blue;
+        text-decoration: underline;
+      }
+      .m_box_bar {
+        background: #2f4d0c;
+        color: white;
+      }
+      .m_box_bar_red {
+        background: #800000;
+        color: white;
+      }
+      h2.m_box {
+        background-color: #2f4d0c;
+      }
+      h2.box {
+        background-color: #fca;
+      }
+      p {
+        margin: 0.5em;
+        color: black;
+      }
+      .box {
+        border: 1px solid #2f4d0c;
+        color: #2f4d0c;
+        margin: 1em;
+        background-color: white;
+      }
+      .box_bar {
+        background: #b9d9b7;
+        color: #2f4d0c;
+      }
+      h2 {
+        margin-top: 0.001em;
+        margin-bottom: 0.001em;
+        margin-left: 0.25em;
+      }
+      h3 {
+        margin-left: 0.3em;
+        font-size: 1em;
+        margin-top: 0.3em;
+        margin-bottom: 0.1em;
+        text-decoration: underline;
+        font-weight: bold;
+      }
+      ul {
+        list-style-type: none;
+        padding-left: 0.1em;
+        margin-top: 0.0001em;
+      }
+      li {
+        margin-left: 0.3em;
+      }
+      a {
+        color: inherit;
+        text-decoration: none;
+      }
+      a:hover {
+        color: red;
+        text-decoration: underline;
+      }
+      .column {
+        float: left;
+        width: 32%;
+      }
+      .row:after {
+        content: "";
+        display: table;
+        clear: both;
+      }
+      .thumb {
+        max-width: 120px;
+        max-height: 150px;
+      }
+    </style>
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
+    <title>2chen</title>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width,initial-scale=1.0,shrink-to-fit=no"
+    />
+  </head>
+  <body>
+    <div class="logo"></div>
+    <div class="mascot">
+      <div class="m_box">
+        <div class="m_box_bar">
+          <h2>Welcome</h2>
+        </div>
+
+        <p>
+          Sturdychan is a realtime imageboard.<br />The content of this website
+          is for mature audiences only and is not suitable for minors.
+        </p>
+      </div>
+      <div class="box">
+        <div class="box_bar">
+          <h2>Global Rules</h2>
+        </div>
+
+        <div class="row">
+          <ol>
+            <li>Do not spam.</li>
+
+            <li>Do not post anything that violates local or US law.</li>
+
+            <li>
+              Do not post private information (ie doxxing or referring to anons
+              by their names).
+            </li>
+
+            <li>Do not post in any other language but English.</li>
+          </ol>
+        </div>
+      </div>
+      <div class="box">
+        <div class="box_bar">
+          <h2>Boards</h2>
+        </div>
+
+        <div class="row">
+          <div class="column">
+            <h3>General</h3>
+
+            <ul>
+              <li><a href="/a/">/a/ - Japanese Exports</a></li>
+
+              <li><a href="/co/">/co/ - Comics &amp; Cartoons</a></li>
+
+              <li><a href="/ran/">/ran/ - Random</a></li>
+
+              <li><a href="/tech/">/tech/ - Technologic</a></li>
+
+              <li><a href="/v/">/v/ - Vidya</a></li>
+            </ul>
+          </div>
+
+          <div class="column">
+            <h3>Niche</h3>
+
+            <ul>
+              <li><a href="/e/">/e/ - Internet Celebrities</a></li>
+
+              <li><a href="/kr/">/kr/ - Korean Stuff</a></li>
+
+              <li><a href="/tv/">/tv/ - Tiktok</a></li>
+
+              <li><a href="/vs/">/vs/ - Death Battle</a></li>
+            </ul>
+          </div>
+
+          <div class="column">
+            <h3>Adult</h3>
+
+            <ul>
+              <li><a href="/2d/">/2d/ - Fictional Degeneracy</a></li>
+
+              <li><a href="/3d/">/3d/ - Real Degeneracy</a></li>
+            </ul>
+          </div>
+        </div>
+      </div>
+      <div class="box">
+        <div class="box_bar">
+          <h2>Stats</h2>
+        </div>
+
+        <table style="width: 75%; margin: 0 auto">
+          <tbody>
+            <tr>
+              <td>
+                <p><b>Posts: </b>1,972,340</p>
+              </td>
+
+              <td>
+                <p><b>Images: </b>338,063</p>
+              </td>
+
+              <td>
+                <p><b>Space: </b>1555GB</p>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="box">
+        <div class="box_bar">
+          <h2>Popular Images Today</h2>
+        </div>
+
+        <table style="width: 75%; margin: 0 auto">
+          <tbody>
+            <tr>
+              <td>
+                <a
+                  href="https://sturdychan.help/tv/2214736#p2216969"
+                  media_url="/assets/images/src/32c1efd9853ae30d949af85a4b9bfb7948347f8e.webm"
+                  target="_blank"
+                  onclick="handleImageClick(event)"
+                  ><img
+                    class="thumb"
+                    src="/assets/images/thumb/32c1efd9853ae30d949af85a4b9bfb7948347f8e.jpg"
+                /></a>
+              </td>
+              <td>
+                <a
+                  href="https://sturdychan.help/tv/2214736#p2215597"
+                  media_url="/assets/images/src/7b40f7d5d74438d2c20dd3d99557362c3340a039.jpg"
+                  target="_blank"
+                  onclick="handleImageClick(event)"
+                  ><img
+                    class="thumb"
+                    src="/assets/images/thumb/7b40f7d5d74438d2c20dd3d99557362c3340a039.jpg"
+                /></a>
+              </td>
+              <td>
+                <a
+                  href="https://sturdychan.help/tv/2214736#p2216962"
+                  media_url="/assets/images/src/0f8c524bc99cb1a43cd3f88c432d0c8281794caa.png"
+                  target="_blank"
+                  onclick="handleImageClick(event)"
+                  ><img
+                    class="thumb"
+                    src="/assets/images/thumb/0f8c524bc99cb1a43cd3f88c432d0c8281794caa.jpg"
+                /></a>
+              </td>
+              <td>
+                <a
+                  href="https://sturdychan.help/tv/2214736#p2216081"
+                  media_url="/assets/images/src/a8333ff10c90d81d22201e0b3d21ffe43812c38d.mp4"
+                  target="_blank"
+                  onclick="handleImageClick(event)"
+                  ><img
+                    class="thumb"
+                    src="/assets/images/thumb/a8333ff10c90d81d22201e0b3d21ffe43812c38d.jpg"
+                /></a>
+              </td>
+            </tr>
+
+            <tr>
+              <td>
+                <a
+                  href="https://sturdychan.help/tv/2214736#p2214766"
+                  media_url="/assets/images/src/c8d2d9f0fba9d6a5df7244707cdebaccc7cdf631.jpg"
+                  target="_blank"
+                  onclick="handleImageClick(event)"
+                  ><img
+                    class="thumb"
+                    src="/assets/images/thumb/c8d2d9f0fba9d6a5df7244707cdebaccc7cdf631.jpg"
+                /></a>
+              </td>
+              <td>
+                <a
+                  href="https://sturdychan.help/tv/2214736#p2217265"
+                  media_url="/assets/images/src/b31819cecbb9249e5a601fbebd7bed500e90bc2b.jpg"
+                  target="_blank"
+                  onclick="handleImageClick(event)"
+                  ><img
+                    class="thumb"
+                    src="/assets/images/thumb/b31819cecbb9249e5a601fbebd7bed500e90bc2b.jpg"
+                /></a>
+              </td>
+              <td>
+                <a
+                  href="https://sturdychan.help/tv/2218180#p2218183"
+                  media_url="/assets/images/src/487a0bd2e20ed646c03cfb3fe70c932f9ad4b437.jpg"
+                  target="_blank"
+                  onclick="handleImageClick(event)"
+                  ><img
+                    class="thumb"
+                    src="/assets/images/thumb/487a0bd2e20ed646c03cfb3fe70c932f9ad4b437.jpg"
+                /></a>
+              </td>
+              <td>
+                <a
+                  href="https://sturdychan.help/tv/2218180#p2218180"
+                  media_url="/assets/images/src/c55caec306af76b9e36a68265348401f9716d84c.mp4"
+                  target="_blank"
+                  onclick="handleImageClick(event)"
+                  ><img
+                    class="thumb"
+                    src="/assets/images/thumb/c55caec306af76b9e36a68265348401f9716d84c.jpg"
+                /></a>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="box">
+        <div class="box_bar">
+          <h2>Contact</h2>
+        </div>
+
+        <p>Email: ASturdyEmail (at) proton.me</p>
+      </div>
+    </div>
+  </body>
+</html>

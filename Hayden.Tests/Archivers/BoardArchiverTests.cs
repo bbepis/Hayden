@@ -82,8 +82,15 @@ namespace Hayden.Tests.Archivers
                     return Task.FromResult(new ApiResponse<ThreadOverviewInfo[]>(ResponseType.Ok, threadInfos));
                 });
 
-			sourceMock.SetupGet(x => x.SupportsBoardLastModified).Returns(!replyCountMode);
-			sourceMock.SetupGet(x => x.SupportsBoardReplyCount).Returns(replyCountMode);
+			sourceMock.Setup(x => x.DetermineCapabilitiesAsync(It.IsAny<HttpClient>()))
+				.Returns((HttpClient client) =>
+				{
+					return Task.FromResult(new ApiCapabilities
+					{
+						SupportsBoardLastModified = !replyCountMode,
+						SupportsBoardReplyCount = replyCountMode
+					});
+				});
 
             return (consumerMock, sourceMock);
         }
@@ -98,6 +105,7 @@ namespace Hayden.Tests.Archivers
             var cts = new CancellationTokenSource();
 
             var boardArchiver = new BoardArchiverTestable(SourceConfig, ConsumerConfig, sourceMock.Object, consumerMock.Object, fileSystem);
+			await boardArchiver.Initialize();
 
             var threadList = await boardArchiver.ReadBoards(true, cts.Token);
 
@@ -118,8 +126,9 @@ namespace Hayden.Tests.Archivers
             var cts = new CancellationTokenSource();
 
             var boardArchiver = new BoardArchiverTestable(SourceConfig, ConsumerConfig, sourceMock.Object, consumerMock.Object, fileSystem);
+			await boardArchiver.Initialize();
 
-            var fallenOffThread = new ThreadPointer("a", 999);
+			var fallenOffThread = new ThreadPointer("a", 999);
 
             boardArchiver.TrackedThreads.Add(fallenOffThread, TrackedThread.StartTrackingThread(p => 0));
 
@@ -171,8 +180,9 @@ namespace Hayden.Tests.Archivers
             var cts = new CancellationTokenSource();
 
             var boardArchiver = new BoardArchiverTestable(SourceConfig, ConsumerConfig, sourceMock.Object, consumerMock.Object, fileSystem);
+			await boardArchiver.Initialize();
 
-            var threadList = await boardArchiver.ReadBoards(true, cts.Token);
+			var threadList = await boardArchiver.ReadBoards(true, cts.Token);
 
             CollectionAssert.AreEquivalent(mockData.Keys, await threadList.ToListAsync());
 

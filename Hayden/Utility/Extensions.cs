@@ -54,5 +54,44 @@ namespace Hayden
 	        while (await queue.OutputAvailableAsync())
 		        yield return queue.Dequeue();
         }
+
+		public static IEnumerable<(TKey Key, TValue[] Values)> EfficientGroupBy<T, TKey, TValue>(
+			this IEnumerable<T> items,
+			Func<T, TKey> keySelector,
+			Func<T, TValue> valueSelector)
+		{
+			bool isFirst = true;
+			var lastKey = default(TKey);
+			var list = new List<TValue>();
+			var comparer = EqualityComparer<TKey>.Default;
+
+			foreach (var item in items)
+			{
+				var key = keySelector(item);
+				var value = valueSelector(item);
+
+				if (isFirst)
+				{
+					lastKey = key;
+					isFirst = false;
+					list.Add(value);
+					continue;
+				}
+
+				if (!comparer.Equals(lastKey, key))
+				{
+					yield return (lastKey, list.ToArray());
+					list.Clear();
+					lastKey = key;
+					list.Add(value);
+					continue;
+				}
+
+				list.Add(value);
+			}
+
+			if (!isFirst)
+				yield return (lastKey, list.ToArray());
+		}
 	}
 }

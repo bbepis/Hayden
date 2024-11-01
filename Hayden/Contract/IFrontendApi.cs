@@ -4,7 +4,6 @@ using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using Hayden.Api;
-using Hayden.Models;
 using Thread = Hayden.Models.Thread;
 
 namespace Hayden.Contract
@@ -12,19 +11,11 @@ namespace Hayden.Contract
 	public interface IFrontendApi
 	{
 		/// <summary>
-		/// Value specifying whether the frontend supports / has an archive.
+		/// Determines what features and capabilities the imageboard instance has. May or may not return instantly
 		/// </summary>
-		bool SupportsArchive { get; }
-
-		/// <summary>
-		/// Whether the board API can return last modified times on threads
-		/// </summary>
-		bool SupportsBoardLastModified { get; }
-
-		/// <summary>
-		/// Whether the board API can return reply counts on threads
-		/// </summary>
-		bool SupportsBoardReplyCount { get; }
+		/// <param name="client"></param>
+		/// <returns>An object detailing the capabilities of the imageboard</returns>
+		Task<ApiCapabilities> DetermineCapabilitiesAsync(HttpClient client);
 
 		/// <summary>
 		/// Retrieves a thread and its posts from the frontend API.
@@ -77,5 +68,40 @@ namespace Hayden.Contract
 		public string Board { get; set; }
 
 		public string TextQuery { get; set; }
+	}
+
+	public class ApiCapabilities
+	{
+		/// <summary>
+		/// Value specifying whether the API can return a list of boards on the imageboard
+		/// </summary>
+		public bool SupportsBoardListing { get; init; }
+
+		/// <summary>
+		/// IF <see cref="SupportsBoardListing"/> is true then an array of boards detected, otherwise null
+		/// </summary>
+		public string[] BoardList { get; init; }
+
+		/// <summary>
+		/// Value specifying whether the frontend supports / has an archive.
+		/// </summary>
+		public bool SupportsArchive { get; init; }
+
+		/// <summary>
+		/// Whether the board API can return last modified times on threads
+		/// </summary>
+		public bool SupportsBoardLastModified { get; init; }
+
+		/// <summary>
+		/// Whether the board API can return reply counts on threads
+		/// </summary>
+		public bool SupportsBoardReplyCount { get; init; }
+
+		/// <summary>
+		/// True if posts retain their original IDs when moved to another thread (within the same board), or false if they are given new IDs
+		/// </summary>
+		public bool MovedPostsRetainIds { get; init; }
+
+		// Need to actually confirm that crystal.cafe conflicting posts have the same data
 	}
 }

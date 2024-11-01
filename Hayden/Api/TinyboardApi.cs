@@ -12,6 +12,7 @@ using AngleSharp.Html.Dom;
 using Hayden.Api;
 using Hayden.Config;
 using Hayden.Consumers.HaydenMysql.DB;
+using Hayden.Contract;
 using Hayden.Models;
 using Thread = Hayden.Models.Thread;
 
@@ -37,11 +38,10 @@ namespace Hayden
 				ImageboardWebsite += "/";
 		}
 
-		/// <inheritdoc />
-		public override bool SupportsArchive => false;
-
-		public override bool SupportsBoardLastModified => false;
-		public override bool SupportsBoardReplyCount => true;
+		public override Task<ApiCapabilities> DetermineCapabilitiesAsync(HttpClient client)
+		{
+			throw new NotImplementedException();
+		}
 
 		/// <inheritdoc />
 		protected override async Task<ApiResponse<IHtmlDocument>> GetThreadInternal(string board, ulong threadNumber, HttpClient client, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default)
@@ -222,6 +222,13 @@ namespace Hayden
 				.QuerySelectorAll("body a.catalog-link")
 				.Select((x, i) =>
 				{
+					if (ImageboardWebsite.Contains("lolcow.farm") && x.QuerySelector("div.thread") == null)
+					{
+						// Some very specific bug with lolcow.farm that causes one OP to spill over into the catalog
+
+						return null;
+					}
+
 					var rawPostId = Regex.Match(x.GetAttribute("href"), @"(\d+).html").Groups[1].Value;
 					var postId = ulong.Parse(rawPostId);
 
@@ -244,7 +251,12 @@ namespace Hayden
 					var subject = x.QuerySelector("div.subject")?.TextContent.TrimAndNullify();
 					var textContent = x.QuerySelector("div.replies")?.Text().TrimAndNullify();
 
-					var replyCountText = x.QuerySelector("span.reply-count")!.Text().TrimAndNullify();
+					var replyCountElement = x.QuerySelector("span.reply-count, div.replies > strong");
+
+					if (replyCountElement == null)
+						throw new Exception($"Could not determine reply count. Board /{board}/{postId}");
+
+					var replyCountText = replyCountElement.Text().TrimAndNullify();
 					var replyCount = int.Parse(Regex.Match(replyCountText, @"(\d+) repl(?:y|ies)").Groups[1].Value);
 
 					return new ThreadOverviewInfo
@@ -257,6 +269,7 @@ namespace Hayden
 						ReplyCount = replyCount
 					};
 				})
+				.Where(x => x != null)
 				.ToArray());
 		}
 

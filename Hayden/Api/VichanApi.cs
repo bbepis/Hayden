@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using Hayden.Api;
 using Hayden.Config;
 using Hayden.Consumers.HaydenMysql.DB;
+using Hayden.Contract;
 using Hayden.Models;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -30,11 +31,10 @@ namespace Hayden
 				ImageboardWebsite += "/";
 		}
 
-		/// <inheritdoc />
-		public override bool SupportsArchive => false;
-
-		public override bool SupportsBoardLastModified => true;
-		public override bool SupportsBoardReplyCount => false;
+		public override Task<ApiCapabilities> DetermineCapabilitiesAsync(HttpClient client)
+		{
+			throw new NotImplementedException();
+		}
 
 		/// <inheritdoc />
 		protected override Task<ApiResponse<VichanThread>> GetThreadInternal(string board, ulong threadNumber, HttpClient client, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default)

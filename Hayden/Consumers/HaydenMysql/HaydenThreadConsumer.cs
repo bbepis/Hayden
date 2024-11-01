@@ -198,7 +198,7 @@ namespace Hayden.Consumers
 							.AsNoTracking()
 							.Where(file =>
 								Sha256Hashes.Contains(file.Sha256Hash)
-								|| Sha1Hashes.Contains(file.Sha256Hash)
+								|| Sha1Hashes.Contains(file.Sha1Hash)
 								|| Md5Hashes.Contains(file.Md5Hash))
 							.ToArrayAsync();
 					}
@@ -449,6 +449,8 @@ namespace Hayden.Consumers
 							// this needs to be made more efficient
 							// this also doesn't cooperate well with deadlinks (why the fuck is that passed through the api html render?)
 
+							// TODO: check if the content has actually changed by removing deadlinks classes
+
 							var jsonAdditionalMetadata = !string.IsNullOrWhiteSpace(dbPost.AdditionalMetadata)
 								? JObject.Parse(dbPost.AdditionalMetadata)
 								: new JObject();
@@ -558,6 +560,8 @@ namespace Hayden.Consumers
 				if (existingFile != null)
 				{
 					// this file already exists unfortunately. try to merge it with the existing one, assuming it's not banned
+
+					// TODO: update md5/sha1 with actual file hash, as it might not match
 
 					await dbContext.FileMappings
 						.Where(x => x.FileId == fileId)
@@ -682,12 +686,13 @@ namespace Hayden.Consumers
 			else if (metadataMode == MetadataMode.ThreadIdAndPostId)
 			{
 				var postIds = await dbContext.Posts.Where(y => y.BoardId == boardId && query.Select(x => x.ThreadId).Contains(y.ThreadId))
-					.Select(x => new { x.ThreadId, x.PostId })
+					.OrderBy(x => x.ThreadId)
+					.Select(x => new { x.ThreadId, x.PostId, x.DateTime })
 					.ToArrayAsync();
 				
-				foreach (var group in postIds.GroupBy(x => x.ThreadId, x => x.PostId))
+				foreach (var group in postIds.EfficientGroupBy(x => x.ThreadId, x => x.PostId))
 				{
-					items.Add(new ExistingThreadInfo(group.Key, false, DateTimeOffset.MinValue, group.Select(x => (x, (uint)0)).ToArray()));
+					items.Add(new ExistingThreadInfo(group.Key, false, DateTimeOffset.MinValue, group.Values.Select(x => (x, (uint)0)).ToArray()));
 				}
 			}
 			else

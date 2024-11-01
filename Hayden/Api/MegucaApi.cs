@@ -3,11 +3,15 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
+using AngleSharp.Dom;
+using AngleSharp.Html.Dom;
 using Hayden.Api;
 using Hayden.Config;
 using Hayden.Consumers.HaydenMysql.DB;
+using Hayden.Contract;
 using Hayden.Models;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -33,11 +37,56 @@ namespace Hayden
 				ImageboardWebsite += "/";
 		}
 
-		/// <inheritdoc />
-		public override bool SupportsArchive => false;
+		public override async Task<ApiCapabilities> DetermineCapabilitiesAsync(HttpClient client)
+		{
+			var response = await MakeHtmlCall(new Uri(ImageboardWebsite), client);
 
-		public override bool SupportsBoardLastModified => true;
-		public override bool SupportsBoardReplyCount => false;
+			if (response.ResponseType != ResponseType.Ok)
+				throw new Exception("Could not connect to imageboard");
+
+			var document = response.Data;
+
+			string[] boardShortNames;
+
+			var boardTitleElement = document.GetElementById("board-title-data");
+
+			if (boardTitleElement != null)
+			{
+				var json = JArray.Parse(document.GetElementById("board-title-data").TextContent);
+
+				boardShortNames = json.Select(x => x.Value<string>("id")).ToArray();
+			}
+			else
+			{
+				// try using li > a
+
+				var boardRegex = new Regex(@"^\/([a-zA-Z0-9]+)\/$");
+
+				var boards = new List<string>();
+
+				foreach (var link in document.QuerySelectorAll("li > a").Cast<IHtmlAnchorElement>())
+				{
+					var match = boardRegex.Match(link.GetAttribute("href"));
+
+					if (match.Success)
+					{
+						boards.Add(match.Groups[1].Value);
+					}
+				}
+
+				boardShortNames = boards.ToArray();
+			}
+
+			return new ApiCapabilities
+			{
+				BoardList = boardShortNames,
+				MovedPostsRetainIds = false,
+				SupportsArchive = true,
+				SupportsBoardLastModified = true,
+				SupportsBoardListing = true,
+				SupportsBoardReplyCount = true
+			};
+		}
 
 		/// <inheritdoc />
 		protected override async Task<ApiResponse<MegucaThread>> GetThreadInternal(string board, ulong threadNumber, HttpClient client, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default)

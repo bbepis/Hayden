@@ -56,6 +56,8 @@ namespace Hayden
 
 		protected IBoardTracker BoardTracker { get; set; }
 
+		protected ApiCapabilities ApiCapabilities { get; set; }
+
 		/// <summary>
 		/// The download client to use when downloading images.
 		/// </summary>
@@ -74,9 +76,6 @@ namespace Hayden
 			ProxyProvider = proxyProvider ?? new NullProxyProvider();
 			StateStore = stateStore ?? new NullStateStore();
 
-			if (FrontendApi != null)
-				BoardTracker = FrontendApi.SupportsBoardLastModified ? new LastModifiedBoardTracker() : new ReplyCountBoardTracker();
-
 			ApiCooldownTimespan = TimeSpan.FromSeconds(sourceConfig.ApiDelay ?? 1);
 			BoardUpdateTimespan = TimeSpan.FromSeconds(sourceConfig.BoardScrapeDelay ?? 30);
 
@@ -88,6 +87,15 @@ namespace Hayden
 			ImageDownloadClient = new HttpClientProxy(ProxyProvider.CreateNewClient(), "baseconnection/image");
 
 			LoopArchive = !sourceConfig.SingleScan;
+		}
+
+		public async Task Initialize()
+		{
+			using (var rentedClient = await ProxyProvider.RentHttpClient())
+				ApiCapabilities = await FrontendApi.DetermineCapabilitiesAsync(rentedClient.Object.Client);
+
+			BoardTracker = ApiCapabilities.SupportsBoardLastModified ? new LastModifiedBoardTracker() : new ReplyCountBoardTracker();
+
 		}
 
 		/// <summary>
@@ -140,7 +148,7 @@ namespace Hayden
 			int currentBoardCount = 0;
 
 			// For each board (maximum of 8 concurrently), retrieve a list of threads that need to be scraped
-			await SourceConfig.Boards.Keys.ForEachAsync(8, async board =>
+			await SourceConfig.Boards.Keys.ForEachAsync(ProxyProvider.ProxyCount, async board =>
 			{
 				token.ThrowIfCancellationRequested();
 
@@ -151,7 +159,7 @@ namespace Hayden
 					lock (threadQueue)
 						threadQueue.Add(threads);
 
-				if (firstRun && SourceConfig.ReadArchive && FrontendApi.SupportsArchive)
+				if (firstRun && SourceConfig.ReadArchive && ApiCapabilities.SupportsArchive)
 				{
 					// Get a list of archived threads to include to be scraped.
 					var archivedThreads = await GetArchivedBoardThreads(token, board);
@@ -591,7 +599,7 @@ namespace Hayden
 
 			var threadQueue = new List<ThreadPointer>();
 
-			var archiveRequest = await NetworkPolicies.GenericRetryPolicy<ApiResponse<ulong[]>>(99999).ExecuteAsync(async () =>
+			var archiveRequest = await NetworkPolicies.GenericRetryPolicy<ApiResponse<ThreadOverviewInfo[]>>(99999).ExecuteAsync(async () =>
 			{
 				token.ThrowIfCancellationRequested();
 				await using var boardClient = await ProxyProvider.RentHttpClient();
@@ -671,7 +679,7 @@ namespace Hayden
 
 			MaybeAsyncEnumerable<ThreadPointer> threads = null;
 
-			var pagesRequest = await NetworkPolicies.GenericRetryPolicy<ApiResponse<MaybeAsyncEnumerable<ThreadOverviewInfo>>>(99999).ExecuteAsync(async (requestToken) =>
+			var pagesRequest = await NetworkPolicies.GenericHttpRetryPolicy<ApiResponse<MaybeAsyncEnumerable<ThreadOverviewInfo>>>(99999).ExecuteAsync(async (context, requestToken) =>
 			{
 				requestToken.ThrowIfCancellationRequested();
 				Log.Information("Requesting threads from board /{board}/...", board);
@@ -695,7 +703,12 @@ namespace Hayden
 
 				return new ApiResponse<MaybeAsyncEnumerable<ThreadOverviewInfo>>(collectionResponse.ResponseType,
 					collectionResponse.Data == null ? null : new MaybeAsyncEnumerable<ThreadOverviewInfo>(collectionResponse.Data.ToList()));
-			}, token);
+			}, new Context(), token);
+
+			//if (pagesRequest.FaultType != null)
+			//{
+			//	pagesRequest.FinalException
+			//}
 
 			switch (pagesRequest.ResponseType)
 			{

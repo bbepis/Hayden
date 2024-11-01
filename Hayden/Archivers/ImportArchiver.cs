@@ -36,6 +36,8 @@ namespace Hayden
 				throw new InvalidOperationException("Requires either a valid IImporter or IForwardOnlyImporter instance");
 		}
 
+		public Task Initialize() => Task.CompletedTask;
+
 		public override async Task Execute(CancellationToken token)
 		{
 			_ = Task.Run(() => ReportingTask(CancellationToken.None));

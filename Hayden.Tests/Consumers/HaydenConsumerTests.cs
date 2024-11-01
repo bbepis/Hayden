@@ -942,7 +942,46 @@ namespace Hayden.Tests.Consumers
 		}
 
 		[Test]
-		public async Task CheckExistingFiles_Test()
+		public async Task CheckExistingPosts_Test()
+		{
+			var options = TestCommon.CreateMemoryContextOptions();
+			var mockFilesystem = new MockFileSystem();
+
+			using var consumer = await CreateHaydenConsumerAsync(options, mockFilesystem);
+
+			var (thread, threadPointer) = TestCommon.GenerateThread();
+
+			var threadTracker = TrackedThread.StartTrackingThread(consumer.CalculateHash);
+			var threadUpdate = threadTracker.ProcessThreadUpdates(threadPointer, thread);
+
+			await consumer.ConsumeThread(threadUpdate);
+
+			async Task<ExistingThreadInfo> GetExistingThreadInfo()
+			{
+				var existingThreads =
+					await consumer.CheckExistingThreads(new[] { threadPointer.ThreadId }, threadPointer.Board, false, MetadataMode.FullHashMetadata);
+
+				return existingThreads[0];
+			}
+
+			threadTracker = TrackedThread.StartTrackingThread(consumer.CalculateHash, await GetExistingThreadInfo());
+			threadUpdate = threadTracker.ProcessThreadUpdates(threadPointer, thread);
+
+			Assert.AreEqual(0, threadUpdate.NewPosts.Count);
+			Assert.AreEqual(0, threadUpdate.UpdatedPosts.Count);
+
+
+			thread.Posts[0].ContentRaw = "new content";
+
+			threadTracker = TrackedThread.StartTrackingThread(consumer.CalculateHash, await GetExistingThreadInfo());
+			threadUpdate = threadTracker.ProcessThreadUpdates(threadPointer, thread);
+
+			Assert.AreEqual(0, threadUpdate.NewPosts.Count);
+			Assert.AreEqual(1, threadUpdate.UpdatedPosts.Count);
+		}
+
+		[Test]
+		public async Task HandlesMovedPosts()
 		{
 			var options = TestCommon.CreateMemoryContextOptions();
 			var mockFilesystem = new MockFileSystem();

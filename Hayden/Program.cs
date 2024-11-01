@@ -265,6 +265,7 @@ public class Program
 
 		try
 		{
+			await boardArchiver.Initialize();
 			await boardArchiver.Execute(tokenSource.Token);
 
 			return 0;

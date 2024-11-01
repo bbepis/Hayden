@@ -8,6 +8,8 @@
 
   <ItemGroup>
     <None Remove="Consumers\HaydenMigrationTestV1.sql" />
+    <None Remove="TestData\2chen.html" />
+    <None Remove="TestData\meguchan.html" />
     <None Remove="TestData\tinyboard-crystalcafe-catalog.html" />
     <None Remove="TestData\tinyboard-crystalcafe.html" />
     <None Remove="TestImages\1-thumb.jpg" />
@@ -22,6 +24,8 @@
 
   <ItemGroup>
     <EmbeddedResource Include="Consumers\HaydenMigrationTestV1.sql" />
+    <EmbeddedResource Include="TestData\2chen.html" />
+    <EmbeddedResource Include="TestData\meguchan.html" />
     <EmbeddedResource Include="TestData\tinyboard-crystalcafe-catalog.html" />
     <EmbeddedResource Include="TestData\tinyboard-crystalcafe.html" />
     <EmbeddedResource Include="TestImages\1-thumb.jpg">

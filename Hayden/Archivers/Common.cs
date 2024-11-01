@@ -12,6 +12,8 @@ namespace Hayden
 {
 	public interface IArchiver : IDisposable
 	{
+		Task Initialize();
+
 		Task Execute(CancellationToken token);
 	}
 

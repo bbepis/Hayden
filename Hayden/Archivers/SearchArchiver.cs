@@ -55,6 +55,8 @@ namespace Hayden
 			BoardUpdateTimespan = TimeSpan.FromSeconds(sourceConfig.BoardScrapeDelay ?? 30);
 		}
 
+		public Task Initialize() => Task.CompletedTask;
+
 		/// <summary>
 		/// Performs the main archival loop.
 		/// </summary>
