@@ -30,7 +30,7 @@ namespace Hayden
 
 		public string ImageboardWebsite { get; }
 
-		public TinyboardApi(SourceConfig sourceConfig)
+		public TinyboardApi(SourceConfig sourceConfig) : base(sourceConfig)
 		{
 			ImageboardWebsite = sourceConfig.ImageboardWebsite;
 

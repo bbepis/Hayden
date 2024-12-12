@@ -25,7 +25,7 @@ namespace Hayden
 	{
 		public string ImageboardWebsite { get; }
 
-		public LynxChanApi(SourceConfig sourceConfig)
+		public LynxChanApi(SourceConfig sourceConfig) : base(sourceConfig)
 		{
 			ImageboardWebsite = sourceConfig.ImageboardWebsite;
 

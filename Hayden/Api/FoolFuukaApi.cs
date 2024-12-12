@@ -24,7 +24,7 @@ namespace Hayden
 	{
 		public string ImageboardWebsite { get; }
 
-		public FoolFuukaApi(SourceConfig sourceConfig)
+		public FoolFuukaApi(SourceConfig sourceConfig) : base(sourceConfig)
 		{
 			ImageboardWebsite = sourceConfig.ImageboardWebsite;
 

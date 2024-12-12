@@ -6,6 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Web;
 using Hayden.Api;
+using Hayden.Config;
 using Hayden.Consumers;
 using Hayden.Consumers.HaydenMysql.DB;
 using Hayden.Contract;
@@ -21,6 +22,8 @@ namespace Hayden
 	/// </summary>
 	public class YotsubaApi : BaseApi<YotsubaThread>
 	{
+		public YotsubaApi(SourceConfig sourceConfig) : base(sourceConfig) { }
+
 		/// <inheritdoc />
 		protected override HttpRequestMessage CreateRequest(Uri uri, DateTimeOffset? modifiedSince)
 		{

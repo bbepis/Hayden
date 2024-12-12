@@ -25,7 +25,7 @@ namespace Hayden
 	{
 		public string ImageboardWebsite { get; }
 
-		public InfinityNextApi(SourceConfig sourceConfig)
+		public InfinityNextApi(SourceConfig sourceConfig) : base(sourceConfig)
 		{
 			ImageboardWebsite = sourceConfig.ImageboardWebsite;
 

@@ -16,17 +16,17 @@ namespace Hayden.Consumers.HaydenMysql.DB.Migrations
 		{
 			bool isSqlite = ActiveProvider == MigrationExtensions.SqliteProvider;
 
-			migrationBuilder.DropForeignKey(
-				name: "FK_files_boards_BoardId",
-				table: "files");
+			//migrationBuilder.DropForeignKey(
+			//	name: "FK_files_boards_BoardId",
+			//	table: "files");
 
-			migrationBuilder.DropIndex(
-				name: "IX_files_BoardId",
-				table: "files");
+			//migrationBuilder.DropIndex(
+			//	name: "IX_files_BoardId",
+			//	table: "files");
 
-			migrationBuilder.DropIndex(
-				name: "IX_files_Sha256Hash_BoardId",
-				table: "files");
+			//migrationBuilder.DropIndex(
+			//	name: "IX_files_Sha256Hash_BoardId",
+			//	table: "files");
 
 			migrationBuilder.DropColumn(
 				name: "BoardId",

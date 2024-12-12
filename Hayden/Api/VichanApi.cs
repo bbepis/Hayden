@@ -23,7 +23,7 @@ namespace Hayden
 	{
 		public string ImageboardWebsite { get; }
 
-		public VichanApi(SourceConfig sourceConfig)
+		public VichanApi(SourceConfig sourceConfig) : base(sourceConfig)
 		{
 			ImageboardWebsite = sourceConfig.ImageboardWebsite;
 

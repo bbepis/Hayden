@@ -380,6 +380,7 @@ public static class HaydenDbContextExtensions
 			{
 				x.EnableIndexOptimizedBooleanColumns();
 				x.MaxBatchSize(1000);
+				x.CommandTimeout(900000);
 			});
 		}
 		else if (databaseType == DatabaseType.Sqlite)

@@ -22,6 +22,7 @@ using System.Collections.Generic;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Converters;
 using Newtonsoft.Json.Serialization;
+using Hayden.Consumers.HaydenMysql;
 
 namespace Hayden;
 
@@ -44,13 +45,15 @@ public class Program
 	{
 		var rootCommand = new RootCommand("Hayden all-chan archival software");
 
+		// scrape
 		var scrapeCommand = new Command("scrape", "Scrape using a config");
 		var configArg = new Argument<string>("config path", () => "config.json", "The path to the .json config file") { Arity = ArgumentArity.ExactlyOne };
 		scrapeCommand.Add(configArg);
 		scrapeCommand.SetHandler((configFile) => RunScrape(configFile, null), configArg);
 
 		rootCommand.Add(scrapeCommand);
-		
+
+		// export
 		var exportCommand = new Command("export", "Dump a database to a standard format");
 		var compressionLevelArg = new Option<int>(new[] { "-c", "--compression-level" }, () => 6, "The compression level to use when exporting to a compressed format (.json.zst)") { Arity = ArgumentArity.ExactlyOne };
 		var exportConfigArg = new Argument<string>("config path", "The path to the .json config file to read database information from") { Arity = ArgumentArity.ExactlyOne };
@@ -63,7 +66,8 @@ public class Program
 			exportConfigArg, outputFileArg, compressionLevelArg);
 
 		rootCommand.Add(exportCommand);
-		
+
+		// genconfig
 		var generateConfigCommand = new Command("genconfig", "Generate a configuration file");
 		var generatedConfigArgument = new Argument<string>("config file", "The path to the .json config file to generate") { Arity = ArgumentArity.ExactlyOne };
 		generateConfigCommand.Add(generatedConfigArgument);
@@ -71,6 +75,19 @@ public class Program
 		generateConfigCommand.SetHandler(GenerateConfig, generatedConfigArgument);
 
 		rootCommand.Add(generateConfigCommand);
+
+		var maintainCommand = new Command("maintain", "Perform maintenance tasks relating to imageboard databases and datasets");
+		var dbConfigOption = new Option<string>(new[] { "-c", "--config" }, "The path to the .json config file that points towards the database & dataset to manage") { Arity = ArgumentArity.ExactlyOne, IsRequired = true };
+		
+
+		rootCommand.Add(maintainCommand);
+
+		var upgradeTaskCommand = new Command("upgrade", "Manually upgrades database to latest version");
+		upgradeTaskCommand.AddOption(dbConfigOption);
+		upgradeTaskCommand.SetHandler(RunUpgradeAsync, dbConfigOption);
+
+		maintainCommand.Add(upgradeTaskCommand);
+
 
 		return rootCommand;
 	}
@@ -128,6 +145,14 @@ public class Program
 				new StringEnumConverter(new DefaultNamingStrategy(), false)
 			}
 		}));
+	}
+
+	private static async Task RunUpgradeAsync(string configPath)
+	{
+		var config = JsonConvert.DeserializeObject<ConfigFile>(File.ReadAllText(configPath));
+
+		var maintenanceManager = new MaintenanceManager(config.Consumer);
+		await maintenanceManager.PerformUpgrade();
 	}
 
 	private static async Task<int> RunScrape(string configPath, ExportSettings exportSettings)

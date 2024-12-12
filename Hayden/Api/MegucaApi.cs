@@ -1,12 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Net;
 using System.Net.Http;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
-using AngleSharp.Dom;
 using AngleSharp.Html.Dom;
 using Hayden.Api;
 using Hayden.Config;
@@ -29,7 +27,7 @@ namespace Hayden
 
 		public string ImageboardWebsite { get; }
 
-		public MegucaApi(SourceConfig sourceConfig)
+		public MegucaApi(SourceConfig sourceConfig) : base(sourceConfig)
 		{
 			ImageboardWebsite = sourceConfig.ImageboardWebsite;
 

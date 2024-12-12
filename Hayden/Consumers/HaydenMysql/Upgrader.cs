@@ -57,12 +57,16 @@ public class HaydenDbUpgrader
 
 		var directoriesToMove = fs.Directory.EnumerateDirectories(config.DownloadLocation).ToArray();
 
-		fs.Directory.CreateDirectory(premigrationPath);
+		if (!fs.Directory.Exists(premigrationPath))
+		{
+			fs.Directory.CreateDirectory(premigrationPath);
+
+			foreach (var directory in directoriesToMove)
+				fs.Directory.Move(directory, fs.Path.Combine(premigrationPath, fs.Path.GetFileName(directory)));
+		}
+
 		fs.Directory.CreateDirectory(fs.Path.Combine(config.DownloadLocation, "image"));
 		fs.Directory.CreateDirectory(fs.Path.Combine(config.DownloadLocation, "thumb"));
-
-		foreach (var directory in directoriesToMove)
-			fs.Directory.Move(directory, fs.Path.Combine(premigrationPath, fs.Path.GetFileName(directory)));
 
 		string V1CalculateFilename(string baseFolder, string board, Common.MediaType mediaType, byte[] hash, string extension)
 		{

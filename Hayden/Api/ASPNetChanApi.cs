@@ -20,7 +20,7 @@ namespace Hayden
 	{
 		public string ImageboardWebsite { get; }
 
-		public ASPNetChanApi(SourceConfig sourceConfig)
+		public ASPNetChanApi(SourceConfig sourceConfig) : base(sourceConfig)
 		{
 			ImageboardWebsite = sourceConfig.ImageboardWebsite;
 
