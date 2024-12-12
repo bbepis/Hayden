@@ -198,7 +198,6 @@ public class Program
 			case "LynxChan":      serviceCollection.AddSingleton<IFrontendApi, LynxChanApi>(); break;
 			case "Meguca":        serviceCollection.AddSingleton<IFrontendApi, MegucaApi>(); break;
 			case "InfinityNext":  serviceCollection.AddSingleton<IFrontendApi, InfinityNextApi>(); break;
-			case "Ponychan":      serviceCollection.AddSingleton<IFrontendApi, PonychanApi>(); break;
 			case "ASPNetChan":    serviceCollection.AddSingleton<IFrontendApi, ASPNetChanApi>(); break;
 			case "Tinyboard":     serviceCollection.AddSingleton<IFrontendApi, TinyboardApi>(); break;
 			case "FoolFuuka":     serviceCollection.AddSingletonMulti<IFrontendApi, ISearchableFrontendApi, FoolFuukaApi>(); break;

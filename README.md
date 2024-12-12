@@ -30,7 +30,6 @@ Developer documentation is in `ARCHITECTURE.md`.
 | [InfinityNext](https://github.com/infinity-next/infinity-next/)                                                       | ❌                 | 9chan.tw                      |
 | [Meguca / shamichan](https://github.com/bakape/meguca)                                                                | ✅                 | 2chen.moe <br> shamik.ooo     |
 | [FoolFuuka](https://github.com/FoolCode/FoolFuuka)                                                                    | ❌                 | desuarchive.org               |
-| [Ponychan](https://bitbucket.org/ponychan/ponychan-tinyboard/src/master/)                                             | ❌                 | ponychan.net                  |
 | ASPNetChan                                                                                                            | ✅                 | mlpol.net                     |
 
 ### Features
