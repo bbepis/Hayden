@@ -36,6 +36,8 @@ namespace Hayden.Contract
 		/// <param name="cancellationToken">The cancellation token to use with this request.</param>
 		Task<ApiResponse<ThreadOverviewInfo[]>> GetBoard(string board, HttpClient client, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default);
 
+		// TODO: change this to return ThreadOverviewInfo for faster archive checking on some APIs
+
 		/// <summary>
 		/// Retrieves a list of a board's archive's threads from the frontend API.
 		/// </summary>

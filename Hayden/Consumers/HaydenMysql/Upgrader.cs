@@ -36,7 +36,9 @@ public class HaydenDbUpgrader
 
 			if (pendingMigrations[0] == "v2_Version2")
 			{
-				if (onlyAuto && !isNew)
+				var count = await context.Database.SqlQuery<int>($"SELECT COUNT(*) as Value FROM files").FirstAsync();
+
+				if (onlyAuto && (!isNew || count == 0))
 					throw new Exception("Migrating to version v2 requires manual upgrading; stopping to preserve data integrity");
 
 				await PerformVersion2Upgrade(fileSystem, migrator, config);

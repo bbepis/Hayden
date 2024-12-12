@@ -134,6 +134,22 @@ internal partial class HaydenConsumerTests
 		}
 
 		[Test]
+		public async Task RefusesToUpgradeWhenOnlyAutoMode()
+		{
+			using var connection = SetupV1DatabaseConnection();
+			var contextOptions = GetOptions(connection);
+			var filesystem = SetupFilesystem();
+
+			var upgrader = new HaydenDbUpgrader();
+			var config = GetConfig();
+
+			Assert.ThrowsAsync(Throws.Exception, async () =>
+			{
+				await upgrader.UpgradeAsync(config, contextOptions, filesystem, true);
+			});
+		}
+
+		[Test]
 		public async Task CanMigrateSuccessfully_NoThumbs()
 		{
 			using var connection = SetupV1DatabaseConnection();

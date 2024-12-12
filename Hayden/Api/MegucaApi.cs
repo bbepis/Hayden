@@ -164,9 +164,24 @@ namespace Hayden
 		}
 
 		/// <inheritdoc />
-		public override Task<ApiResponse<ulong[]>> GetArchive(string board, HttpClient client, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default)
+		public override async Task<ApiResponse<ulong[]>> GetArchive(string board, HttpClient client, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default)
 		{
-			throw new InvalidOperationException("Does not support archives");
+			var response = await MakeHtmlCall(new Uri($"{ImageboardWebsite}{board}/archive"), client, modifiedSince, cancellationToken);
+
+			if (response.ResponseType != ResponseType.Ok)
+				return new ApiResponse<ulong[]>(response.ResponseType, null);
+
+			var document = response.Data;
+
+			var json = document.GetElementById("post-data");
+
+			var catalog = JsonConvert.DeserializeObject<MegucaCatalog>(json.TextContent);
+
+			var info = catalog.threads
+				.Select((x, i) => x.id)
+				.ToArray();
+
+			return new ApiResponse<ulong[]>(ResponseType.Ok, info);
 		}
 
 		// https://github.com/bakape/shamichan/blob/8e47f42785caa99bbbfd2b35221f47822dbec1f3/imager/common/images.go#L11

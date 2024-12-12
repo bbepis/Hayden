@@ -44,7 +44,11 @@ namespace Hayden
 
 		public override Task<ApiCapabilities> DetermineCapabilitiesAsync(HttpClient client)
 		{
-			throw new NotImplementedException();
+			return Task.FromResult(new ApiCapabilities()
+			{
+				SupportsArchive = false,
+				SupportsBoardLastModified = true
+			});
 		}
 
 		/// <inheritdoc />

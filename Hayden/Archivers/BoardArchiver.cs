@@ -599,7 +599,7 @@ namespace Hayden
 
 			var threadQueue = new List<ThreadPointer>();
 
-			var archiveRequest = await NetworkPolicies.GenericRetryPolicy<ApiResponse<ThreadOverviewInfo[]>>(99999).ExecuteAsync(async () =>
+			var archiveRequest = await NetworkPolicies.GenericRetryPolicy<ApiResponse<ulong[]>>(99999).ExecuteAsync(async () =>
 			{
 				token.ThrowIfCancellationRequested();
 				await using var boardClient = await ProxyProvider.RentHttpClient();

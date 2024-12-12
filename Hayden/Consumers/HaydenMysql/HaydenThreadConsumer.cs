@@ -690,9 +690,9 @@ namespace Hayden.Consumers
 					.Select(x => new { x.ThreadId, x.PostId, x.DateTime })
 					.ToArrayAsync();
 				
-				foreach (var group in postIds.EfficientGroupBy(x => x.ThreadId, x => x.PostId))
+				foreach (var group in postIds.EfficientGroupBy(x => x.ThreadId, x => x))
 				{
-					items.Add(new ExistingThreadInfo(group.Key, false, DateTimeOffset.MinValue, group.Values.Select(x => (x, (uint)0)).ToArray()));
+					items.Add(new ExistingThreadInfo(group.Key, false, group.Values.Max(x => x.DateTime), group.Values.Select(x => (x.PostId, (uint)0)).ToArray()));
 				}
 			}
 			else
