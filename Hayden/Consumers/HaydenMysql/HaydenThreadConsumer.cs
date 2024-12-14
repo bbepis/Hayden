@@ -786,7 +786,7 @@ namespace Hayden.Consumers
 				_                   => throw new ArgumentOutOfRangeException(nameof(mediaType), mediaType, null)
 			};
 
-			return Path.Combine(baseFolder, mediaTypeString, $"{fileId}.{extension.TrimStart('.').ToLower()}");
+			return Path.Combine(baseFolder, mediaTypeString, $"{fileId}.{extension?.TrimStart('.')?.ToLower() ?? "null"}");
 		}
 
 		public static uint CalculatePostHash(string postHtml, string postRawContent, int spoilerCount, int fileCount, int deletedFileCount)

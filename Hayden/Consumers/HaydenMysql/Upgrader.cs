@@ -79,7 +79,7 @@ public class HaydenDbUpgrader
 				_                   => throw new ArgumentOutOfRangeException(nameof(mediaType), mediaType, null)
 			};
 
-			return fs.Path.Combine(baseFolder, board, mediaTypeString, $"{base36Name}.{extension.TrimStart('.').ToLower()}");
+			return fs.Path.Combine(baseFolder, board, mediaTypeString, $"{base36Name}.{extension?.TrimStart('.')?.ToLower() ?? "null"}");
 		}
 
 		DBFileV1[] files;
@@ -88,7 +88,7 @@ public class HaydenDbUpgrader
 
 		using (var v1Context = new HaydenContextV1(ContextOptions))
 		{
-			files = await v1Context.FileV1.OrderBy(x => x.Id).ToArrayAsync();
+			files = await v1Context.FileV1.AsNoTracking().OrderBy(x => x.Id).ToArrayAsync();
 		}
 
 		Console.WriteLine($"- Found {files.Length} files to migrate");
@@ -96,13 +96,20 @@ public class HaydenDbUpgrader
 		await migrator.MigrateAsync("v2_Version2");
 
 		using var context = new HaydenDbContext(ContextOptions);
+		context.ChangeTracker.AutoDetectChangesEnabled = false;
 
 		var boards = await context.Boards.AsNoTracking().ToDictionaryAsync(x => x.Id);
 		//var files = await context.Database.SqlQueryRaw<DBFileV1>("SELECT * FROM files;").ToArrayAsync();
-		
+
+		int processedCount = 0;
 
 		foreach (var file in files)
 		{
+			if (++processedCount % 10000 == 0)
+			{
+				Console.WriteLine($"Processed {processedCount:N0} files");
+			}
+
 			// check if the file exists, even if we marked it as doesn't exist
 
 			var v1Path = V1CalculateFilename(premigrationPath, boards[file.BoardId].ShortName,
@@ -131,9 +138,13 @@ public class HaydenDbUpgrader
 					.Where(x => x.FileId == file.Id)
 					.ExecuteUpdateAsync(x => x.SetProperty(y => y.FileId, existingFile.Id));
 
-				await context.Files.Where(x => x.Id == file.Id).ExecuteDeleteAsync();
+				await context.Files
+					.Where(x => x.Id == file.Id)
+					.ExecuteDeleteAsync();
 
+				context.ChangeTracker.DetectChanges();
 				await context.SaveChangesAsync();
+				context.ChangeTracker.Clear();
 
 				var existingFilePath = HaydenThreadConsumer.CalculateFilename(config.DownloadLocation,
 					Common.MediaType.FullImage, existingFile.Id, existingFile.Extension);
