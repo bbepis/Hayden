@@ -47,6 +47,11 @@ namespace Hayden.Config
 		/// True if only performing a single scan from the source, otherwise false to infinitely scan the source for updates.
 		/// </summary>
 		public bool SingleScan { get; set; }
+
+		/// <summary>
+		/// The Cookie header to be passed onto requests. Useful for getting around cloudflare challenges
+		/// </summary>
+		public string CookieString { get; set; }
 	}
 
 	public class BoardRulesConfig

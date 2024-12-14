@@ -36,7 +36,7 @@ namespace Hayden.Tests.Api
 			return handlerMock;
 		}
 
-		private YotsubaApi yotsubaApi = new YotsubaApi();
+		private YotsubaApi yotsubaApi = new YotsubaApi(new Config.SourceConfig());
 
 		private HttpClient CreateMockClient(HttpStatusCode code, string response)
 			=> new HttpClient(CreateMockClientHandler(code, response).Object);

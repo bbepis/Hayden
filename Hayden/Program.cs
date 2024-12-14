@@ -114,7 +114,8 @@ public class Program
 				ApiDelay = 1,
 				BoardScrapeDelay = 30,
 				SingleScan = false,
-				ReadArchive = true
+				ReadArchive = true,
+				CookieString = ""
 			},
 			Consumer = new Config.ConsumerConfig
 			{

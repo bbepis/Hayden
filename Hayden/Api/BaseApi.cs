@@ -6,6 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using AngleSharp;
 using AngleSharp.Html.Dom;
+using Hayden.Config;
 using Hayden.Contract;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -16,6 +17,13 @@ namespace Hayden.Api
 {
 	public abstract class BaseApi<TThread> : IFrontendApi
 	{
+		protected SourceConfig SourceConfig { get; init; }
+
+		protected BaseApi(SourceConfig sourceConfig)
+		{
+			SourceConfig = sourceConfig;
+		}
+
 		/// <summary>
 		/// Creates the base HTTP request used by the frontend's API calls.
 		/// </summary>
@@ -26,6 +34,9 @@ namespace Hayden.Api
 		{
 			var request = new HttpRequestMessage(HttpMethod.Get, uri);
 			request.Headers.IfModifiedSince = modifiedSince;
+
+			if (!string.IsNullOrWhiteSpace(SourceConfig.CookieString))
+				request.Headers.TryAddWithoutValidation("Cookie", SourceConfig.CookieString);
 
 			return request;
 		}
