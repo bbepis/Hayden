@@ -195,7 +195,9 @@ public class HaydenDbUpgrader
 
 			if (fs.File.Exists(v1Path))
 			{
-				var hashes = Utility.CalculateHashes(fs.File.OpenRead(v1Path));
+				var readStream = fs.File.OpenRead(v1Path);
+				var hashes = Utility.CalculateHashes(readStream);
+				readStream.Dispose();
 
 				if (!Utility.ByteArrayEquals(file.Sha256Hash, hashes.sha256Hash)
 					|| !Utility.ByteArrayEquals(file.Sha1Hash, hashes.sha1Hash)
