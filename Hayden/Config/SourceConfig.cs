@@ -49,6 +49,11 @@ namespace Hayden.Config
 		public bool SingleScan { get; set; }
 
 		/// <summary>
+		/// The User-Agent header to send to websites when scraping.
+		/// </summary>
+		public string UserAgent { get; set; }
+
+		/// <summary>
 		/// The Cookie header to be passed onto requests. Useful for getting around cloudflare challenges
 		/// </summary>
 		public string CookieString { get; set; }

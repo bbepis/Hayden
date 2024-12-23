@@ -397,8 +397,6 @@ public class HaydenDataProvider : IDataProvider
 
 	public static (string imageUrl, string thumbnailUrl) GenerateUrls(DBFile file, string board, ServerConfig config)
 	{
-		string b36Name = Utility.ConvertToBase(file.Sha256Hash);
-
 		// https://github.com/dotnet/runtime/issues/36510
 		var prefix = !string.IsNullOrWhiteSpace(config.Data.ImagePrefix)
 			? config.Data.ImagePrefix
@@ -407,10 +405,10 @@ public class HaydenDataProvider : IDataProvider
 		string imageUrl = null, thumbUrl = null;
 
 		if (file.FileExists)
-			imageUrl = $"{prefix}/{board}/image/{b36Name}.{file.Extension}";
+			imageUrl = $"{prefix}/image/{file.Id}.{file.Extension}";
 
 		if (file.ThumbnailExists)
-			thumbUrl = $"{prefix}/{board}/thumb/{b36Name}.{file.ThumbnailExtension}";
+			thumbUrl = $"{prefix}/thumb/{file.Id}.{file.ThumbnailExtension}";
 
 		return (imageUrl, thumbUrl);
 	}
@@ -419,63 +417,63 @@ public class HaydenDataProvider : IDataProvider
 // https://stackoverflow.com/questions/8031069/how-can-i-specify-an-index-hint-in-entity-framework/67743682#67743682
 public class QueryHintInterceptor : DbCommandInterceptor
 {
-    private static readonly Regex _tableAliasRegex = new Regex(@"(FROM[\s\r\n]+\S+(?:[\s\r\n]+AS[\s\r\n]+[^\s\r\n]+)?)", RegexOptions.Multiline | RegexOptions.IgnoreCase);
-    private readonly string _hintPrefix;
+	private static readonly Regex _tableAliasRegex = new Regex(@"(FROM[\s\r\n]+\S+(?:[\s\r\n]+AS[\s\r\n]+[^\s\r\n]+)?)", RegexOptions.Multiline | RegexOptions.IgnoreCase);
+	private readonly string _hintPrefix;
 
-    public QueryHintInterceptor(string hintPrefix)
-    {
-        _hintPrefix = "-- " + hintPrefix;
-    }
+	public QueryHintInterceptor(string hintPrefix)
+	{
+		_hintPrefix = "-- " + hintPrefix;
+	}
 
-    public override InterceptionResult<DbDataReader> ReaderExecuting(DbCommand command, CommandEventData eventData, InterceptionResult<DbDataReader> result)
-    {
-        PatchCommandtext(command);
-        return base.ReaderExecuting(command, eventData, result);
-    }
+	public override InterceptionResult<DbDataReader> ReaderExecuting(DbCommand command, CommandEventData eventData, InterceptionResult<DbDataReader> result)
+	{
+		PatchCommandtext(command);
+		return base.ReaderExecuting(command, eventData, result);
+	}
 
-    public override ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(DbCommand command, CommandEventData eventData, InterceptionResult<DbDataReader> result, CancellationToken cancellationToken = default)
-    {
-        PatchCommandtext(command);
-        return base.ReaderExecutingAsync(command, eventData, result, cancellationToken);
-    }
+	public override ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(DbCommand command, CommandEventData eventData, InterceptionResult<DbDataReader> result, CancellationToken cancellationToken = default)
+	{
+		PatchCommandtext(command);
+		return base.ReaderExecutingAsync(command, eventData, result, cancellationToken);
+	}
 
-    public override InterceptionResult<object> ScalarExecuting(DbCommand command, CommandEventData eventData, InterceptionResult<object> result)
-    {
-        PatchCommandtext(command);
-        return base.ScalarExecuting(command, eventData, result);
-    }
+	public override InterceptionResult<object> ScalarExecuting(DbCommand command, CommandEventData eventData, InterceptionResult<object> result)
+	{
+		PatchCommandtext(command);
+		return base.ScalarExecuting(command, eventData, result);
+	}
 
-    public override ValueTask<InterceptionResult<object>> ScalarExecutingAsync(DbCommand command, CommandEventData eventData, InterceptionResult<object> result, CancellationToken cancellationToken = default)
-    {
-        PatchCommandtext(command);
-        return base.ScalarExecutingAsync(command, eventData, result, cancellationToken);
-    }
+	public override ValueTask<InterceptionResult<object>> ScalarExecutingAsync(DbCommand command, CommandEventData eventData, InterceptionResult<object> result, CancellationToken cancellationToken = default)
+	{
+		PatchCommandtext(command);
+		return base.ScalarExecutingAsync(command, eventData, result, cancellationToken);
+	}
 
-    private void PatchCommandtext(DbCommand command)
-    {
-        if (command.CommandText.StartsWith(_hintPrefix, StringComparison.Ordinal))
-        {
-            int index = command.CommandText.IndexOfAny(Environment.NewLine.ToCharArray(), _hintPrefix.Length);
+	private void PatchCommandtext(DbCommand command)
+	{
+		if (command.CommandText.StartsWith(_hintPrefix, StringComparison.Ordinal))
+		{
+			int index = command.CommandText.IndexOfAny(Environment.NewLine.ToCharArray(), _hintPrefix.Length);
 
 			var hint = command.CommandText	.Substring(_hintPrefix.Length, index - _hintPrefix.Length);
 
-            command.CommandText = _tableAliasRegex
-                .Replace(command.CommandText, $"${{0}} {hint} ");
-        }
-    }
+			command.CommandText = _tableAliasRegex
+				.Replace(command.CommandText, $"${{0}} {hint} ");
+		}
+	}
 }
 
 public static class QueryHintsDbContextOptionsBuilderExtensions
 {
-    private const string HintTag = "Use hint: ";
-    public static IQueryable<T> WithHint<T>(this IQueryable<T> source, string hint) =>
-        source.TagWith(HintTag + hint);
-    public static IQueryable<T> ForceIndex<T>(this IQueryable<T> source, string index) =>
-        source.TagWith(HintTag + $"FORCE INDEX ({index})");
+	private const string HintTag = "Use hint: ";
+	public static IQueryable<T> WithHint<T>(this IQueryable<T> source, string hint) =>
+		source.TagWith(HintTag + hint);
+	public static IQueryable<T> ForceIndex<T>(this IQueryable<T> source, string index) =>
+		source.TagWith(HintTag + $"FORCE INDEX ({index})");
 
-    public static DbContextOptionsBuilder<T> AddQueryHints<T>(this DbContextOptionsBuilder<T> builder) where T : DbContext =>
-        builder.AddInterceptors(new QueryHintInterceptor(HintTag));
+	public static DbContextOptionsBuilder<T> AddQueryHints<T>(this DbContextOptionsBuilder<T> builder) where T : DbContext =>
+		builder.AddInterceptors(new QueryHintInterceptor(HintTag));
 
-    public static DbContextOptionsBuilder AddQueryHints(this DbContextOptionsBuilder builder) =>
-        builder.AddInterceptors(new QueryHintInterceptor(HintTag));
+	public static DbContextOptionsBuilder AddQueryHints(this DbContextOptionsBuilder builder) =>
+		builder.AddInterceptors(new QueryHintInterceptor(HintTag));
 }

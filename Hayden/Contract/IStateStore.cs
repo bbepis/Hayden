@@ -16,6 +16,8 @@ namespace Hayden.Contract
 
 		Task InsertToDownloadQueue(IReadOnlyCollection<QueuedImageDownload> imageDownloads);
 
+		Task RemoveDownload(QueuedImageDownload imageDownload);
+
 		Task StoreKeyValue(string key, string value);
 		Task<string> ReadKeyValue(string key);
 

@@ -184,10 +184,17 @@ namespace Hayden.Cache
 			return await Context.QueuedImageDownloads.AsNoTracking().ToListAsync();
 		}
 
-        public void Dispose()
+		public async Task RemoveDownload(QueuedImageDownload imageDownload)
+		{
+			using var lockObj = await @lock.LockAsync();
+
+			await Context.QueuedImageDownloads.Where(x => x.Guid == imageDownload.Guid).ExecuteDeleteAsync();
+		}
+
+		public void Dispose()
         {
             Context.Dispose();
 			Connection?.Dispose();
         }
-    }
+	}
 }

@@ -24,6 +24,9 @@ public class HaydenDbUpgrader
 		var completedMigrations = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
 		var isNew = completedMigrations.Length == 0;
 
+		await PerformVersion2Upgrade(fileSystem, migrator, config);
+		return;
+
 		while (true)
 		{
 			var pendingMigrations = (await context.Database.GetPendingMigrationsAsync()).ToArray();
@@ -82,23 +85,20 @@ public class HaydenDbUpgrader
 			return fs.Path.Combine(baseFolder, board, mediaTypeString, $"{base36Name}.{extension?.TrimStart('.')?.ToLower() ?? "null"}");
 		}
 
-		DBFileV1[] files;
-
-		Console.WriteLine($"- Collecting file list");
-
-		using (var v1Context = new HaydenContextV1(ContextOptions))
-		{
-			files = await v1Context.FileV1.AsNoTracking().OrderBy(x => x.Id).ToArrayAsync();
-		}
-
-		Console.WriteLine($"- Found {files.Length} files to migrate");
+		Console.WriteLine($"- Performing migration");
 
 		await migrator.MigrateAsync("v2_Version2");
+
+		Console.WriteLine($"- Collecting file list");
 
 		using var context = new HaydenDbContext(ContextOptions);
 		context.ChangeTracker.AutoDetectChangesEnabled = false;
 
-		var boards = await context.Boards.AsNoTracking().ToDictionaryAsync(x => x.Id);
+		var files = await context.Files.AsNoTracking().OrderBy(x => x.Id).ToArrayAsync();
+		var boards = await context.Boards.AsNoTracking().ToArrayAsync();
+
+		Console.WriteLine($"- Found {files.Length} files to migrate");
+
 		//var files = await context.Database.SqlQueryRaw<DBFileV1>("SELECT * FROM files;").ToArrayAsync();
 
 		int processedCount = 0;
@@ -112,15 +112,34 @@ public class HaydenDbUpgrader
 
 			// check if the file exists, even if we marked it as doesn't exist
 
-			var v1Path = V1CalculateFilename(premigrationPath, boards[file.BoardId].ShortName,
-				Common.MediaType.FullImage, file.Sha256Hash, file.Extension);
-			var v1ThumbPath = V1CalculateFilename(premigrationPath, boards[file.BoardId].ShortName,
-				Common.MediaType.Thumbnail, file.Sha256Hash, file.ThumbnailExtension);
-
 			var v2Path = HaydenThreadConsumer.CalculateFilename(config.DownloadLocation,
 				Common.MediaType.FullImage, file.Id, file.Extension);
 			var v2ThumbPath = HaydenThreadConsumer.CalculateFilename(config.DownloadLocation,
 				Common.MediaType.Thumbnail, file.Id, file.ThumbnailExtension);
+
+			if (fs.File.Exists(v2Path))
+				continue;
+
+			DBBoard board = null;
+			string v1Path = null;
+			bool foundPath = false;
+
+			foreach (var possibleBoard in boards)
+			{
+				board = possibleBoard;
+				v1Path = V1CalculateFilename(premigrationPath, possibleBoard.ShortName,
+					Common.MediaType.FullImage, file.Sha256Hash, file.Extension);
+
+				if (fs.File.Exists(v1Path))
+				{
+					foundPath = true;
+					break;
+				}
+			}
+
+			var v1ThumbPath = V1CalculateFilename(premigrationPath, board.ShortName,
+				Common.MediaType.Thumbnail, file.Sha256Hash, file.ThumbnailExtension);
+
 
 			var existingFile = await context.Files.FirstOrDefaultAsync(x =>
 				x.Sha256Hash == file.Sha256Hash && x.Id < file.Id);
@@ -173,14 +192,16 @@ public class HaydenDbUpgrader
 				{
 					if (!existingFile.FileExists && fs.File.Exists(v1Path))
 					{
-						fs.File.Move(v1Path, existingFilePath);
+						if (!fs.File.Exists(existingFilePath))
+							fs.File.Move(v1Path, existingFilePath);
 
 						existingFile.FileExists = true;
 					}
 
 					if (!existingFile.ThumbnailExists && fs.File.Exists(v1ThumbPath))
 					{
-						fs.File.Move(v1ThumbPath, existingThumbPath);
+						if (!fs.File.Exists(existingThumbPath))
+							fs.File.Move(v1ThumbPath, existingThumbPath);
 
 						existingFile.ThumbnailExists = true;
 					}
@@ -191,39 +212,55 @@ public class HaydenDbUpgrader
 				continue;
 			}
 
-			var dbFile = await context.Files.FirstAsync(x => x.Id == file.Id);
-
-			if (fs.File.Exists(v1Path))
+			if (foundPath)
 			{
-				var readStream = fs.File.OpenRead(v1Path);
-				var hashes = Utility.CalculateHashes(readStream);
-				readStream.Dispose();
-
-				if (!Utility.ByteArrayEquals(file.Sha256Hash, hashes.sha256Hash)
-					|| !Utility.ByteArrayEquals(file.Sha1Hash, hashes.sha1Hash)
-					|| !Utility.ByteArrayEquals(file.Md5Hash, hashes.md5Hash)
-					|| !file.FileExists)
+				if (file.FileBanned)
 				{
-					dbFile.Sha256Hash = hashes.sha256Hash;
-					dbFile.Sha1Hash = hashes.sha1Hash;
-					dbFile.Md5Hash = hashes.md5Hash;
-					dbFile.FileExists = true;
-
-					context.Update(dbFile);
+					file.FileExists = false;
+					file.ThumbnailExists = false;
+					context.Update(file);
+					continue;
 				}
 
+				var size = fs.FileInfo.New(v1Path).Length;
+
+				// shortcut here
+				if (size != file.Size || !file.FileExists)
+				{
+					// recalculate hashes, it might be untrustworthy
+
+					var readStream = fs.File.OpenRead(v1Path);
+					var hashes = Utility.CalculateHashes(readStream);
+					readStream.Dispose();
+
+					if (!Utility.ByteArrayEquals(file.Sha256Hash, hashes.sha256Hash)
+						|| !Utility.ByteArrayEquals(file.Sha1Hash, hashes.sha1Hash)
+						|| !Utility.ByteArrayEquals(file.Md5Hash, hashes.md5Hash)
+						|| size != file.Size
+						|| !file.FileExists)
+					{
+						file.Sha256Hash = hashes.sha256Hash;
+						file.Sha1Hash = hashes.sha1Hash;
+						file.Md5Hash = hashes.md5Hash;
+						file.Size = (uint)size;
+						file.FileExists = true;
+
+						context.Update(file);
+					}
+				}
+				
 				fs.File.Move(v1Path, v2Path);
 			}
 			else if (file.FileExists)
 			{
-				dbFile.FileExists = false;
-				context.Update(dbFile);
+				file.FileExists = false;
+				context.Update(file);
 			}
 
 			if (fs.File.Exists(v1ThumbPath))
 			{
-				dbFile.ThumbnailExists = true;
-				context.Update(dbFile);
+				file.ThumbnailExists = true;
+				context.Update(file);
 
 				fs.File.Move(v1ThumbPath, v2ThumbPath);
 			}

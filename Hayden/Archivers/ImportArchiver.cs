@@ -36,7 +36,7 @@ namespace Hayden
 				throw new InvalidOperationException("Requires either a valid IImporter or IForwardOnlyImporter instance");
 		}
 
-		public Task Initialize() => Task.CompletedTask;
+		public override Task Initialize() => Task.CompletedTask;
 
 		public override async Task Execute(CancellationToken token)
 		{
@@ -73,7 +73,29 @@ namespace Hayden
 					var trackedThread = TrackedThread.StartTrackingThread(ThreadConsumer.CalculateHash, threadInfo);
 					var updateInfo = trackedThread.ProcessThreadUpdates(thread.Item1, thread.Item2, ConsumerConfig.ConsolidationMode == ConsolidationMode.Authoritative);
 
-					await ThreadConsumer.ConsumeThread(updateInfo);
+					var queuedImages = await ThreadConsumer.ConsumeThread(updateInfo);
+					foreach (var queuedDownload in queuedImages)
+					{
+						string tempFilePath = null, tempThumbPath = null;
+
+						if (queuedDownload.FullImageUri != null)
+						{
+							tempFilePath = await DownloadFileTask(queuedDownload.FullImageUri, null);
+
+							if (!queuedDownload.TryGetProperty<string>("board", out string board))
+								board = "unknown";
+
+							Metrics?.TotalImagesScraped.WithLabels(board).Inc(1);
+							Metrics?.TotalImageSizeScraped.WithLabels(board).Inc(new System.IO.FileInfo(tempFilePath).Length);
+						}
+
+						if (queuedDownload.ThumbnailImageUri != null)
+						{
+							tempThumbPath = await DownloadFileTask(queuedDownload.ThumbnailImageUri, null);
+						}
+
+						await ThreadConsumer.ProcessFileDownload(queuedDownload, tempFilePath, tempThumbPath);
+					}
 
 					Interlocked.Increment(ref LastProgressThreadsProcessed);
 					Interlocked.Add(ref LastProgressPostsProcessed, updateInfo.NewPosts.Count);

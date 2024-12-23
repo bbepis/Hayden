@@ -10,6 +10,7 @@ using Hayden.Consumers.Asagi;
 using Hayden.Consumers.HaydenMysql.DB;
 using Hayden.Models;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Serilog;
 
 namespace Hayden.ImportExport;
 
@@ -18,7 +19,16 @@ public class AsagiImporter : IImporter
 	private SourceConfig sourceConfig;
 	private DbContextOptions<AsagiDbContext> dbContextOptions;
 
-	public AsagiImporter(SourceConfig sourceConfig)
+	private FileSourceType fileSourceType;
+
+	private enum FileSourceType
+	{
+		None,
+		Url,
+		File
+	}
+
+	public AsagiImporter(SourceConfig sourceConfig, ConsumerConfig consumerConfig)
 	{
 		this.sourceConfig = sourceConfig;
 
@@ -27,6 +37,48 @@ public class AsagiImporter : IImporter
 			.Options;
 
 		contextPool = new PooledDbContextFactory<AsagiDbContext>(dbContextOptions);
+
+		if (!consumerConfig.FullImagesEnabled && !consumerConfig.ThumbnailsEnabled)
+		{
+			fileSourceType = FileSourceType.None;
+			Log.Debug("Neither images or thumbnails have been requested, ignoring file source");
+		}
+		else if (string.IsNullOrWhiteSpace(sourceConfig.ImageboardWebsite))
+		{
+			fileSourceType = FileSourceType.None;
+
+			if (consumerConfig.FullImagesEnabled || consumerConfig.ThumbnailsEnabled)
+			{
+				Log.Error($"Consumer config is requesting images and/or thumbnails, and sourceConfig.ImageboardWebsite has not been set to a valid value. Exiting");
+				Environment.Exit(1);
+			}
+		}
+		else
+		{
+			if (Directory.Exists(sourceConfig.ImageboardWebsite))
+			{
+				fileSourceType = FileSourceType.File;
+
+				//if (!Directory.Exists(sourceConfig.ImageboardWebsite))
+				//{
+				//	Log.Error($"Interpreted \"{sourceConfig.ImageboardWebsite}\" as a disk path for file CDN but could not find directory. Exiting");
+				//	Environment.Exit(1);
+				//}
+			}
+			else if (Uri.TryCreate(sourceConfig.ImageboardWebsite, UriKind.Absolute, out var uri)
+				&& !string.IsNullOrWhiteSpace(uri.Scheme))
+			{
+				fileSourceType = FileSourceType.Url;
+
+				if (!sourceConfig.ImageboardWebsite.EndsWith("/"))
+					sourceConfig.ImageboardWebsite += "/";
+			}
+			else
+			{
+				Log.Error($"Could not determine if file source CDN was a disk path or a URL: \"{sourceConfig.ImageboardWebsite}\". Exiting");
+				Environment.Exit(1);
+			}
+		}
 	}
 
 	private PooledDbContextFactory<AsagiDbContext> contextPool;
@@ -91,6 +143,11 @@ public class AsagiImporter : IImporter
 
 		var (posts, images, _, _) = dbContext.GetSets(pointer.Board);
 
+		//if (fileSourceType != FileSourceType.None && images == null)
+		//{
+		//	Log.Warning($"File table for board {pointer.Board} is missing; files will be unable to be imported");
+		//}
+
 		var query = posts.AsNoTracking()
 			.Where(post => post.thread_num == (uint)pointer.ThreadId && post.subnum == 0);
 
@@ -126,7 +183,29 @@ public class AsagiImporter : IImporter
 		//	.AsNoTracking()
 		//	.ToArrayAsync();
 
-		//string radix = $"{pointer.ThreadId / 100000 % 1000:0000}/{pointer.ThreadId / 1000 % 100:00}";
+		string GetMediaPath(AsagiDbContext.AsagiDbPost post, AsagiDbContext.AsagiDbImage image, bool thumbnail)
+		{
+			if (fileSourceType == FileSourceType.None || image == null)
+				return null;
+
+			var asagiFilename = thumbnail ? (image.preview_op ?? image.preview_reply) : image.media;
+
+			if (string.IsNullOrWhiteSpace(asagiFilename))
+				return null;
+
+			string path;
+
+			if (fileSourceType == FileSourceType.Url)
+			{
+				path = $"{sourceConfig.ImageboardWebsite}data/{pointer.Board}/{(thumbnail ? "thumb" : "image")}/{asagiFilename.Substring(0, 4)}/{asagiFilename.Substring(4, 2)}/{asagiFilename}";
+			}
+			else
+			{
+				path = Path.Join(sourceConfig.ImageboardWebsite, pointer.Board, thumbnail ? "thumb" : "image", asagiFilename.Substring(0, 4), asagiFilename.Substring(4, 2), asagiFilename);
+			}
+
+			return File.Exists(path) ? path : null;
+		}
 
 		if (threadPosts.Length == 0)
 			return null;
@@ -160,11 +239,10 @@ public class AsagiImporter : IImporter
 							Index = 0,
 							FileSize = x.post.media_size,
 							IsSpoiler = x.post.spoiler,
-							//ThumbnailExtension = x.i == null ? null : Path.GetExtension(x.i.preview_op ?? x.i.preview_reply),
+							ThumbnailExtension = x.image == null ? null : Path.GetExtension(x.image.preview_op ?? x.image.preview_reply),
 							Md5Hash = TryConvertBase64(x.post.media_hash),
-							//FileUrl = $"{CdnUrl}data/{pointer.Board}/img/{radix}/{x.media_filename}",
-							//ThumbnailUrl = $"{CdnUrl}data/{pointer.Board}/thumb/{radix}/{x.preview}"
-							
+							FileUrl = GetMediaPath(x.post, x.image, false),
+							ThumbnailUrl = GetMediaPath(x.post, x.image, true),
 						}
 					},
 				AdditionalMetadata = new()

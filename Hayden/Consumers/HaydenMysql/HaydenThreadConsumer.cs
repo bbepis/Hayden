@@ -4,7 +4,6 @@ using System.IO;
 using System.IO.Abstractions;
 using System.Linq;
 using System.Threading.Tasks;
-using System.Web;
 using Hayden.Config;
 using Hayden.Consumers.HaydenMysql.DB;
 using Hayden.Contract;
@@ -12,7 +11,6 @@ using Hayden.MediaInfo;
 using Hayden.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
-using Microsoft.EntityFrameworkCore.Migrations;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using Serilog;
@@ -166,6 +164,8 @@ namespace Hayden.Consumers
 								["fileId"] = dbFile.Id,
 								["media"] = media
 							}));
+
+							//Logger.Information("queued image");
 						}
 					}
 
@@ -205,6 +205,39 @@ namespace Hayden.Consumers
 					else
 					{
 						allMatchingFiles = Array.Empty<DBFile>();
+					}
+
+					if (ConsumerConfig.ForceRescanImages)
+					{
+						var existingPosts = threadUpdateInfo.Thread.Posts.ExceptBy(
+							threadUpdateInfo.NewPosts.Select(x => x.PostNumber), x => x.PostNumber);
+
+						var postNumbers = existingPosts.Select(x => x.PostNumber).ToArray();
+
+						var mappings = (await dbContext.FileMappings
+							.AsNoTracking()
+							.Where(x => x.BoardId == boardId && postNumbers.Contains(x.PostId))
+							.Join(dbContext.Files, mapping => mapping.FileId, file => file.Id, (mapping, file) => new { mapping, file })
+							.ToArrayAsync())
+							.ToLookup(x => x.mapping.PostId);
+
+						foreach (var post in existingPosts)
+						{
+							var recordedCount = mappings[post.PostNumber].Count();
+							if (recordedCount != post.Media.Length)
+							{
+								Logger.Warning($"Post media count mismatch; incoming post has {post.Media.Length} files but we've only recorded {recordedCount}. Skipping checking post for missing images");
+								continue;
+							}
+
+							foreach (var mapping in mappings[post.PostNumber])
+							{
+								if (!mapping.file.FileExists || !mapping.file.ThumbnailExists)
+								{
+									QueueDownload(post.Media[mapping.mapping.Index], mapping.file);
+								}
+							}
+						}
 					}
 
 					foreach (var post in threadUpdateInfo.NewPosts)

@@ -38,6 +38,9 @@ namespace Hayden.Api
 			if (!string.IsNullOrWhiteSpace(SourceConfig.CookieString))
 				request.Headers.TryAddWithoutValidation("Cookie", SourceConfig.CookieString);
 
+			if (!string.IsNullOrWhiteSpace(SourceConfig.UserAgent))
+				request.Headers.TryAddWithoutValidation("User-Agent", SourceConfig.UserAgent);
+
 			return request;
 		}
 

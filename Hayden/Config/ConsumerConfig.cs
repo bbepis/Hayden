@@ -53,6 +53,11 @@ namespace Hayden.Config
 		public bool IgnoreSha1Hash { get; set; }
 
 		/// <summary>
+		/// 
+		/// </summary>
+		public bool ForceRescanImages { get; set; }
+
+		/// <summary>
 		/// The consolidation mode to use when dealing with multiple sources of truth.
 		/// </summary>
 		public ConsolidationMode ConsolidationMode { get; set; } = ConsolidationMode.Authoritative;

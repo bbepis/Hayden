@@ -33,6 +33,9 @@ public class LastModifiedBoardTracker : IBoardTracker
 		if (threadOverviewInfos.Any(x => !x.LastModified.HasValue))
 			throw new ArgumentException("Expected all threads to have last modified time info");
 
+		if (threadOverviewInfos.Count == 0)
+			return new List<ThreadPointer>();
+
 		lock (BoardCheckTimes)
 		{
 			if (!BoardCheckTimes.TryGetValue(board, out var existingCheckTime))

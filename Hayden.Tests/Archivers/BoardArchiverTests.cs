@@ -1,9 +1,11 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.IO.Abstractions;
 using System.IO.Abstractions.TestingHelpers;
 using System.Linq;
 using System.Net.Http;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Hayden.Api;
@@ -81,6 +83,38 @@ namespace Hayden.Tests.Archivers
 
                     return Task.FromResult(new ApiResponse<ThreadOverviewInfo[]>(ResponseType.Ok, threadInfos));
                 });
+
+			sourceMock.Setup(x => x.GetThread(It.IsAny<string>(), It.IsAny<ulong>(), It.IsAny<HttpClient>(), It.IsAny<DateTimeOffset?>(), It.IsAny<CancellationToken>()))
+				.Returns((string board, ulong threadId, HttpClient client, DateTimeOffset? since, CancellationToken token) =>
+				{
+					var overviewInfo = mockData[new ThreadPointer(board, threadId)];
+
+					return Task.FromResult(new ApiResponse<Models.Thread>(ResponseType.Ok, new Models.Thread
+					{
+						ThreadId = threadId,
+						Posts = new[]
+						{
+							new Post
+							{
+								PostNumber = 1234,
+								ContentRaw = "test",
+								Media = []
+							},
+							new Post
+							{
+								PostNumber = 1235,
+								ContentRaw = "test",
+								Media = []
+							},
+							new Post
+							{
+								PostNumber = 1236,
+								ContentRaw = "test",
+								Media = []
+							},
+						}
+					}));
+				});
 
 			sourceMock.Setup(x => x.DetermineCapabilitiesAsync(It.IsAny<HttpClient>()))
 				.Returns((HttpClient client) =>
@@ -202,12 +236,64 @@ namespace Hayden.Tests.Archivers
 			CollectionAssert.AreEquivalent(new[] { updatedThreadPointer }, await threadList.ToListAsync());
         }
 
+        [Timeout(10_000)]
+		[Test]
+        public async Task MeasuresMetrics()
+        {
+	        var mockData = CreateMockThreadData();
+            var (consumerMock, sourceMock) = CreateMocks(mockData);
+
+			var fileSystem = new MockFileSystem();
+
+            consumerMock.Setup(x => x.CalculateHash(It.IsAny<Post>()))
+                .Returns((Post post) => (uint)post.PostNumber);
+
+            consumerMock.Setup(x => x.ConsumeThread(It.IsAny<ThreadUpdateInfo>()))
+                .Returns((ThreadUpdateInfo updateInfo) => Task.FromResult<IList<QueuedImageDownload>>(updateInfo.NewPosts
+                    .SelectMany(x => x.Media, (post, media) => new QueuedImageDownload(new Uri(media.FileUrl), new Uri(media.ThumbnailUrl)))
+                    .ToArray()));
+
+            var processedFiles = new List<(QueuedImageDownload download, string tempFilePath, string tempThumbPath)>();
+
+            consumerMock.Setup(x => x.ProcessFileDownload(It.IsAny<QueuedImageDownload>(), It.IsAny<string>(), It.IsAny<string>()))
+                .Callback((QueuedImageDownload imageDownload, string tempFilePath, string tempThumbPath) =>
+                {
+                    Assert.IsTrue(fileSystem.FileExists(tempFilePath));
+                    Assert.IsTrue(fileSystem.FileExists(tempThumbPath));
+
+                    processedFiles.Add((imageDownload, tempFilePath, tempThumbPath));
+                })
+                .Returns(Task.CompletedTask);
+
+            var cts = new CancellationTokenSource();
+
+			var metrics = new ScraperMetrics();
+
+            var boardArchiver = new BoardArchiverTestable(SourceConfig, ConsumerConfig, sourceMock.Object, consumerMock.Object, fileSystem, metrics: metrics);
+			await boardArchiver.Initialize();
+
+			//var threadList = await boardArchiver.ReadBoards(true, cts.Token);
+
+			await boardArchiver.PerformScrape(false,
+				new MaybeAsyncEnumerable<ThreadPointer>(mockData.Keys.ToList()),
+				new(), CancellationToken.None);
+
+			var memoryStream = new MemoryStream();
+			await Prometheus.Metrics.DefaultRegistry.CollectAndExportAsTextAsync(memoryStream);
+			var str = Encoding.UTF8.GetString(memoryStream.ToArray());
+			Console.WriteLine(str);
+
+			Assert.AreEqual(3d, metrics.TotalThreadsScraped.WithLabels("a").Value);
+			Assert.AreEqual(1d, metrics.TotalThreadsScraped.WithLabels("b").Value);
+			Assert.AreEqual(1d, metrics.TotalThreadsScraped.WithLabels("c").Value);
+        }
+
         private class BoardArchiverTestable : BoardArchiver
         {
             public BoardArchiverTestable(SourceConfig sourceConfig, ConsumerConfig consumerConfig,
                 IFrontendApi frontendApi, IThreadConsumer threadConsumer, IFileSystem fileSystem,
-                IStateStore stateStore = null, ProxyProvider proxyProvider = null) 
-                : base(sourceConfig, consumerConfig, frontendApi, threadConsumer, fileSystem, stateStore, proxyProvider)
+                IStateStore stateStore = null, ProxyProvider proxyProvider = null, ScraperMetrics metrics = null) 
+                : base(sourceConfig, consumerConfig, frontendApi, threadConsumer, fileSystem, stateStore, proxyProvider, metrics)
             {
             }
 

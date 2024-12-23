@@ -23,6 +23,8 @@ using Newtonsoft.Json;
 using Newtonsoft.Json.Converters;
 using Newtonsoft.Json.Serialization;
 using Hayden.Consumers.HaydenMysql;
+using Prometheus;
+using System.Text.RegularExpressions;
 
 namespace Hayden;
 
@@ -84,9 +86,20 @@ public class Program
 
 		var upgradeTaskCommand = new Command("upgrade", "Manually upgrades database to latest version");
 		upgradeTaskCommand.AddOption(dbConfigOption);
-		upgradeTaskCommand.SetHandler(RunUpgradeAsync, dbConfigOption);
-
+		upgradeTaskCommand.SetHandler(MaintenanceRunUpgradeAsync, dbConfigOption);
 		maintainCommand.Add(upgradeTaskCommand);
+
+		var purgeOrphanedFiles = new Command("purge-orphaned-files", "Deletes all orphaned files that are not attached to a post");
+		purgeOrphanedFiles.AddOption(dbConfigOption);
+		purgeOrphanedFiles.SetHandler(MaintenancePurgeOrphanedFilesAsync, dbConfigOption);
+		maintainCommand.Add(purgeOrphanedFiles);
+
+		var deleteThreadsTaskCommand = new Command("deletethreads", "Deletes a list of threads and their posts");
+		var threadsArgument = new Argument<string[]>("threads", "A list of threads formatted as '/board/threadid'") { Arity = ArgumentArity.ZeroOrMore };
+		deleteThreadsTaskCommand.AddOption(dbConfigOption);
+		deleteThreadsTaskCommand.AddArgument(threadsArgument);
+		deleteThreadsTaskCommand.SetHandler(MaintenanceRunDeleteThreadsAsync, dbConfigOption, threadsArgument);
+		maintainCommand.Add(deleteThreadsTaskCommand);
 
 
 		return rootCommand;
@@ -115,6 +128,7 @@ public class Program
 				BoardScrapeDelay = 30,
 				SingleScan = false,
 				ReadArchive = true,
+				UserAgent = "",
 				CookieString = ""
 			},
 			Consumer = new Config.ConsumerConfig
@@ -148,12 +162,44 @@ public class Program
 		}));
 	}
 
-	private static async Task RunUpgradeAsync(string configPath)
+	private static async Task MaintenanceRunUpgradeAsync(string configPath)
 	{
 		var config = JsonConvert.DeserializeObject<ConfigFile>(File.ReadAllText(configPath));
 
 		var maintenanceManager = new MaintenanceManager(config.Consumer);
 		await maintenanceManager.PerformUpgrade();
+	}
+
+	private static async Task MaintenancePurgeOrphanedFilesAsync(string configPath)
+	{
+		var config = JsonConvert.DeserializeObject<ConfigFile>(File.ReadAllText(configPath));
+
+		var maintenanceManager = new MaintenanceManager(config.Consumer);
+		await maintenanceManager.PurgeOrphanedFiles();
+	}
+
+	private static async Task MaintenanceRunDeleteThreadsAsync(string configPath, string[] threads)
+	{
+		var config = JsonConvert.DeserializeObject<ConfigFile>(File.ReadAllText(configPath));
+
+		var maintenanceManager = new MaintenanceManager(config.Consumer);
+
+		var threadPointers = new List<ThreadPointer>();
+
+		foreach (var thread in threads)
+		{
+			var match = Regex.Match(thread, @"^/?([a-zA-Z0-9]+)/(\d+)$");
+
+			if (!match.Success)
+			{
+				Log.Error($"Could not parse thread string \"{thread}\"");
+				return;
+			}
+
+			threadPointers.Add(new ThreadPointer(match.Groups[1].Value, ulong.Parse(match.Groups[2].Value)));
+		}
+
+		await maintenanceManager.DeleteThreads(threadPointers.ToArray());
 	}
 
 	private static async Task<int> RunScrape(string configPath, ExportSettings exportSettings)
@@ -271,6 +317,11 @@ public class Program
 		serviceCollection.AddSingleton<IFileSystem, FileSystem>();
 		serviceCollection.AddSingleton<IMediaInspector, FfprobeMediaInspector>();
 
+		serviceCollection.AddSingleton<ScraperMetrics>();
+
+		//using var metricServer = new MetricServer(port: 6600);
+		//metricServer.Start();
+		
 		var serviceProvider = serviceCollection.BuildServiceProvider();
 
 		if (usingConsumer)

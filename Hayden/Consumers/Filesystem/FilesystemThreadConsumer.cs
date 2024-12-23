@@ -118,6 +118,7 @@ namespace Hayden.Consumers
 					if (thumbFilename != null && File.Exists(thumbFilename))
 						queuedDownload.ThumbnailImageUri = null;
 
+					queuedDownload.Properties["board"] = pointer.Board;
 					queuedDownload.Properties["imageFilename"] = imageFilename;
 					queuedDownload.Properties["thumbFilename"] = thumbFilename;
 

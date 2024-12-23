@@ -33,6 +33,7 @@ namespace Hayden
 		protected IStateStore StateStore { get; }
 		protected ProxyProvider ProxyProvider { get; }
 		protected IFileSystem FileSystem { get; }
+		protected ScraperMetrics Metrics { get; set; }
 
 		protected List<ThreadPointer> ThreadIdBlacklist { get; } = new();
 		protected SortedList<ThreadPointer, TrackedThread> TrackedThreads { get; } = new();
@@ -65,7 +66,8 @@ namespace Hayden
 
 
 		public BoardArchiver(SourceConfig sourceConfig, ConsumerConfig consumerConfig, IFrontendApi frontendApi,
-			IThreadConsumer threadConsumer, IFileSystem fileSystem, IStateStore stateStore = null, ProxyProvider proxyProvider = null)
+			IThreadConsumer threadConsumer, IFileSystem fileSystem,
+			IStateStore stateStore = null, ProxyProvider proxyProvider = null, ScraperMetrics metrics = null)
 		{
 			SourceConfig = sourceConfig;
 			ConsumerConfig = consumerConfig;
@@ -75,6 +77,7 @@ namespace Hayden
 			ThreadConsumer = threadConsumer;
 			ProxyProvider = proxyProvider ?? new NullProxyProvider();
 			StateStore = stateStore ?? new NullStateStore();
+			Metrics = metrics;
 
 			ApiCooldownTimespan = TimeSpan.FromSeconds(sourceConfig.ApiDelay ?? 1);
 			BoardUpdateTimespan = TimeSpan.FromSeconds(sourceConfig.BoardScrapeDelay ?? 30);
@@ -89,7 +92,7 @@ namespace Hayden
 			LoopArchive = !sourceConfig.SingleScan;
 		}
 
-		public async Task Initialize()
+		public async virtual Task Initialize()
 		{
 			using (var rentedClient = await ProxyProvider.RentHttpClient())
 				ApiCapabilities = await FrontendApi.DetermineCapabilitiesAsync(rentedClient.Object.Client);
@@ -231,6 +234,12 @@ namespace Hayden
 					if (queuedDownload.FullImageUri != null)
 					{
 						tempFilePath = await DownloadFileTask(queuedDownload.FullImageUri, client.Client);
+
+						if (!queuedDownload.TryGetProperty<string>("board", out string board))
+							board = "unknown";
+
+						Metrics?.TotalImagesScraped.WithLabels(board).Inc(1);
+						Metrics?.TotalImageSizeScraped.WithLabels(board).Inc(new System.IO.FileInfo(tempFilePath).Length);
 					}
 
 					if (queuedDownload.ThumbnailImageUri != null)
@@ -313,7 +322,7 @@ namespace Hayden
 						// Exit if no images are available
 						return false;
 
-					workerStatuses[id] = $"Downloading image {nextImage.FullImageUri.AbsoluteUri}";
+					workerStatuses[id] = $"Downloading image {nextImage.FullImageUri?.AbsoluteUri ?? "<null>"}";
 
 					int completedCount = await DownloadEnqueuedImage(ImageDownloadClient, nextImage);
 
@@ -389,6 +398,9 @@ namespace Hayden
 
 						// Log the status of the scraped thread
 						ReportProgress(nextThread, result, enqueuedImages.Count, newCompletedCount, threadQueue.Count);
+
+						Metrics?.TotalThreadsScraped.WithLabels(board).Inc();
+						Metrics?.TotalPostsScraped.WithLabels(board).Inc(Math.Max(0, result.PostCountChange));
 					});
 
 					return true;
@@ -996,8 +1008,26 @@ namespace Hayden
 		/// </summary>
 		/// <param name="imageUrl">The <see cref="Uri"/> of the image.</param>
 		/// <param name="httpClient">The client to use for the request.</param>
-		private async Task<string> DownloadFileTask(Uri imageUrl, HttpClient httpClient)
+		protected async Task<string> DownloadFileTask(Uri imageUrl, HttpClient httpClient)
 		{
+			var tempFilePath = FileSystem.Path.Combine(ConsumerConfig.DownloadLocation, "hayden", Guid.NewGuid().ToString("N") + ".temp");
+
+			if (FileSystem.File.Exists(imageUrl.LocalPath))
+			{
+				//FileSystem.File.Copy(imageUrl.LocalPath, tempFilePath);
+				var result = Mono.Unix.Native.Syscall.link(imageUrl.LocalPath, tempFilePath);
+
+				if (result != 0)
+				{
+					var errorno = Mono.Unix.Native.Syscall.GetLastError();
+					Log.Error($"Linking {imageUrl.LocalPath} to {tempFilePath}; result {result} / {errorno}");
+
+					return null;
+				}
+				
+				return tempFilePath;
+			}
+
 			Log.Debug("Downloading image {filename}", imageUrl.Segments.Last());
 			
 			using var response = await NetworkPolicies.HttpApiPolicy.ExecuteAsync(() =>
@@ -1010,6 +1040,12 @@ namespace Hayden
 						request.Headers.Add("Cookie", "splash=1");
 					}
 
+					if (!string.IsNullOrWhiteSpace(SourceConfig.CookieString))
+						request.Headers.TryAddWithoutValidation("Cookie", SourceConfig.CookieString);
+
+					if (!string.IsNullOrWhiteSpace(SourceConfig.UserAgent))
+						request.Headers.TryAddWithoutValidation("User-Agent", SourceConfig.UserAgent);
+
 					return httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
 				})
 				.ConfigureAwait(false);
@@ -1018,8 +1054,6 @@ namespace Hayden
 				return null;
 
 			response.EnsureSuccessStatusCode();
-
-			var tempFilePath = FileSystem.Path.Combine(ConsumerConfig.DownloadLocation, "hayden", Guid.NewGuid().ToString("N") + ".temp");
 
 			try
 			{

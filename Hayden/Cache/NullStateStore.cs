@@ -36,5 +36,10 @@ namespace Hayden.Cache
 		{
 			return Task.FromResult((IList<QueuedImageDownload>)new QueuedImageDownload[0]);
 		}
+
+		public Task RemoveDownload(QueuedImageDownload imageDownload)
+		{
+			return Task.CompletedTask;
+		}
 	}
 }
