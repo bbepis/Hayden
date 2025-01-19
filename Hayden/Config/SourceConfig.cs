@@ -34,6 +34,11 @@ namespace Hayden.Config
 		public double? ApiDelay { get; set; }
 
 		/// <summary>
+		/// The minimum amount of time (in seconds) that should be waited in-between image downloads. Defaults to 0.1 seconds if null.
+		/// </summary>
+		public double? ImageDownloadDelay { get; set; }
+
+		/// <summary>
 		/// The minimum amount of time (in seconds) that should be waited in-between board scrapes. Defaults to 30.0 seconds if null.
 		/// </summary>
 		public double? BoardScrapeDelay { get; set; }
@@ -47,6 +52,11 @@ namespace Hayden.Config
 		/// True if only performing a single scan from the source, otherwise false to infinitely scan the source for updates.
 		/// </summary>
 		public bool SingleScan { get; set; }
+
+		/// <summary>
+		/// Set to true to ignore thread last updated times in initial scans of the imageboard.
+		/// </summary>
+		public bool ForceRescan { get; set; }
 
 		/// <summary>
 		/// The User-Agent header to send to websites when scraping.

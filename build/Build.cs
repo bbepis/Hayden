@@ -13,7 +13,7 @@ class Build : NukeBuild
 	//[Parameter("Configuration to build - Default is 'Debug' (local) or 'Release' (server)")]
 	//readonly Configuration Configuration = IsLocalBuild ? Configuration.Debug : Configuration.Release;
 
-	readonly string version = "0.9.0";
+	readonly string version = "1.0.0";
 
 	AbsolutePath BuildOutputDirectory => RootDirectory / "build-output";
 

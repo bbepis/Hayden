@@ -54,6 +54,7 @@ namespace Hayden
 		/// The minimum amount of time that should be waited in-between API calls.
 		/// </summary>
 		public TimeSpan ApiCooldownTimespan { get; set; }
+		public TimeSpan ImageCooldownTimespan { get; set; }
 
 		protected IBoardTracker BoardTracker { get; set; }
 
@@ -80,6 +81,7 @@ namespace Hayden
 			Metrics = metrics;
 
 			ApiCooldownTimespan = TimeSpan.FromSeconds(sourceConfig.ApiDelay ?? 1);
+			ImageCooldownTimespan = TimeSpan.FromSeconds(sourceConfig.ImageDownloadDelay ?? 0.1);
 			BoardUpdateTimespan = TimeSpan.FromSeconds(sourceConfig.BoardScrapeDelay ?? 30);
 
 			foreach (var (board, boardConfig) in sourceConfig.Boards)
@@ -223,7 +225,7 @@ namespace Hayden
 
 				// Ensure that an image download takes at least as long as 100ms
 				// We don't want to download images too fast
-				var waitTask = Task.Delay(100, token);
+				var waitTask = Task.Delay(ImageCooldownTimespan, token);
 
 				string tempFilePath = null, tempThumbPath = null;
 
@@ -634,7 +636,7 @@ namespace Hayden
 						.OrderByDescending(x => x.ThreadId)
 						.FirstOrDefault();
 
-					var lastKnownArchivedThreadId = lastKnownArchivedThread.ThreadId; // this will default to 0 if none was found, which is what we want
+					var lastKnownArchivedThreadId = lastKnownArchivedThread?.ThreadId ?? 0;
 
 					var filteredArchivedIds = archiveRequest.Data
 						.Except(existingArchivedThreads.Select(x => x.ThreadId))
@@ -742,9 +744,12 @@ namespace Hayden
 
 						var threadsToFilter = new List<ThreadOverviewInfo>();
 
+						if (SourceConfig.ForceRescan)
+							Log.Information("Forcing a rescan");
+
 						await foreach (var threadBatch in threadList.Batch(20))
 						{
-							if (firstRun)
+							if (!SourceConfig.ForceRescan && firstRun)
 							{
 								// Check for threads that have already been downloaded by the consumer, noting the last time they were downloaded.
 								var existingThreads = await ThreadConsumer.CheckExistingThreads(
@@ -773,7 +778,8 @@ namespace Hayden
 										TrackedThreads[new ThreadPointer(board, existingThread.ThreadId)] =
 											TrackedThread.StartTrackingThread(ThreadConsumer.CalculateHash, existingThread);
 
-									BoardTracker.LoadExistingThreadInfo(board, existingThread);
+									if (!SourceConfig.ForceRescan)
+										BoardTracker.LoadExistingThreadInfo(board, existingThread);
 								}
 
 								if (skipThread)

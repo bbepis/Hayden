@@ -23,7 +23,6 @@ using Newtonsoft.Json;
 using Newtonsoft.Json.Converters;
 using Newtonsoft.Json.Serialization;
 using Hayden.Consumers.HaydenMysql;
-using Prometheus;
 using System.Text.RegularExpressions;
 
 namespace Hayden;
@@ -126,7 +125,9 @@ public class Program
 				},
 				ApiDelay = 1,
 				BoardScrapeDelay = 30,
+				ImageDownloadDelay = 1,
 				SingleScan = false,
+				ForceRescan = false,
 				ReadArchive = true,
 				UserAgent = "",
 				CookieString = ""
