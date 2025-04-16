@@ -7,6 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Hayden.Api;
 using Hayden.Config;
+using Serilog;
 
 namespace Hayden.Proxy
 {
@@ -125,6 +126,12 @@ namespace Hayden.Proxy
 			}));
 
 			await Task.WhenAll(testTasks);
+
+			if (proxies.Count == 0)
+			{
+				Log.Fatal("No proxies or connections are available.");
+				Environment.Exit(1);
+			}
 		}
 	}
 }
