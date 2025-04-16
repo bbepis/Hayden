@@ -609,16 +609,22 @@ namespace Hayden.Consumers
 					file = existingFile;
 					fileId = existingFile.Id;
 				}
+				else
+				{
+					file.Md5Hash = md5Hash;
+					file.Sha1Hash = sha1Hash;
+					file.Sha256Hash = sha256Hash;
+				}
 
 				if (!file.FileExists)
 				{
 					var imageFilename = CalculateFilename(ConsumerConfig.DownloadLocation, MediaType.FullImage, fileId, media.FileExtension);
 
 					FileSystem.Directory.CreateDirectory(FileSystem.Path.GetDirectoryName(imageFilename));
-					
+
 					if (!FileSystem.File.Exists(imageFilename))
 						FileSystem.File.Move(imageTempFilename, imageFilename);
-					
+
 					await MediaInspector.DetermineMediaInfoAsync(imageFilename, file);
 
 					if (file.Size == 0)
