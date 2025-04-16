@@ -97,7 +97,7 @@ namespace Hayden.Proxy
 
 					try
 					{
-						var result = await proxy.Client.GetAsync("https://a.4cdn.org/po/catalog.json");
+						var result = await proxy.Client.GetAsync("https://icanhazip.com");
 
 						if (!result.IsSuccessStatusCode)
 							success = false;
