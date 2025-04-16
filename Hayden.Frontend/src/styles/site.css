@@ -30,11 +30,30 @@ button:hover {
 button:focus,
 button:focus-visible {
 	outline: 4px auto -webkit-focus-ring-color;
+  border: 1px solid var(--color-highlight);
 }
 
 input:not(:where([type="file"])) {
 	background-color: var(--box-background-color);
 	border: 1px solid #666;
+}
+
+input:focus, select:focus {
+  outline: none !important;
+  border: 1px solid var(--color-highlight);
+}
+
+input:where([type="text"]):disabled {
+  border: 1px solid #0000;
+  background-color: var(--color-box-header);
+  cursor: not-allowed;
+}
+
+select, .textbox-container {
+  background-color: var(--box-background-color);
+  border: 1px solid #666;
+  padding: 0.25rem;
+  border-radius: 0.25rem;
 }
 
 /* Sticky footer styles

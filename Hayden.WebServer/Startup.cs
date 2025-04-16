@@ -148,7 +148,7 @@ namespace Hayden.WebServer
 			{
 				app.Use(async (context, next) =>
 				{
-					context.Response.Headers.Add("Access-Control-Allow-Origin", "http://localhost:5523");
+					context.Response.Headers.Add("Access-Control-Allow-Origin", "http://localhost:5173");
 					context.Response.Headers.Add("Access-Control-Allow-Credentials", "true");
 
 					await next();

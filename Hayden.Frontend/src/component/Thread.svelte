@@ -1,9 +1,6 @@
 <script lang="ts">
 	import { onMount } from "svelte";
 	import type { ThreadModel, PostModel } from "../data/data";
-	import BanUserModal from "./modal/BanUserModal.svelte";
-	import DeletePostModal from "./modal/DeletePostModal.svelte";
-	import ReportModal from "./modal/ReportModal.svelte";
 	import Post from "./Post.svelte";
 
 	interface Props {
@@ -12,22 +9,6 @@
 	}
 
 	let { thread, jumpToHash = false }: Props = $props();
-
-	let banUserModal: BanUserModal = $state();
-	let deletePostModal: DeletePostModal = $state();
-	let reportModal: ReportModal = $state();
-
-	function postAction(
-		e: CustomEvent<{ action: string; boardId: number; postId: number }>,
-	) {
-		if (e.detail.action === "ban-ip") {
-			banUserModal.showModal(e.detail.boardId, e.detail.postId);
-		} else if (e.detail.action === "delete-post") {
-			deletePostModal.showModal(e.detail.boardId, e.detail.postId);
-		} else if (e.detail.action === "report") {
-			reportModal.showModal(e.detail.boardId, e.detail.postId);
-		}
-	}
 
 	function calculateBackquotes(post: PostModel): number[] {
 		return thread.posts
@@ -56,17 +37,13 @@
 				{post}
 				threadId={thread.threadId}
 				board={thread.board}
-				subject={index === 0 ? thread.subject : null}
+				subject={index === 0 ? thread.subject : undefined}
 				backquotes={calculateBackquotes(post)}
-				on:postaction={postAction}
+				onPostAction={postAction}
 			/>
 		</div>
 	{/each}
 </div>
-
-<BanUserModal bind:this={banUserModal} />
-<DeletePostModal bind:this={deletePostModal} />
-<ReportModal bind:this={reportModal} />
 
 <style>
 	.reply-margin {

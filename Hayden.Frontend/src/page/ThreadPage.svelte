@@ -12,7 +12,7 @@
 
     let { board, threadId }: Props = $props();
 
-    let thread: ThreadModel = $state(null);
+    let thread: ThreadModel | undefined = $state(undefined);
     let errorOccurred: Boolean = $state(false);
 
     let isRefreshing: Boolean = $state(false);
@@ -42,7 +42,7 @@
 <div class="container-margin">
     {#if errorOccurred}
         <p>Error</p>
-    {:else if thread === null}
+    {:else if !thread}
         <p>Loading...</p>
     {:else}
         <Thread {thread} jumpToHash={true} />

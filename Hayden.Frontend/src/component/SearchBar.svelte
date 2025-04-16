@@ -90,7 +90,7 @@
 	{#if expanded}
 		<!-- prevents the navbar from sliding when the original textbox is made absolute -->
 		<div>
-			<input type="text" class="search-container textbox-container py-1 pl-3 invisible"/>
+			<input type="text" class="search-container textbox-container py-1 pl-3! invisible"/>
 		</div>
 	{/if}
 	<div class="search-container" class:expanded={expanded} use:clickOutside onclick_outside={() => expanded = false} style="z-index:1000;" >
@@ -109,7 +109,7 @@
 			<div class="mt-2 grid grid-cols-[max\-content_1fr] gap-y-1">
 
 				{@render header("Board")}
-				<select class="w-full h-full rounded textbox-container px-1 focus:border-highlight!" bind:value={searchParams.boards}>
+				<select class="w-full h-full rounded textbox-container px-1 py-1 focus:border-highlight!" bind:value={searchParams.boards}>
 					{#if boardInfo != null}
 						{#each boardInfo as board}
 							<option value={board.shortName}>/{board.shortName}/</option>
@@ -165,11 +165,6 @@
 	:global(.search-container) {
 		margin: -5px 0;
 		min-width: 350px;
-	}
-
-	.textbox-container {
-		background-color: var(--box-background-color);
-        border: 1px solid #666;
 	}
 
 	.expanded.search-container {

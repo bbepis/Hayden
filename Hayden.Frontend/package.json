@@ -20,6 +20,8 @@
   },
   "dependencies": {
     "@lucide/svelte": "^0.488.0",
+    "crypto-es": "^2.1.0",
+    "moment": "^2.30.1",
     "tailwindcss": "^4.1.4"
   }
 }

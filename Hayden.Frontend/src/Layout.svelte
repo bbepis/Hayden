@@ -107,7 +107,7 @@
         <div class="content-center"><a href="https://github.com/bbepis/Hayden" tinro-ignore>Hayden</a> 2.0</div>
         <!-- <a href="/legal" class="legal-link">Legal</a> -->
         <div class="flex-grow-1"></div>
-        <select class="p-1 h-7 theme-select"
+        <select class="p-1 h-7 border-0! theme-select"
             bind:value={selectedTheme}
             onchange={() => $themeStore = selectedTheme}
         >
@@ -140,7 +140,7 @@
     }
 
     .theme-select {
-        max-width: 150px;
+        
 		background-color: var(--box-background-color);
     }
 
@@ -167,6 +167,7 @@
 
     .separator {
         border-left: 1px solid var(--text-color);
+        opacity: 50%;
     }
 
 	.footer {

@@ -2,6 +2,7 @@
 	import Layout from "./Layout.svelte"
 	import { Route, router } from 'tinro';
     import { Utility } from "./data/utility";
+    import { theme } from "./data/stores";
 
 	import IndexPage from "./page/IndexPage.svelte";
 	import ThreadPage from "./page/ThreadPage.svelte";
@@ -10,13 +11,20 @@
 	import BoardPage from "./page/BoardPage.svelte";
 	import LoginPage from "./page/LoginPage.svelte";
 	import RegisterPage from "./page/RegisterPage.svelte";
-    import { theme } from "./data/stores";
+	import ReportModal from "./component/modal/ReportModal.svelte";
+	import DeletePostModal from "./component/modal/DeletePostModal.svelte";
+	import BanUserModal from "./component/modal/BanUserModal.svelte";
+	import { onMount, setContext } from "svelte";
 
 	theme.subscribe(currentTheme => {
 		document.documentElement.className = `theme-${currentTheme}`;
-	})
+	});
+
+	let reportModal: ReportModal | undefined = $state();
 
 	let adminComponent = $state();
+
+	setContext("reportPost", (boardId: number, postId: number) => reportModal?.showModal(boardId, postId));
 </script>
 
 <Layout>
@@ -48,6 +56,10 @@
 	<Route path="/Register"><RegisterPage /></Route>
 	<Route path="/Admin"><AdminPage bind:this={adminComponent} /></Route>
 </Layout>
+
+<!-- <BanUserModal bind:this={banUserModal} />
+<DeletePostModal bind:this={deletePostModal} /> -->
+<ReportModal bind:this={reportModal} />
 
 <style>
 	

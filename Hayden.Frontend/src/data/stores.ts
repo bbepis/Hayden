@@ -25,26 +25,26 @@ export async function initStores() {
         .then(value => moderatorUserStore.set(value.role))
         .catch(reason => moderatorUserStore.set(null));
 
-    //boardInfoStore.set(Api.GetBoardInfoAsync());
+    boardInfoStore.set(Api.GetBoardInfoAsync());
 
-    boardInfoStore.set((async () => ([
-		{
-			id: 0,
-			category: "4chan",
-			longName: "Random",
-			shortName: "b",
-			isNSFW: true,
-			isReadOnly: true
-		},
-		{
-			id: 1,
-			category: "4chan",
-			longName: "Vtubers",
-			shortName: "vt",
-			isNSFW: false,
-			isReadOnly: true
-		},
-	]))());
+    // boardInfoStore.set((async () => ([
+	// 	{
+	// 		id: 0,
+	// 		category: "4chan",
+	// 		longName: "Random",
+	// 		shortName: "b",
+	// 		isNSFW: true,
+	// 		isReadOnly: true
+	// 	},
+	// 	{
+	// 		id: 1,
+	// 		category: "4chan",
+	// 		longName: "Vtubers",
+	// 		shortName: "vt",
+	// 		isNSFW: false,
+	// 		isReadOnly: true
+	// 	},
+	// ]))());
 
 
     // Api.GetBoardInfoAsync()

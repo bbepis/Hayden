@@ -1,8 +1,15 @@
 <script lang="ts">
+	import type { BoardModel } from "../../data/data";
+	import { boardInfoStore } from "../../data/stores";
 	import { Utility } from "../../data/utility";
+	import Modal from "../form/Modal.svelte";
+	import Textbox from "../form/Textbox.svelte";
 
-	let setBoardId: number;
-	let setPostId: number;
+	let boardInfo: BoardModel[] | undefined = $state();
+	(async () => boardInfo = await $boardInfoStore)();
+
+	let setBoardId: number | undefined = $state();
+	let setPostId: number | undefined = $state();
 
 	export const showModal: (boardId: number, postId: number) => void = (
 		boardId: number,
@@ -10,16 +17,13 @@
 	) => {
 		setBoardId = boardId;
 		setPostId = postId;
-		jQuery(banUserModal).modal();
+		modal?.show();
 	};
 
 	interface ICategory {
 		value: number;
 		text: string;
 	}
-
-	let category: ICategory = $state(null);
-	let additionalInfo: string = $state("");
 
 	const reportCategories: ICategory[] = [
 		{ value: 4, text: "CSAM / Child Pornography" },
@@ -29,6 +33,9 @@
 		{ value: 1, text: "Other" },
 	];
 
+	let category: ICategory = $state(reportCategories[4]);
+	let additionalInfo: string = $state("");
+
 	async function sendReport() {
 		await Utility.PostForm("/makereport", {
 			boardId: setBoardId,
@@ -37,80 +44,36 @@
 			additionalInfo: (category.text + "\n" + additionalInfo).trim(),
 		});
 
-		jQuery(banUserModal).modal("hide");
+		modal?.close();
 	}
 
-	let banUserModal: HTMLDivElement = $state();
+	let modal: Modal | undefined = $state();
 </script>
 
-<div
-	bind:this={banUserModal}
-	class="modal fade"
-	tabindex="-1"
-	role="dialog"
-	aria-labelledby="exampleModalLabel"
-	aria-hidden="true"
->
-	<div class="modal-dialog" role="document">
-		<div class="modal-content">
-			<div class="modal-header">
-				<h5 class="modal-title" id="exampleModalLabel">Report post</h5>
-				<button
-					type="button"
-					class="close"
-					data-dismiss="modal"
-					aria-label="Close"
-				>
-					<span aria-hidden="true">&times;</span>
-				</button>
-			</div>
-			<div class="modal-body">
-				<div class="container">
-					<div class="row my-1">
-						<div class="col-4">Category:</div>
-						<div class="col-8">
-							<select class="form-control" bind:value={category}>
-								{#each reportCategories as category}
-									<option value={category}>
-										{category.text}
-									</option>
-								{/each}
-							</select>
-						</div>
-					</div>
-					<div class="row my-1">
-						<div class="col-4">Additional info:</div>
-						<div class="col-8">
-							<textarea
-								class="form-control"
-								bind:value={additionalInfo}
-							></textarea>
-						</div>
-					</div>
-				</div>
-			</div>
-			<div class="modal-footer">
-				<button
-					type="button"
-					class="btn btn-secondary"
-					data-dismiss="modal"
-				>
-					Close
-				</button>
-				<button
-					type="button"
-					class="btn btn-primary"
-					onclick={sendReport}
-				>
-					Send
-				</button>
-			</div>
+{#snippet header(text: string)}
+	<div class="mr-2 px-2 py-1 bg-box-header text-right content-center">{text}</div>
+{/snippet}
+
+<Modal bind:this={modal} title="Report post">
+	<div class="grid grid-cols-[max\-content_1fr] gap-y-1">
+		{@render header("Board")}
+		<Textbox disabled value={boardInfo?.find(x => x.id == setBoardId)?.shortName ?? setBoardId?.toString()} />
+		{@render header("Post number")}
+		<Textbox disabled value={setPostId?.toString()} />
+		{@render header("Category")}
+		<select class="" bind:value={category}>
+			{#each reportCategories as category}
+				<option value={category}>
+					{category.text}
+				</option>
+			{/each}
+		</select>
+		{@render header("Additional info")}
+		<Textbox area bind:value={additionalInfo} />
+
+		<div></div>
+		<div class="ml-auto">
+			<button onclick={sendReport}>Submit</button>
 		</div>
 	</div>
-</div>
-
-<style>
-	.modal {
-		color: #212529;
-	}
-</style>
+</Modal>

@@ -16,7 +16,7 @@
 	--logo-color: #000;
 }
 
-:root.theme-eclipse {
+:root.theme-tomorrow {
 	--text-color: #c5c8c6;
 	--text-font: 10pt arial, helvetica, sans-serif;
 	--page-background-color: #111111;
@@ -30,6 +30,23 @@
 	--link-visited-text-color: #9881be;
 	--link-hover-color: #5f89ac;
 	--subject-color: #b294bb;
+	--quote-color: #b5bd68;
+  }
+
+:root.theme-eclipse {
+	--text-color: #c5c8c6;
+	--text-font: 10pt arial, helvetica, sans-serif;
+	--page-background-color: #111111;
+	--box-header-background-color: #313131;
+	--box-background-color: #222324;
+	--post-background-color: #222222;
+	--post-border-color: #414141;
+	--nav-text-color: #81a2be;
+	--nav-dropdown-bgcolor: #282a2e;
+	--link-text-color: #81a2be;
+	--link-visited-text-color: #9881be;
+	--link-hover-color: #5f89ac;
+	--subject-color: #b689e0;
 	--quote-color: #b5bd68;
 	--highlight-color: #C92626;
 	--logo-color: #D8D8D8;

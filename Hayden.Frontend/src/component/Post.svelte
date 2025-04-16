@@ -19,8 +19,8 @@
 	let {
 		post,
 		board,
-		subject = null,
-		backquotes = null
+		subject = undefined,
+		backquotes = undefined,
 	}: Props = $props();
 
 	function getDateTime() {
