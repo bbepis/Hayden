@@ -88,6 +88,11 @@ public class Program
 		upgradeTaskCommand.SetHandler(MaintenanceRunUpgradeAsync, dbConfigOption);
 		maintainCommand.Add(upgradeTaskCommand);
 
+		var scrubFilesCommand = new Command("scrub-files", "Rechecks all files, fills in data gaps and coalesces any duplicates");
+		scrubFilesCommand.AddOption(dbConfigOption);
+		scrubFilesCommand.SetHandler(MaintenanceScrubFilesAsync, dbConfigOption);
+		maintainCommand.Add(scrubFilesCommand);
+
 		var purgeOrphanedFiles = new Command("purge-orphaned-files", "Deletes all orphaned files that are not attached to a post");
 		purgeOrphanedFiles.AddOption(dbConfigOption);
 		purgeOrphanedFiles.SetHandler(MaintenancePurgeOrphanedFilesAsync, dbConfigOption);
@@ -169,6 +174,14 @@ public class Program
 
 		var maintenanceManager = new MaintenanceManager(config.Consumer);
 		await maintenanceManager.PerformUpgrade();
+	}
+
+	private static async Task MaintenanceScrubFilesAsync(string configPath)
+	{
+		var config = JsonConvert.DeserializeObject<ConfigFile>(File.ReadAllText(configPath));
+
+		var maintenanceManager = new MaintenanceManager(config.Consumer);
+		await maintenanceManager.ScrubFiles();
 	}
 
 	private static async Task MaintenancePurgeOrphanedFilesAsync(string configPath)

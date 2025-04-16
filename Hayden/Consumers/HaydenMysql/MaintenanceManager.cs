@@ -108,6 +108,179 @@ internal class MaintenanceManager
 		Log.Information($"Deleted {deletedMb:N1} MB");
 	}
 
+	public async Task ScrubFiles()
+	{
+		using var context = new HaydenDbContext(DbContextOptions);
+
+		Log.Information($"Counting files...");
+
+		var fileCount = await context.Files
+			.AsNoTracking()
+			.CountAsync();
+		
+		Log.Information($"Found {fileCount:N0} files");
+
+		long lastId = -1;
+		long counter = 0;
+
+		while (true)
+		{
+			context.ChangeTracker.Clear();
+
+			var nextBatch = await context.Files
+				.AsNoTracking()
+				.Where(x => x.Id > lastId)
+				.OrderBy(x => x.Id)
+				.Take(1000)
+				.ToArrayAsync();
+
+			if (nextBatch.Length == 0)
+				break;
+
+			foreach (var file in nextBatch)
+			{
+				counter++;
+
+				var fullFilePath = HaydenThreadConsumer.CalculateFilename(
+					ConsumerConfig.DownloadLocation, Common.MediaType.FullImage, file.Id, file.Extension);
+
+				var thumbFilePath = HaydenThreadConsumer.CalculateFilename(
+					ConsumerConfig.DownloadLocation, Common.MediaType.Thumbnail, file.Id, file.ThumbnailExtension);
+
+				var fileExists = File.Exists(fullFilePath);
+				if (fileExists != file.FileExists)
+				{
+					Log.Warning("File {fileId} was {actual} when it was recorded as {expected}", file.Id,
+						fileExists ? "found" : "missing",
+						file.FileExists ? "found" : "missing");
+
+					file.FileExists = fileExists;
+					context.Update(file);
+				}
+
+				var thumbExists = File.Exists(thumbFilePath);
+				if (thumbExists != file.ThumbnailExists)
+				{
+					Log.Warning("File {fileId} thumbnail was {actual} when it was recorded as {expected}", file.Id,
+						thumbExists ? "found" : "missing",
+						file.ThumbnailExists ? "found" : "missing");
+
+					file.ThumbnailExists = thumbExists;
+					context.Update(file);
+				}
+
+				if (fileExists)
+				{
+					if (file.Md5Hash == null || file.Sha256Hash == null || file.Sha1Hash == null)
+					{
+						using var fileStream = new FileStream(fullFilePath, FileMode.Open);
+						var (md5, sha1, sha256) = Utility.CalculateHashes(fileStream);
+
+						if (file.Md5Hash == null)
+							file.Md5Hash = md5;
+						if (file.Sha1Hash == null)
+							file.Sha1Hash = sha1;
+						if (file.Sha256Hash == null)
+							file.Sha256Hash = sha256;
+
+						context.Update(file);
+					}
+
+					//if (file.PerceptualHash == null)
+					//{
+
+					//}
+				}
+
+				if (file.Sha256Hash != null)
+				{
+					var existingFile = await context.Files
+						.Where(x => x.Sha256Hash == file.Sha256Hash && x.Id < file.Id)
+						.OrderBy(x => x.Id)
+						.FirstOrDefaultAsync();
+
+					if (existingFile != null)
+					{
+						var localFile = context.Files.Local.FindEntry(existingFile.Id);
+						if (localFile != null)
+							existingFile = localFile.Entity;
+					}
+					else
+					{
+						existingFile = nextBatch.FirstOrDefault(x =>
+							x.Id < file.Id
+							&& x.Sha256Hash != null
+							&& Utility.ByteArrayEquals(x.Sha256Hash, file.Sha256Hash));
+					}
+
+					if (existingFile != null)
+					{
+						Log.Warning("Found duplicate file at ID {fileId}, merging into file {existingFileId}", file.Id, existingFile.Id);
+
+						if (file.FileBanned)
+						{
+							existingFile.FileBanned = true;
+							context.Update(existingFile);
+						}
+
+						var existingFullFilePath = HaydenThreadConsumer.CalculateFilename(
+							ConsumerConfig.DownloadLocation, Common.MediaType.FullImage, existingFile.Id, existingFile.Extension);
+						var existingThumbFilePath = HaydenThreadConsumer.CalculateFilename(
+							ConsumerConfig.DownloadLocation, Common.MediaType.Thumbnail, existingFile.Id, existingFile.ThumbnailExtension);
+
+						if (!existingFile.FileExists && fileExists && !existingFile.FileBanned)
+						{
+							File.Move(fullFilePath, existingFullFilePath);
+							existingFile.FileExists = true;
+
+							existingFile.Sha256Hash = file.Sha256Hash;
+							existingFile.Sha1Hash = file.Sha1Hash;
+							existingFile.Md5Hash = file.Md5Hash;
+
+							context.Update(existingFile);
+						}
+
+						if (!existingFile.ThumbnailExists && thumbExists && !existingFile.FileBanned)
+						{
+							File.Move(thumbFilePath, existingThumbFilePath);
+							existingFile.ThumbnailExists = true;
+							context.Update(existingFile);
+						}
+
+						await context.SaveChangesAsync();
+
+						await context.FileMappings
+							.Where(x => x.FileId == file.Id)
+							.ExecuteUpdateAsync(x => x.SetProperty(y => y.FileId, existingFile.Id));
+
+						if (existingFile.FileBanned)
+						{
+							if (existingFile.FileExists)
+								File.Delete(existingFullFilePath);
+							if (existingFile.ThumbnailExists)
+								File.Delete(existingThumbFilePath);
+						}
+
+						if (File.Exists(fullFilePath))
+							File.Delete(fullFilePath);
+						if (File.Exists(thumbFilePath))
+							File.Delete(thumbFilePath);
+
+						context.Remove(file);
+					}
+				}
+			}
+
+			await context.SaveChangesAsync();
+
+			lastId = nextBatch.Max(x => x.Id);
+
+			Log.Information("Processed {processed} / {total}", counter, fileCount);
+		}
+
+		Log.Information("Completed processing {processed} / {total}", counter, fileCount);
+	}
+
 	public async Task PerformUpgrade()
 	{
 		var upgrader = new HaydenDbUpgrader();
