@@ -10,7 +10,7 @@
         (<any>jQuery(deletePostModal)).modal();
     };
 
-    let banImages: boolean = false;
+    let banImages: boolean = $state(false);
 
     async function deletePost() {
         await Utility.PostForm("/moderator/deletepost", {
@@ -22,7 +22,7 @@
         (<any>jQuery(deletePostModal)).modal("hide");
     }
 
-    let deletePostModal: HTMLDivElement;
+    let deletePostModal: HTMLDivElement = $state();
 </script>
 
 <div
@@ -66,7 +66,7 @@
                     class="btn btn-secondary"
                     data-dismiss="modal">Close</button
                 >
-                <button type="button" class="btn btn-primary" on:click={deletePost}
+                <button type="button" class="btn btn-primary" onclick={deletePost}
                     >Delete post</button
                 >
             </div>

@@ -3,9 +3,9 @@
     import { Api } from "../data/api";
 
 
-    let formUsername: string = null;
-    let formPassword: string = null;
-    let error: string | null = null;
+    let formUsername: string = $state(null);
+    let formPassword: string = $state(null);
+    let error: string | null = $state(null);
 
     async function login() {
         if (formUsername == null || formPassword == null)
@@ -44,6 +44,6 @@
         <div class="col-9"><input class="w-100" type="password" bind:value={formPassword} /></div>
     </div>
     <div class="row input-row">
-        <button on:click={login} class="mx-3 form-control btn btn-outline-secondary">Login</button>
+        <button onclick={login} class="mx-3 form-control btn btn-outline-secondary">Login</button>
     </div>
 </div>

@@ -18,8 +18,8 @@
 		text: string;
 	}
 
-	let category: ICategory = null;
-	let additionalInfo: string = "";
+	let category: ICategory = $state(null);
+	let additionalInfo: string = $state("");
 
 	const reportCategories: ICategory[] = [
 		{ value: 4, text: "CSAM / Child Pornography" },
@@ -40,7 +40,7 @@
 		jQuery(banUserModal).modal("hide");
 	}
 
-	let banUserModal: HTMLDivElement;
+	let banUserModal: HTMLDivElement = $state();
 </script>
 
 <div
@@ -84,7 +84,7 @@
 							<textarea
 								class="form-control"
 								bind:value={additionalInfo}
-							/>
+							></textarea>
 						</div>
 					</div>
 				</div>
@@ -100,7 +100,7 @@
 				<button
 					type="button"
 					class="btn btn-primary"
-					on:click={sendReport}
+					onclick={sendReport}
 				>
 					Send
 				</button>

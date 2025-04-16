@@ -4,31 +4,130 @@
     import { moderatorUserStore, boardInfoStore, theme as themeStore } from "./data/stores"
     import { Api } from "./data/api";
     import SearchBar from "./component/SearchBar.svelte";
+    interface Props {
+        children?: import('svelte').Snippet;
+    }
+
+    let { children }: Props = $props();
 
     const themes = [
         { key: "yotsuba", text: "Yotsuba" },
-        { key: "tomorrow", text: "Tomorrow" },
+        { key: "eclipse", text: "Eclipse" },
         { key: "niniba", text: "Niniba" },
     ]
 
-    let selectedTheme: string = $themeStore;
+    let selectedTheme: string = $state($themeStore);
 
-    let loadedBoardInfo: BoardModel[] | null = null;
+    let loadedBoardInfo: BoardModel[] | null = $state(null);
 
     (async function() {
         loadedBoardInfo = await $boardInfoStore;
     })();
 </script>
 
+<header>
+    <nav class="bg-post-bg mb-3 py-2 px-8 text">
+        <div class="flex gap-x-3">
+            <a class="font-bold text! content-center" href="/">{Utility.infoObject.siteName}</a>
+			<div class="separator"></div>
+			<div class="flex content-center gap-x-1.5">
+				{#if $boardInfoStore}
+					{#await $boardInfoStore}
+						<div class="content-center">Loading...</div>
+					{:then boardInfo}
+						{#if Utility.infoObject.compactBoardMode}
+							{@const groupedBoards = Utility.groupByArray(boardInfo, b => b.category)}
+
+							{#each groupedBoards as groupedBoard}
+								<div class="nav-item dropdown">
+									<a class="nav-link dropdown-toggle" href="#" role="button" data-toggle="dropdown" aria-expanded="false">
+										{groupedBoard.key}
+									</a>
+									<div class="dropdown-menu">
+
+									{#each groupedBoard.values as board, index}
+										<div class="nav-item"><a class="nav-link board-nav-link" href="/board/{board.shortName}" title={board.longName}>/{board.shortName}/</a></div>
+									{/each}
+
+								</div></div>
+							{/each}
+
+						{:else}
+
+							{#each boardInfo as board, index}
+								<a class="content-center not-hover:text!" href="/board/{board.shortName}" title={board.longName}>/{board.shortName}/</a>
+							{/each}
+
+						{/if}
+					{:catch}
+						<div class="content-center">Unable to load boards</div>
+					{/await}
+				{/if}
+			</div>
+			<!-- <li class="nav-item dropdown">
+				<a class="nav-link dropdown-toggle" href="#" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+					Boards
+				</a>
+				<div class="dropdown-menu" aria-labelledby="navbarDropdown">
+
+				</div>
+			</li> -->
+			{#if $moderatorUserStore}
+				<div class="separator"></div>
+				<div class="nav-item">
+					<a class="nav-link" href="/Admin">Admin</a>
+				</div>
+				<div class="nav-item">
+					<button type="button" class="btn btn-link nav-link nav-button" onclick={() => { $moderatorUserStore = null; Api.UserLogoutAsync(); }}>Logout</button>
+					<!-- <a class="nav-link" href="#" on:click={() => { $moderatorUserStore = null; Api.UserLogoutAsync(); } }>Logout</a> -->
+				</div>
+			{/if}
+			<!-- <li class="nav-item">
+				<a class="nav-link" href="/Search">Search</a>
+			</li> -->
+			{#if Utility.infoObject.searchEnabled}
+				<div class="ml-auto">
+					<SearchBar boardInfo={loadedBoardInfo} />
+				</div>
+			{/if}
+        </div>
+    </nav>
+</header>
+<div class="mx-4">
+    <main class="pb-3">
+        {#if Utility.infoObject.bannerFilename}
+            <img src={`/${Utility.infoObject.bannerFilename}`} class="logo mb-4" alt="banner" />
+        {/if}
+        {@render children?.()}
+    </main>
+</div>
+
+<footer class="bg-post-bg py-2 px-8 text footer">
+    <div class="flex">
+        <div class="content-center"><a href="https://github.com/bbepis/Hayden" tinro-ignore>Hayden</a> 2.0</div>
+        <!-- <a href="/legal" class="legal-link">Legal</a> -->
+        <div class="flex-grow-1"></div>
+        <select class="p-1 h-7 theme-select"
+            bind:value={selectedTheme}
+            onchange={() => $themeStore = selectedTheme}
+        >
+            {#each themes as theme}
+                <option selected={selectedTheme === theme.key} value={theme.key}>{theme.text}</option>
+            {/each}
+        </select>
+    </div>
+</footer>
+
 <style>
+	nav a,
+	nav a:visited {
+		color: var(--nav-text-color);
+		text-decoration: none;
+	}
+
     .nav-link {
         padding: 0;
         padding-right: 0 !important;
-    }
-
-    .nav-text {
-        padding-left: 0.5rem;
-        color: var(--text-color);
     }
 
     .board-nav-link {
@@ -40,12 +139,9 @@
         text-decoration: underline;
     }
 
-    .brand-link {
-        font-weight: bold;
-    }
-
     .theme-select {
         max-width: 150px;
+		background-color: var(--box-background-color);
     }
 
     .logo {
@@ -55,10 +151,6 @@
         margin: auto;
         display: block;
         float: none;
-    }
-
-    .legal-link {
-        margin-left: 15px;
     }
 
     .nav-button {
@@ -75,116 +167,14 @@
 
     .separator {
         border-left: 1px solid var(--text-color);
-        margin-left: .5rem;
     }
 
-    .max-container {
-        max-width: 100%;
-    }
+	.footer {
+		position: absolute;
+		bottom: 0;
+		width: 100%;
+		white-space: nowrap;
+		line-height: 20px;
+		/* Vertically center the text there */
+	}
 </style>
-
-<header>
-    <nav class="navbar navbar-expand-sm navbar-toggleable-sm navbar-light box-shadow mb-3">
-        <div class="container max-container">
-            <a class="board-nav-link brand-link" href="/">{Utility.infoObject.siteName}</a>
-            <button class="navbar-toggler" type="button" data-toggle="collapse" data-target=".navbar-collapse" aria-controls="navbarSupportedContent"
-                    aria-expanded="false" aria-label="Toggle navigation">
-                <span class="navbar-toggler-icon"></span>
-            </button>
-            <div class="navbar-collapse collapse d-sm-inline-flex flex-sm-row-reverse">
-                <ul class="navbar-nav flex-grow-1">
-                    <!-- <li class="nav-item">
-                        <a class="nav-link" href="/">Home</a>
-                    </li> -->
-                    <li class="separator"></li>
-                    {#await $boardInfoStore}
-                        <li class="nav-item nav-text">Loading...</li>
-                    {:then boardInfo}
-						{#if Utility.infoObject.compactBoardMode}
-							{@const groupedBoards = Utility.groupByArray(boardInfo, b => b.category)}
-
-							{#each groupedBoards as groupedBoard}
-								<li class="nav-item dropdown">
-									<a class="nav-link dropdown-toggle" href="#" role="button" data-toggle="dropdown" aria-expanded="false">
-										{groupedBoard.key}
-									</a>
-									<div class="dropdown-menu">
-
-									{#each groupedBoard.values as board, index}
-										<li class="nav-item"><a class="nav-link board-nav-link" href="/board/{board.shortName}" title={board.longName}>/{board.shortName}/</a></li>
-										<!-- {#if index < boardInfo.length - 2}
-											<span class="nav-text">-</span>
-										{/if} -->
-									{/each}
-
-								</div></li>
-							{/each}
-
-						{:else}
-
-							{#each boardInfo as board, index}
-								<li class="nav-item"><a class="nav-link board-nav-link" href="/board/{board.shortName}" title={board.longName}>/{board.shortName}/</a></li>
-								<!-- {#if index < boardInfo.length - 2}
-									<span class="nav-text">-</span>
-								{/if} -->
-							{/each}
-
-						{/if}
-                    {:catch}
-                        <li class="nav-item nav-text">Unable to load boards</li>
-                    {/await}
-                    <!-- <li class="nav-item dropdown">
-                        <a class="nav-link dropdown-toggle" href="#" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
-                            Boards
-                        </a>
-                        <div class="dropdown-menu" aria-labelledby="navbarDropdown">
-
-                        </div>
-                    </li> -->
-                    {#if $moderatorUserStore}
-                        <li class="separator"></li>
-                        <li class="nav-item">
-                            <a class="nav-link" href="/Admin">Admin</a>
-                        </li>
-                        <li class="nav-item">
-                            <button type="button" class="btn btn-link nav-link nav-button" on:click={() => { $moderatorUserStore = null; Api.UserLogoutAsync(); } }>Logout</button>
-                            <!-- <a class="nav-link" href="#" on:click={() => { $moderatorUserStore = null; Api.UserLogoutAsync(); } }>Logout</a> -->
-                        </li>
-                    {/if}
-                    <!-- <li class="nav-item">
-                        <a class="nav-link" href="/Search">Search</a>
-                    </li> -->
-                    {#if Utility.infoObject.searchEnabled}
-                        <li class="ml-auto">
-                            <SearchBar boardInfo={loadedBoardInfo} />
-                        </li>
-                    {/if}
-                </ul>
-            </div>
-        </div>
-    </nav>
-</header>
-<div class="mx-4">
-    <main class="pb-3">
-        {#if Utility.infoObject.bannerFilename}
-            <img src={`/${Utility.infoObject.bannerFilename}`} class="logo mb-4" alt="banner" />
-        {/if}
-        <slot></slot>
-    </main>
-</div>
-
-<footer class="border-top footer text-muted">
-    <div class="container d-flex align-items-center">
-        <span><a href="https://github.com/bbepis/Hayden" tinro-ignore>Hayden</a> 1.0</span>
-        <!-- <a href="/legal" class="legal-link">Legal</a> -->
-        <div class="flex-grow-1"></div>
-        <select class="form-control theme-select" style="padding: 0.25rem; height: calc(1.5rem + 0.25rem)"
-            bind:value={selectedTheme}
-            on:change={() => $themeStore = selectedTheme}
-        >
-            {#each themes as theme}
-                <option selected={selectedTheme === theme.key} value={theme.key}>{theme.text}</option>
-            {/each}
-        </select>
-    </div>
-</footer>

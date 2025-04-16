@@ -6,12 +6,16 @@
 	import ReportModal from "./modal/ReportModal.svelte";
 	import Post from "./Post.svelte";
 
-	export let thread: ThreadModel;
-	export let jumpToHash: boolean = false;
+	interface Props {
+		thread: ThreadModel;
+		jumpToHash?: boolean;
+	}
 
-	let banUserModal: BanUserModal;
-	let deletePostModal: DeletePostModal;
-	let reportModal: ReportModal;
+	let { thread, jumpToHash = false }: Props = $props();
+
+	let banUserModal: BanUserModal = $state();
+	let deletePostModal: DeletePostModal = $state();
+	let reportModal: ReportModal = $state();
 
 	function postAction(
 		e: CustomEvent<{ action: string; boardId: number; postId: number }>,

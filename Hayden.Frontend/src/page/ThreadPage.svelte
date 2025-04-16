@@ -5,13 +5,17 @@
     import PostUploader from "../component/PostUploader.svelte";
 
 
-    export let board: string;
-    export let threadId: number;
+    interface Props {
+        board: string;
+        threadId: number;
+    }
 
-    let thread: ThreadModel = null;
-    let errorOccurred: Boolean = false;
+    let { board, threadId }: Props = $props();
 
-    let isRefreshing: Boolean = false;
+    let thread: ThreadModel = $state(null);
+    let errorOccurred: Boolean = $state(false);
+
+    let isRefreshing: Boolean = $state(false);
     let hasLoadedSuccessfullyOnce: Boolean = false;
 
     async function FetchThread() {
@@ -44,7 +48,7 @@
         <Thread {thread} jumpToHash={true} />
 
         <div class="my-2">
-            <button class="reset-btn" on:click={Refresh}>Refresh</button>
+            <button class="reset-btn" onclick={Refresh}>Refresh</button>
 
             {#if isRefreshing}
                 <div class="ml-2 spinner-border spinner-border-sm" role="status">

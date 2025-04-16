@@ -13,10 +13,10 @@
         (<any>jQuery(banUserModal)).modal();
     };
 
-    let reasonPrivate: string = "";
-    let reasonPublic: string = "";
-    let hoursBan: number = 1;
-    let permanent: boolean = false;
+    let reasonPrivate: string = $state("");
+    let reasonPublic: string = $state("");
+    let hoursBan: number = $state(1);
+    let permanent: boolean = $state(false);
 
     async function sendBan() {
         await Utility.PostForm("/moderator/banuser", {
@@ -31,7 +31,7 @@
         (<any>jQuery(banUserModal)).modal("hide");
     }
 
-    let banUserModal: HTMLDivElement;
+    let banUserModal: HTMLDivElement = $state();
 </script>
 
 <div
@@ -93,7 +93,7 @@
                     class="btn btn-secondary"
                     data-dismiss="modal">Close</button
                 >
-                <button type="button" class="btn btn-primary" on:click={sendBan}
+                <button type="button" class="btn btn-primary" onclick={sendBan}
                     >Ban</button
                 >
             </div>

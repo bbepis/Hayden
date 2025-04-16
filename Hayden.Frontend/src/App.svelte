@@ -16,25 +16,33 @@
 		document.documentElement.className = `theme-${currentTheme}`;
 	})
 
-	let adminComponent;
+	let adminComponent = $state();
 </script>
 
 <Layout>
 	<Route path="/"><IndexPage /></Route>
-	<Route path="/:board/thread/:threadid" let:meta><ThreadPage board={meta.params.board} threadId={Number(meta.params.threadid)} /></Route>
-	<Route path="/board/:board/*" firstmatch let:meta={boardMeta}>
-		<Route path="/page/:page" let:meta>
-			{#key Utility.TryCastInt(meta.params.page) ?? 1}
-				<BoardPage board={boardMeta.params.board} initialCurrentPage={Utility.TryCastInt(meta.params.page) ?? 1} />
-			{/key}
+	<Route path="/:board/thread/:threadid" >{#snippet children({ meta })}
+				<ThreadPage board={meta.params.board} threadId={Number(meta.params.threadid)} />			{/snippet}
 		</Route>
-		<Route path="/page/:page/*" let:meta>
-			<BoardPage board={boardMeta.params.board} initialCurrentPage={Utility.TryCastInt(meta.params.page) ?? 1} />
+	<Route path="/board/:board/*" firstmatch >
+		{#snippet children({ meta: boardMeta })}
+				<Route path="/page/:page" >
+				{#snippet children({ meta })}
+						{#key Utility.TryCastInt(meta.params.page) ?? 1}
+						<BoardPage board={boardMeta.params.board} initialCurrentPage={Utility.TryCastInt(meta.params.page) ?? 1} />
+					{/key}
+									{/snippet}
+				</Route>
+			<Route path="/page/:page/*" >
+				{#snippet children({ meta })}
+						<BoardPage board={boardMeta.params.board} initialCurrentPage={Utility.TryCastInt(meta.params.page) ?? 1} />
+									{/snippet}
+				</Route>
+			<Route fallback>
+				<BoardPage board={boardMeta.params.board} />
+			</Route>
+					{/snippet}
 		</Route>
-		<Route fallback>
-			<BoardPage board={boardMeta.params.board} />
-		</Route>
-	</Route>
 	<Route path="/search"><SearchPage /></Route>
 	<Route path="/Login"><LoginPage /></Route>
 	<Route path="/Register"><RegisterPage /></Route>

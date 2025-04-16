@@ -2,10 +2,10 @@
 	import { moderatorUserStore } from "../data/stores";
 	import { Api } from "../data/api";
 
-	let formUsername: string = null;
-	let formPassword: string = null;
-	let formRegisterCode: string = null;
-	let error: string | null = null;
+	let formUsername: string = $state(null);
+	let formPassword: string = $state(null);
+	let formRegisterCode: string = $state(null);
+	let error: string | null = $state(null);
 
 	async function register() {
 		if (
@@ -60,7 +60,7 @@
 	</div>
 	<div class="row input-row">
 		<button
-			on:click={register}
+			onclick={register}
 			class="mx-3 form-control btn btn-outline-secondary">Register</button
 		>
 	</div>

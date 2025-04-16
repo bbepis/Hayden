@@ -4,9 +4,13 @@
 
 	const dispatch = createEventDispatcher();
 
-	export let boardId: number;
-	export let postId: number;
-	export let moderator: boolean;
+	interface Props {
+		boardId: number;
+		postId: number;
+		moderator: boolean;
+	}
+
+	let { boardId, postId, moderator }: Props = $props();
 
 	function showDeletePostModal() {
 		dispatch("postaction", {
@@ -34,13 +38,13 @@
 </script>
 
 <div class="menu">
-	<div class="menu-item" on:click={showReportModal}>Report</div>
+	<div class="menu-item" onclick={showReportModal}>Report</div>
 	{#if moderator}
-		<div class="menu-item" on:click={showDeletePostModal}>Delete post</div>
+		<div class="menu-item" onclick={showDeletePostModal}>Delete post</div>
 		<!-- <div class="menu-item">
         Delete image
     </div> -->
-		<div class="menu-item" on:click={showBanIpModal}>Ban poster IP</div>
+		<div class="menu-item" onclick={showBanIpModal}>Ban poster IP</div>
 	{/if}
 </div>
 

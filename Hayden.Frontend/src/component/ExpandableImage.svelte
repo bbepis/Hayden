@@ -1,14 +1,23 @@
 <script lang="ts">
-    export let thumbUrl: string;
-    export let fullImageUrl: string;
-    export let altText: string;
-    export let expanded: boolean = false;
 
-    let img : HTMLImageElement;
+    let img : HTMLImageElement = $state();
 
-    let loading: boolean = false;
+    let loading: boolean = $state(false);
 
-    export let onClick: () => void = () => {
+    interface Props {
+        thumbUrl: string;
+        fullImageUrl: string;
+        altText: string;
+        expanded?: boolean;
+        onClick?: () => void;
+    }
+
+    let {
+        thumbUrl,
+        fullImageUrl,
+        altText,
+        expanded = $bindable(false),
+        onClick = () => {
         const newValue = !expanded;
         
         if (!newValue && !isElementInViewport(img)) {
@@ -19,7 +28,8 @@
         }
 
         expanded = newValue;
-    };
+    }
+    }: Props = $props();
 
     function isElementInViewport (el: Element) {
         const rect = el.getBoundingClientRect();
@@ -33,10 +43,10 @@
     }
 </script>
 
-<a href={fullImageUrl} on:click={onClickInternal} tinro-ignore>
+<a href={fullImageUrl} onclick={onClickInternal} tinro-ignore>
     <img
         bind:this={img}
-        on:load={() => loading = false}
+        onload={() => loading = false}
         src={expanded ? fullImageUrl : thumbUrl}
         alt={altText}
         class:loading={loading}

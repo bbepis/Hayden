@@ -15,7 +15,7 @@
 
     const route = meta();
 
-	let dataPromise: Promise<BoardPageModel> | false = false;
+	let dataPromise: Promise<BoardPageModel> | false = $state(false);
 
 	function search(query: Record<string, string>) {
 		dataPromise = Utility.FetchData("/search", query);

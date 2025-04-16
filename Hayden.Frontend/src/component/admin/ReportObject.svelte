@@ -3,7 +3,11 @@
 	import type { ReportModel, ReportedPostModel } from "../../data/data";
 	import Post from "../Post.svelte";
 
-	export let reportedPost : ReportedPostModel;
+	interface Props {
+		reportedPost: ReportedPostModel;
+	}
+
+	let { reportedPost = $bindable() }: Props = $props();
 
 	function getSeverityClass(severity: number) {
 		if (severity == 4) // immediate
@@ -32,7 +36,7 @@
 		<div class="report-block {getSeverityClass(report.severity)}" class:resolved={report.resolved}>
 			<span class="ip-address">{report.ipAddress}</span><br/>
 			{report.reason}<br/>
-			<button on:click={() => { markResolved(report) }}>Mark resolved</button>
+			<button onclick={() => { markResolved(report) }}>Mark resolved</button>
 		</div>
 	{/each}
 

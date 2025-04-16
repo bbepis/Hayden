@@ -22,17 +22,21 @@
         }
     }
 
-    export let currentPage : number;
-    export let maxPage : number;
+    interface Props {
+        currentPage: number;
+        maxPage: number;
+    }
+
+    let { currentPage, maxPage }: Props = $props();
 </script>
 
-<!-- svelte-ignore a11y-invalid-attribute -->
+<!-- svelte-ignore a11y_invalid_attribute -->
 <div class="justify-content-center">
     <ul class="pagination pagination-lg justify-content-center">
-        <li class="page-item" class:disabled={currentPage <= 1}><a tinro-ignore class="page-link" on:click={goToPageHandler(currentPage - 1)} href="#">Previous</a></li>
+        <li class="page-item" class:disabled={currentPage <= 1}><a tinro-ignore class="page-link" onclick={goToPageHandler(currentPage - 1)} href="#">Previous</a></li>
 
         {#if currentPage > 2}
-            <li class="page-item"><a tinro-ignore class="page-link" on:click={goToPageHandler(1)} href="#">1</a></li>
+            <li class="page-item"><a tinro-ignore class="page-link" onclick={goToPageHandler(1)} href="#">1</a></li>
         {/if}
 
         {#if currentPage > 3}
@@ -46,7 +50,7 @@
 
         {#each Utility.RangeTo(currentPage - 1, currentPage + 2) as i}
             {#if !(i < 1 || i > maxPage)}
-            <li class="page-item" class:active={i === currentPage}><a tinro-ignore class="page-link" on:click={goToPageHandler(i)} href="#">{i}</a></li>
+            <li class="page-item" class:active={i === currentPage}><a tinro-ignore class="page-link" onclick={goToPageHandler(i)} href="#">{i}</a></li>
             {/if}
         {/each}
 
@@ -60,9 +64,9 @@
         {/if}
 
         {#if currentPage < maxPage - 1}
-            <li class="page-item"><a class="page-link" on:click={goToPageHandler(maxPage)} href="#">{maxPage}</a></li>
+            <li class="page-item"><a class="page-link" onclick={goToPageHandler(maxPage)} href="#">{maxPage}</a></li>
             {/if}
 
-        <li class="page-item" class:disabled={currentPage >= maxPage}><a tinro-ignore class="page-link" on:click={goToPageHandler(currentPage + 1)} href="#">Next</a></li>
+        <li class="page-item" class:disabled={currentPage >= maxPage}><a tinro-ignore class="page-link" onclick={goToPageHandler(currentPage + 1)} href="#">Next</a></li>
     </ul>
 </div>

@@ -5,69 +5,52 @@
 	import { Utility } from "../data/utility";
 	import { searchParamStore } from "../data/stores";
 	import CryptoES from "crypto-es";
+	import Textbox from "./form/Textbox.svelte";
 
-    export let boardInfo: BoardModel[] | null = null;
+	interface Props {
+		boardInfo?: BoardModel[] | null;
+	}
 
-	let expanded = false;
+	let { boardInfo = null }: Props = $props();
 
-	let searchBoxText = "";
-	let selectedBoard = "";
-	let subjectText = "";
-	let nameText = "";
-	let tripText = "";
-	let posterIdText = "";
-	let filenameText = "";
-	let fileMd5Hash = "";
-	let dateStartText = "";
-	let dateEndText = "";
-	let postType = "";
-	let orderType = "";
+	let expanded = $state(false);
+
+	interface SearchParams {
+		query?: string;
+		boards?: string;
+		subject?: string;
+		name?: string;
+		trip?: string;
+		posterId?: string;
+		md5hash?: string;
+		filename?: string;
+		dateStart?: string;
+		dateEnd?: string;
+		postType?: string;
+		orderType?: string;
+	}
+
+	let searchParams: SearchParams = $state({});
+
+	let isLnx = false;
 
 	function enterHandler(event: KeyboardEvent) {
 		if (event.key === "Enter") {
 			event.preventDefault();
-			Search(true);
+			performSearch(true);
 		}
 	}
 
-	function Search(allBoards: boolean) {
-		const params = {};
+	function performSearch(allBoards: boolean) {
+		const params: Record<string, any> = {};
 
-		if (Utility.IsNotEmpty(searchBoxText))
-			params["query"] = searchBoxText;
+		for (const [name, value] of Object.entries(searchParams)) {
+			if (name == "boards" && allBoards)
+				continue;
 
-		if (Utility.IsNotEmpty(selectedBoard) && !allBoards)
-			params["boards"] = selectedBoard;
-
-		if (Utility.IsNotEmpty(subjectText))
-			params["subject"] = subjectText;
-
-		if (Utility.IsNotEmpty(nameText))
-			params["name"] = nameText;
-
-		if (Utility.IsNotEmpty(tripText))
-			params["trip"] = tripText;
-
-		if (Utility.IsNotEmpty(posterIdText))
-			params["posterId"] = posterIdText;
-
-		if (Utility.IsNotEmpty(fileMd5Hash))
-			params["md5hash"] = fileMd5Hash;
-
-		if (Utility.IsNotEmpty(filenameText))
-			params["filename"] = filenameText;
-
-		if (Utility.IsNotEmpty(dateStartText))
-			params["dateStart"] = dateStartText;
-
-		if (Utility.IsNotEmpty(dateEndText))
-			params["dateEnd"] = dateEndText;
-
-		if (Utility.IsNotEmpty(postType))
-			params["postType"] = postType;
-
-		if (Utility.IsNotEmpty(orderType))
-			params["orderType"] = orderType;
+			if (Utility.IsNotEmpty(value))
+				params[name] = value;
+		}
 
 		if (Object.keys(params).length == 0)
 			return;
@@ -83,130 +66,95 @@
 	function HashedFileSelection(e: Event) {
 		const fileList = (<HTMLInputElement>e.target).files;
 
-		if (fileList.length == 0) {
-			fileMd5Hash = null;
+		if (!fileList || fileList.length == 0) {
+			searchParams.md5hash = undefined;
 			return;
 		}
 
 		const reader = new FileReader();
 
 		reader.onload = function(event) {
+			if (!event.target)
+				return;
+
 			const data = <ArrayBuffer>event.target.result;
 
-			fileMd5Hash = CryptoES.MD5(CryptoES.lib.WordArray.create(data)).toString();
+			searchParams.md5hash = CryptoES.MD5(CryptoES.lib.WordArray.create(data)).toString();
 		};
 
 		reader.readAsArrayBuffer(fileList[0]);
 	}
 </script>
 
-<div class="anchor">
-	<div class="search-container" class:expanded={expanded} use:clickOutside on:click_outside={() => expanded = false} >
-		<div class="textbox-container">
-			<input type="text" class="main-searchbox"
-				on:focus={() => expanded = true}
-				on:keyup={enterHandler}
-				bind:value={searchBoxText}/>
+<div class="relative">
+	{#if expanded}
+		<!-- prevents the navbar from sliding when the original textbox is made absolute -->
+		<div>
+			<input type="text" class="search-container textbox-container py-1 pl-3 invisible"/>
 		</div>
+	{/if}
+	<div class="search-container" class:expanded={expanded} use:clickOutside onclick_outside={() => expanded = false} style="z-index:1000;" >
+		<Textbox showSearch bind:value={searchParams.query} onkeyup={enterHandler} onfocus={e => { expanded = true; }} />
 		<div class="hidden-container">
-			<div class="d-flex">
-				<button type="button" class="search-button" on:click={() => Search(false)}>Search</button>
-				<button type="button" class="search-button mx-2" on:click={() => Search(true)}>Search on all boards</button>
-				<button disabled type="button" class="search-button ml-auto" on:click={() => GoToPostNumber()}>Go to post number</button>
+			<div class="flex">
+				<button type="button" class="search-button mr-auto" onclick={() => GoToPostNumber()}>Go to post number</button>
+				<button type="button" class="search-button" onclick={() => performSearch(false)}>Search</button>
+				<button type="button" class="search-button mx-2" onclick={() => performSearch(true)}>Search on all boards</button>
 			</div>
 
-			<div class="d-flex mt-2">
-				<span class="px-2 text-right align-middle d-flex" style="width: 90px; background-color: var(--box-header-background-color); justify-content: end; align-items: center;">
-					Boards
-				</span>
-				<select class="w-100" bind:value={selectedBoard}>
+			{#snippet header(text: string)}
+				<div class="mr-2 px-2 py-1 bg-box-header text-right">{text}</div>
+			{/snippet}
+
+			<div class="mt-2 grid grid-cols-[max\-content_1fr] gap-y-1">
+
+				{@render header("Board")}
+				<select class="w-full h-full rounded textbox-container px-1 focus:border-highlight!" bind:value={searchParams.boards}>
 					{#if boardInfo != null}
 						{#each boardInfo as board}
 							<option value={board.shortName}>/{board.shortName}/</option>
 						{/each}
 					{/if}
 				</select>
-			</div>
 
-			<div class="d-flex mt-2">
-				<span class="px-2 text-right align-middle d-flex" style="width: 90px; background-color: var(--box-header-background-color); justify-content: end; align-items: center;">
-					Subject
-				</span>
-				<input type="text" class="w-100" bind:value={subjectText}>
-			</div>
+				{@render header("Subject")}
+				<Textbox bind:value={searchParams.subject} />
 
-			<div class="d-flex mt-2">
-				<div class="d-flex" style="width: 50%">
-					<span class="px-2 text-right align-middle d-flex" style="width: 80px; background-color: var(--box-header-background-color); justify-content: end; align-items: center;">
-						Name
-					</span>
-					<input type="text" class="flex-grow-1" bind:value={nameText}>
-				</div>
-				<div class="d-flex" style="width: 50%">
-					<span class="px-2 text-right align-middle d-flex" style="width: 80px; background-color: var(--box-header-background-color); justify-content: end; align-items: center;">
-						Tripcode
-					</span>
-					<input type="text" class="flex-grow-1" bind:value={tripText}>
-				</div>
-			</div>
+				{@render header("Name")}
+				<Textbox bind:value={searchParams.name} />
 
-			<div class="d-flex mt-2">
-				<span class="px-2 text-right align-middle d-flex" style="width: 90px; background-color: var(--box-header-background-color); justify-content: end; align-items: center;">
-					Poster ID
-				</span>
-				<input type="text" class="w-100" bind:value={posterIdText}>
-			</div>
+				{@render header("Tripcode")}
+				<Textbox bind:value={searchParams.trip} />
 
-			<div class="d-flex mt-2">
-				<div class="d-flex" style="width: 50%">
-					<span class="px-2 text-right align-middle d-flex" style="width: 80px; background-color: var(--box-header-background-color); justify-content: end; align-items: center;">
-						Filename
-					</span>
-					<input disabled class="flex-grow-1" type="text" bind:value={filenameText}/>
-				</div>
-				<div class="d-flex" style="width: 50%">
-					<span class="px-2 text-right align-middle d-flex" style="width: 170px; background-color: var(--box-header-background-color); justify-content: end; align-items: center;">
-						File MD5
-					</span>
-					<input disabled class="flex-grow-1" type="file" on:change={HashedFileSelection} />
-				</div>
-			</div>
+				{@render header("Poster ID")}
+				<Textbox bind:value={searchParams.posterId} />
 
-			<div class="d-flex mt-2">
-				<div class="d-flex" style="width: 50%">
-					<span class="px-2 text-right align-middle d-flex" style="width: 80px; background-color: var(--box-header-background-color); justify-content: end; align-items: center;">
-						Date start
-					</span>
-					<input disabled class="flex-grow-1" type="date" bind:value={dateStartText}/>
-				</div>
-				<div class="d-flex" style="width: 50%">
-					<span class="px-2 text-right align-middle d-flex" style="width: 80px; background-color: var(--box-header-background-color); justify-content: end; align-items: center;">
-						Date end
-					</span>
-					<input disabled class="flex-grow-1" type="date" bind:value={dateEndText} />
-				</div>
-			</div>
+				{@render header("Filename")}
+				<Textbox bind:value={searchParams.filename} />
 
-			<div class="d-flex mt-2">
-				<div class="d-flex" style="width: 50%">
-					<span class="px-2 text-right align-middle d-flex" style="width: 80px; background-color: var(--box-header-background-color); justify-content: end; align-items: center;">
-						Post type
-					</span>
-					<select disabled class="flex-grow-1" bind:value={postType}>
-						<option value="" selected>Any</option>
-						<option value="op">OP only</option>
-						<option value="replies">Replies only</option>
-					</select>
+				{@render header("File MD5")}
+				<div class="flex items-center">
+					<input disabled={isLnx} class="flex-grow-1" type="file" onchange={HashedFileSelection} />
 				</div>
-				<div class="d-flex" style="width: 50%">
-					<span class="px-2 text-right align-middle d-flex" style="width: 80px; background-color: var(--box-header-background-color); justify-content: end; align-items: center;">
-						Order
-					</span>
-					<select class="flex-grow-1" bind:value={orderType}>
-						<option value="">Most recent</option>
-						<option value="asc">Least recent</option>
-					</select>
-				</div>
+
+				{@render header("Date start")}
+				<input disabled={isLnx} class="flex-grow-1" type="date" bind:value={searchParams.dateStart}/>
+
+				{@render header("Date end")}
+				<input disabled={isLnx} class="flex-grow-1" type="date" bind:value={searchParams.dateEnd}/>
+
+				{@render header("Post type")}
+				<select disabled={isLnx} class="w-full h-full rounded textbox-container px-1 focus:border-highlight!" bind:value={searchParams.postType}>
+					<option value="" selected>Any</option>
+					<option value="op">OP only</option>
+					<option value="replies">Replies only</option>
+				</select>
+
+				{@render header("Order")}
+				<select class="w-full h-full rounded textbox-container px-1 focus:border-highlight!" bind:value={searchParams.orderType}>
+					<option value="">Most recent</option>
+					<option value="asc">Least recent</option>
+				</select>
 			</div>
 
 		</div>
@@ -214,43 +162,21 @@
 </div>
 
 <style>
-	.anchor {
-        position: relative;
-	}
-
-	.search-button {
-		background-color: var(--box-header-background-color);
-        border: 1px solid var(--post-border-color);
-		color: var(--text-color);
-		outline: none;
-	}
-
-	.search-button:active:hover {
-		background-color: var(--box-background-color);
-	}
-
-	.main-searchbox {
-		width: 100%;
-	}
-
-	.search-container {
-		margin: -3px 0;
+	:global(.search-container) {
+		margin: -5px 0;
 		min-width: 350px;
+	}
+
+	.textbox-container {
+		background-color: var(--box-background-color);
+        border: 1px solid #666;
 	}
 
 	.expanded.search-container {
 		position: absolute;
 		top: 0%;
 		right: 0%;
-		margin: -8px -5px;
-	}
-
-	.expanded .textbox-container {
-		padding: 5px;
-		/* padding: 5px;
-		margin-top: 0px;
-		margin-right: calc(1rem + 15px); */
-		background-color: var(--box-background-color);
+		min-width: 450px;
 	}
 
 	.hidden-container {

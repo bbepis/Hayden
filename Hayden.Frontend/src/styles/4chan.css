@@ -1,0 +1,147 @@
+.post {
+	margin: 4px 0;
+	overflow: hidden;
+	color: var(--text-color);
+	line-height: normal;
+}
+
+.subject {
+	color: var(--subject-color);
+	font-weight: 700;
+}
+
+.reply {
+	background-color: var(--post-background-color);
+	border: 1px solid var(--post-border-color);
+	display: table;
+	padding: 2px;
+}
+
+.reply:target,
+.reply.highlight {
+	background: var(--post-background-color) !important;
+	border: 1px solid var(--post-border-color) !important;
+	padding: 2px;
+}
+
+.postInfo {
+	display: block;
+	width: 100%;
+}
+
+div.post div.postInfo {
+	display: block;
+	width: 100%;
+	margin-left: 5px;
+	margin-right: 5px;
+}
+
+.nameBlock {
+	display: inline-block;
+}
+
+.name {
+	color: #2a994d;
+	font-weight: 700;
+}
+
+blockquote {
+	margin: 16px 40px !important;
+}
+
+.fileText {
+	word-wrap: break-word;
+	max-width: calc(100vw - 90px);
+	margin: 0 20px;
+}
+
+.fileThumb {
+	float: left;
+	margin-left: 20px;
+	margin-right: 20px;
+	margin-top: 3px;
+	margin-bottom: 5px;
+
+	/*max-width: 125px;
+    max-height: 125px;*/
+}
+
+a {
+	color: var(--link-text-color) !important;
+	text-decoration: none;
+}
+
+/* a:visited {
+    color: var(--link-visited-text-color) !important;
+    text-decoration: none;
+} */
+
+a.quotelink {
+	text-decoration: underline;
+}
+
+a:hover {
+	color: var(--link-hover-color) !important;
+}
+
+span.deadlink {
+	color: rgb(150, 0, 0);
+	text-decoration: underline dashed;
+	cursor: pointer;
+}
+
+blockquote>span.quote {
+	color: var(--quote-color);
+}
+
+s:hover,
+s:focus,
+s:hover a {
+	color: #fff !important;
+}
+
+s,
+s a:not(:hover) {
+	color: #000 !important;
+	background: #000 !important;
+	text-decoration: none;
+}
+
+figure.uploadCell {
+	float: none;
+}
+
+.multipleUploads .uploadCell {
+	float: left;
+}
+
+.imgLink {
+	float: left;
+	margin: 0 1rem 1rem 0.5rem;
+}
+
+.multipleUploads.panelUploads::after {
+	content: "";
+	display: block;
+	clear: both;
+}
+
+.uploadDetails {
+	margin: 0.25rem;
+	margin-left: 0;
+	font-size: 80%;
+
+	max-width: 256px;
+	text-overflow: ellipsis;
+	overflow: hidden;
+}
+
+.uploadDetails:hover {
+	overflow: unset;
+}
+
+.uploadCell video,
+.uploadCell audio,
+.uploadCell img {
+	max-width: 100%;
+}

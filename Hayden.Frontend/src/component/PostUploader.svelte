@@ -4,20 +4,24 @@
 
 	const dispatch = createEventDispatcher();
 
-	export let board: string;
-	export let threadId: number = null;
-	export let isThreadUploader: boolean;
+	interface Props {
+		board: string;
+		threadId?: number;
+		isThreadUploader: boolean;
+	}
 
-	let formName: string = null;
-	let formText: string = null;
+	let { board, threadId = null, isThreadUploader }: Props = $props();
+
+	let formName: string = $state(null);
+	let formText: string = $state(null);
 	let formCaptcha: string = null;
-	let formSubject: string = null;
-	let formFiles: FileList = null;
+	let formSubject: string = $state(null);
+	let formFiles: FileList = $state(null);
 	let isPosting = false;
 
-	let showForm = !isThreadUploader;
+	let showForm = $state(!isThreadUploader);
 
-	let postErrorMessage: string = null;
+	let postErrorMessage: string = $state(null);
 
 	async function UploadThread(): Promise<{ message?: string }> {
 		const postObject = {
@@ -174,7 +178,7 @@
 	<button
 		type="button"
 		class="mx-auto d-block"
-		on:click={() => (showForm = true)}>Create a thread</button
+		onclick={() => (showForm = true)}>Create a thread</button
 	>
 </div>
 
@@ -201,13 +205,13 @@
 			<input class="w-100" type="text" bind:value={formName} />
 		</div>
 		<div class="col-2 pl-0">
-			<button class="w-100" on:click={Post}>Post</button>
+			<button class="w-100" onclick={Post}>Post</button>
 		</div>
 	</div>
 	<div class="row input-row">
 		<div class="col-2">Comment</div>
 		<div class="col-10">
-			<textarea class="w-100" bind:value={formText} />
+			<textarea class="w-100" bind:value={formText}></textarea>
 		</div>
 	</div>
 	<div class="row input-row">
@@ -221,7 +225,7 @@
 				id="post-captcha"
 				class="h-captcha"
 				data-sitekey={Utility.infoObject.hCaptchaSiteKey}
-			/>
+			></div>
 		</div>
 	</div>
 </div>

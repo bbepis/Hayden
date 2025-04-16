@@ -9,10 +9,19 @@
 	import { moderatorUserStore } from "../data/stores";
 	import ExpandableVideo from "./ExpandableVideo.svelte";
 
-	export let post: PostModel;
-	export let board: BoardModel;
-	export let subject: string = null;
-	export let backquotes: number[] = null;
+	interface Props {
+		post: PostModel;
+		board: BoardModel;
+		subject?: string;
+		backquotes?: number[];
+	}
+
+	let {
+		post,
+		board,
+		subject = null,
+		backquotes = null
+	}: Props = $props();
 
 	function getDateTime() {
 		if (post.dateTime.endsWith("Z")) {
@@ -24,8 +33,8 @@
 
 	const time = moment(getDateTime());
 
-	let showDropdown: boolean = false;
-	let menu: HTMLElement;
+	let showDropdown: boolean = $state(false);
+	let menu: HTMLElement = $state();
 
 	onMount(() => {
 		jQuery(".post-contents a").attr("tinro-ignore", "true");
@@ -73,18 +82,18 @@
 			>
 		</span>
 
-		<!-- svelte-ignore a11y-click-events-have-key-events -->
-		<span class="menu-button" on:click={() => toggleMenu(!showDropdown)}>
+		<!-- svelte-ignore a11y_click_events_have_key_events -->
+		<span class="menu-button" onclick={() => toggleMenu(!showDropdown)}>
 			▼
 			<div
 				tabindex="-1"
 				class="menu"
 				class:hidden={!showDropdown}
-				on:blur={() => {
+				onblur={() => {
 					toggleMenu(false);
 				}}
-				on:keydown={menuKeyDown}
-				on:click={(e) => {
+				onkeydown={menuKeyDown}
+				onclick={(e) => {
 					e.stopPropagation();
 				}}
 				bind:this={menu}
@@ -164,7 +173,7 @@
 						><span class="hideMobile">)</span>
 					</div>
 
-					<div />
+					<div></div>
 					{#if file.extension === "webm"}
 						<ExpandableVideo
 							videoUrl={file.imageUrl}

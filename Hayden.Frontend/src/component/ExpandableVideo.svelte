@@ -1,12 +1,21 @@
 <script lang="ts">
-    export let thumbUrl: string;
-    export let videoUrl: string;
-    export let altText: string;
-    export let expanded: boolean = false;
 
-    let img : HTMLImageElement;
+    let img : HTMLImageElement = $state();
 
-    export let onClick: () => void = () => {
+    interface Props {
+        thumbUrl: string;
+        videoUrl: string;
+        altText: string;
+        expanded?: boolean;
+        onClick?: () => void;
+    }
+
+    let {
+        thumbUrl,
+        videoUrl,
+        altText,
+        expanded = $bindable(false),
+        onClick = () => {
         const newValue = !expanded;
         
         if (!newValue && !isElementInViewport(img)) {
@@ -14,7 +23,8 @@
         }
 
         expanded = newValue;
-    };
+    }
+    }: Props = $props();
 
     function isElementInViewport (el: Element) {
         const rect = el.getBoundingClientRect();
@@ -34,14 +44,14 @@
 </script>
 
 {#if expanded}
-    <a on:click={onClickClose}>[Close]</a>
+    <a onclick={onClickClose}>[Close]</a>
     <br/>
-    <!-- svelte-ignore a11y-media-has-caption -->
+    <!-- svelte-ignore a11y_media_has_caption -->
     <video controls>
         <source src={videoUrl} />
     </video>
 {:else}
-    <a href={videoUrl} on:click={onClickInternal} tinro-ignore>
+    <a href={videoUrl} onclick={onClickInternal} tinro-ignore>
         <img bind:this={img} src={thumbUrl} alt={altText} decoding="async"/>
     </a>
 {/if}

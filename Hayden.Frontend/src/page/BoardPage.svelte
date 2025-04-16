@@ -7,12 +7,16 @@
     import type { BoardPageModel } from "../data/data";
 	import { router } from 'tinro';
 
-    let dataPromise: Promise<BoardPageModel>;
+    let dataPromise: Promise<BoardPageModel> = $state();
 
-    export let initialCurrentPage = 1;
-    export let board: string;
+    interface Props {
+        initialCurrentPage?: number;
+        board: string;
+    }
 
-    let maxPage = initialCurrentPage;
+    let { initialCurrentPage = 1, board }: Props = $props();
+
+    let maxPage = $state(initialCurrentPage);
 
     async function navigatePage(page: number) {
         let newUrl;
