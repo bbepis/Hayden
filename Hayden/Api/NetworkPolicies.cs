@@ -26,6 +26,7 @@ namespace Hayden.Api
 				.Handle<HttpRequestException>()
 				.Or<TimeoutRejectedException>()
 				.Or<IOException>(x => x.Message.Contains("The response ended prematurely"))
+				   .Or<IOException>(x => x.Message.Contains("Received an unexpected EOF")) // System.IO.IOException: Received an unexpected EOF or 0 bytes from the transport stream.
 				.OrResult(response => response.StatusCode == HttpStatusCode.TooManyRequests
 									  || response.StatusCode == HttpStatusCode.RequestTimeout
 									  || (int)response.StatusCode >= 500)
@@ -58,6 +59,7 @@ namespace Hayden.Api
 		{
 			return Policy<T>
 				.Handle<IOException>(x => x.Message.Contains("The response ended prematurely"))
+				   .Or<IOException>(x => x.Message.Contains("Received an unexpected EOF")) // System.IO.IOException: Received an unexpected EOF or 0 bytes from the transport stream.
 				.WaitAndRetryAsync(tries,
 					retryAttempt => TimeSpan.FromSeconds(Math.Pow(2, Math.Min(retryAttempt, 5))) // exponential back-off: 2, 4, 8 etc
 					                + TimeSpan.FromMilliseconds(random.Next(0, 5000)) // plus some jitter: up to 5 seconds
@@ -83,6 +85,7 @@ namespace Hayden.Api
 				   .Handle<Exception>()
 				   .Or<TimeoutRejectedException>()
 				   .Or<IOException>(x => x.Message.Contains("The response ended prematurely"))
+				   .Or<IOException>(x => x.Message.Contains("Received an unexpected EOF")) // System.IO.IOException: Received an unexpected EOF or 0 bytes from the transport stream.
 				   .WaitAndRetryAsync(tries,
 					   retryAttempt => TimeSpan.FromSeconds(Math.Pow(2, Math.Min(retryAttempt, 5))) // exponential back-off: 2, 4, 8 etc
 				                                      + TimeSpan.FromMilliseconds(random.Next(0, 5000)) // plus some jitter: up to 5 seconds
@@ -109,6 +112,7 @@ namespace Hayden.Api
 				   .Or<WebException>()
 				   .Or<TimeoutRejectedException>()
 				   .Or<IOException>(x => x.Message.Contains("The response ended prematurely"))
+				   .Or<IOException>(x => x.Message.Contains("Received an unexpected EOF")) // System.IO.IOException: Received an unexpected EOF or 0 bytes from the transport stream.
 				   .WaitAndRetryAsync(tries,
 					   retryAttempt => TimeSpan.FromSeconds(Math.Pow(2, Math.Min(retryAttempt, 5))) // exponential back-off: 2, 4, 8 etc
 				                                      + TimeSpan.FromMilliseconds(random.Next(0, 5000)) // plus some jitter: up to 5 seconds
