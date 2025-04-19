@@ -250,6 +250,8 @@ namespace Hayden
 					}
 
 					await ThreadConsumer.ProcessFileDownload(queuedDownload, tempFilePath, tempThumbPath);
+
+					await StateStore.RemoveDownload(queuedDownload);
 				}
 				catch (Exception ex)
 				{
@@ -1057,7 +1059,10 @@ namespace Hayden
 				.ConfigureAwait(false);
 
 			if (response.StatusCode == HttpStatusCode.NotFound)
+			{
+				Log.Warning($"Image URL returned a 404: {imageUrl}");
 				return null;
+			}
 
 			response.EnsureSuccessStatusCode();
 
