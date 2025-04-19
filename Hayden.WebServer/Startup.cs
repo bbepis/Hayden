@@ -71,12 +71,15 @@ namespace Hayden.WebServer
 				{
 					options.Cookie.Name = "identity";
 					options.Cookie.IsEssential = true;
-					options.Cookie.HttpOnly = false;
+					options.Cookie.HttpOnly = true;
 					options.Cookie.SameSite = Environment.IsDevelopment() ? SameSiteMode.None : SameSiteMode.Strict;
 					options.Events.OnRedirectToAccessDenied = context => {
 						context.Response.StatusCode = 403;
 						return Task.CompletedTask;
 					};
+
+					if (Environment.IsDevelopment())
+						options.Cookie.SecurePolicy = CookieSecurePolicy.None;
 				});
 
 			services.AddSingleton<IMediaInspector, FfprobeMediaInspector>();
@@ -152,6 +155,7 @@ namespace Hayden.WebServer
 				{
 					context.Response.Headers.Add("Access-Control-Allow-Origin", "http://localhost:5173");
 					context.Response.Headers.Add("Access-Control-Allow-Credentials", "true");
+					context.Response.Headers.Add("access-control-expose-headers", "Set-Cookie");
 
 					await next();
 				});

@@ -132,7 +132,11 @@ namespace Hayden.WebServer.Controllers.Api
 				new ClaimsIdentity(claims,
 					CookieAuthenticationDefaults.AuthenticationScheme));
 
-			await HttpContext.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, HttpContext.User);
+			await HttpContext.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, HttpContext.User, new AuthenticationProperties()
+			{
+				IsPersistent = true,
+				ExpiresUtc = DateTimeOffset.UtcNow + TimeSpan.FromDays(7)
+			});
 		}
 
 		[NonAction]
