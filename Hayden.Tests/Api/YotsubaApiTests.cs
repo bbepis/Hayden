@@ -112,7 +112,7 @@ namespace Hayden.Tests.Api
 
 			Assert.AreEqual(51971506UL, opPost.PostNumber);
 			Assert.IsTrue(result.Data.AdditionalMetadata.Sticky);
-			Assert.IsTrue(result.Data.AdditionalMetadata.Locked);
+			Assert.IsTrue(result.Data.ArchivedTime != null);
 
 			// put more here. i'm lazy
 		}

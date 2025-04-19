@@ -114,7 +114,7 @@ namespace Hayden.Tests.Consumers
 			Assert.AreEqual(post.Tripcode, dbPost.Tripcode);
 			Assert.AreEqual(post.Email, dbPost.Email);
 			Assert.AreEqual(post.TimePosted.UtcDateTime, dbPost.DateTime);
-			Assert.AreEqual(post.IsDeleted ?? false, dbPost.IsDeleted);
+			Assert.AreEqual(post.TimeDeleted ?? null, dbPost.TimeDeleted);
 
 			if (post.AdditionalMetadata.Serialize() == null)
 				Assert.AreEqual(null, dbPost.AdditionalMetadata);
@@ -143,6 +143,7 @@ namespace Hayden.Tests.Consumers
 		{
 			Assert.AreEqual(media.Filename, dbFileMapping.Filename);
 			Assert.AreEqual(media.Index, dbFileMapping.Index);
+			Assert.AreEqual(media.TimestampedFilename, dbFileMapping.TimestampedFilename);
 
 			// we want the file id to be null here as we haven't actually downloaded the file yet
 			Assert.IsNotNull(dbFileMapping.FileId);
@@ -196,10 +197,10 @@ namespace Hayden.Tests.Consumers
 
 				Assert.AreEqual(1, threads.Length);
 				Assert.AreEqual(thread.ThreadId, threads[0].ThreadId);
-				Assert.AreEqual(thread.IsArchived, threads[0].IsArchived);
+				Assert.AreEqual(thread.ArchivedTime, threads[0].TimeArchived);
+				Assert.AreEqual(thread.DeletedTime, threads[0].TimeDeleted);
 				Assert.AreEqual(thread.Title, threads[0].Title);
 				Assert.AreEqual(null, threads[0].AdditionalMetadata);
-				Assert.AreEqual(false, threads[0].IsDeleted);
 			}
 			
 			async Task testFile(Media media)
@@ -299,10 +300,10 @@ namespace Hayden.Tests.Consumers
 
 				Assert.AreEqual(1, threads.Length);
 				Assert.AreEqual(thread.ThreadId, threads[0].ThreadId);
-				Assert.AreEqual(thread.IsArchived, threads[0].IsArchived);
+				Assert.AreEqual(thread.ArchivedTime, threads[0].TimeArchived);
+				Assert.AreEqual(thread.DeletedTime, threads[0].TimeDeleted);
 				Assert.AreEqual(thread.Title, threads[0].Title);
 				Assert.AreEqual(null, threads[0].AdditionalMetadata);
-				Assert.AreEqual(false, threads[0].IsDeleted);
 			}
 
 			if (anyImages)
@@ -433,7 +434,7 @@ namespace Hayden.Tests.Consumers
 			{
 				var deletedDbPost = context.Posts.First(x => x.PostId == deletedPost.PostNumber);
 
-				Assert.IsTrue(deletedDbPost.IsDeleted);
+				Assert.IsTrue(deletedDbPost.TimeDeleted != null);
 			}
 		}
 
@@ -452,13 +453,15 @@ namespace Hayden.Tests.Consumers
 
 			await consumer.ConsumeThread(threadUpdate);
 
-			await consumer.ThreadUntracked(threadPointer.ThreadId, threadPointer.Board, true);
+			var deletedTime = DateTimeOffset.Now;
+
+			await consumer.ThreadUntracked(threadPointer.ThreadId, threadPointer.Board, deletedTime, null);
 
 			await using (var context = new HaydenDbContext(options))
 			{
 				var dbThread = context.Threads.First(x => x.ThreadId == threadPointer.ThreadId);
 
-				Assert.IsTrue(dbThread.IsDeleted);
+				Assert.AreEqual(deletedTime.UtcDateTime, dbThread.TimeDeleted);
 			}
 		}
 
@@ -478,7 +481,7 @@ namespace Hayden.Tests.Consumers
 			await consumer.ConsumeThread(threadUpdate);
 
 
-			thread.IsArchived = true;
+			thread.ArchivedTime = DateTimeOffset.Now;
 
 			threadUpdate = threadTracker.ProcessThreadUpdates(threadPointer, thread);
 			await consumer.ConsumeThread(threadUpdate);
@@ -487,8 +490,8 @@ namespace Hayden.Tests.Consumers
 			{
 				var dbThread = context.Threads.First(x => x.ThreadId == threadPointer.ThreadId);
 
-				Assert.IsTrue(dbThread.IsArchived);
-				Assert.IsFalse(dbThread.IsDeleted);
+				Assert.AreEqual(thread.ArchivedTime?.UtcDateTime, dbThread.TimeArchived);
+				Assert.IsNull(dbThread.TimeDeleted);
 			}
 		}
 
@@ -928,13 +931,13 @@ namespace Hayden.Tests.Consumers
 
 				if (consolidationMode == ConsolidationMode.Authoritative)
 				{
-					Assert.IsTrue(context.Posts.Single(x => x.PostId == originalPostNumber).IsDeleted);
+					Assert.IsTrue(context.Posts.Single(x => x.PostId == originalPostNumber).TimeDeleted != null);
 					
 					Assert.AreEqual("abcd", context.Posts.Single(x => x.PostId == thread.Posts[0].PostNumber).ContentRaw);
 				}
 				else if (consolidationMode == ConsolidationMode.Pessimistic)
 				{
-					Assert.IsFalse(context.Posts.Single(x => x.PostId == originalPostNumber).IsDeleted);
+					Assert.IsFalse(context.Posts.Single(x => x.PostId == originalPostNumber).TimeDeleted != null);
 
 					Assert.AreEqual(originalContent, context.Posts.Single(x => x.PostId == thread.Posts[0].PostNumber).ContentRaw);
 				}
@@ -1018,6 +1021,34 @@ namespace Hayden.Tests.Consumers
 			Assert.AreEqual(0, threadUpdate.NewPosts.Count);
 			Assert.AreEqual(1, threadUpdate.UpdatedPosts.Count);
 		}
+
+		//[Test]
+		//public async Task HandlesBooleanArchivedTime()
+		//{
+		//	var options = TestCommon.CreateMemoryContextOptions();
+		//	var mockFilesystem = new MockFileSystem();
+
+		//	using var consumer = await CreateHaydenConsumerAsync(options, mockFilesystem);
+
+		//	var (thread, threadPointer) = TestCommon.GenerateThread();
+
+		//	var threadTracker = TrackedThread.StartTrackingThread(consumer.CalculateHash);
+		//	var threadUpdate = threadTracker.ProcessThreadUpdates(threadPointer, thread);
+
+		//	await consumer.ConsumeThread(threadUpdate);
+
+		//	thread.ArchivedTime = DateTimeOffset.MinValue;
+
+		//	threadUpdate = threadTracker.ProcessThreadUpdates(threadPointer, thread);
+		//	await consumer.ConsumeThread(threadUpdate);
+
+		//	await using (var context = new HaydenDbContext(options))
+		//	{
+		//		var dbThread = context.Threads.First();
+		//		Assert.IsNotNull(dbThread.TimeArchived);
+		//		Assert.IsTrue(DateTime.UtcNow - dbThread.TimeArchived < TimeSpan.FromSeconds(1));
+		//	}
+		//}
 	}
 
 	internal class TestHaydenConsumer : HaydenThreadConsumer
