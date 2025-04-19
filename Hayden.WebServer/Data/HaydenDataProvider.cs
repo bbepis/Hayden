@@ -67,6 +67,26 @@ public class HaydenDataProvider : IDataProvider
 		return await dbContext.Boards.AsNoTracking().ToListAsync();
 	}
 
+	public async Task<IDictionary<ushort, BoardStats>> GetBoardStats()
+	{
+		return (await dbContext.Threads
+			.GroupBy(x => x.BoardId)
+			.Select(x => new
+			{
+				BoardId = x.Key,
+				ThreadCount = x.Count(),
+				ImageCount = x.Sum(y => y.ImageCount),
+				PostCount = x.Sum(y => y.PostCount),
+			})
+			.ToArrayAsync())
+			.ToDictionary(x => x.BoardId, x => new BoardStats()
+			{
+				ThreadCount = x.ThreadCount,
+				PostCount = x.PostCount,
+				ImageCount = x.ImageCount
+			});
+	}
+
 	private JsonThreadModel CreateThreadModel(DBBoard boardObj, DBThread thread, IEnumerable<DBPost> posts,
 		(DBFileMapping, DBFile)[] mappings)
 	{

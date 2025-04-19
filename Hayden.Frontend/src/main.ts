@@ -8,6 +8,13 @@ import "./styles/site.css";
 import "./styles/4chan.css";
 import "./styles/themes.css";
 
+import dayjs from "dayjs";
+import relativeTime from "dayjs/plugin/relativeTime";
+import utc from "dayjs/plugin/utc";
+
+dayjs.extend(relativeTime);
+dayjs.extend(utc);
+
 Utility.infoObject = (<any>window).info;
 initStores();
 

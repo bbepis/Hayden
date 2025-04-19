@@ -1,13 +1,15 @@
 <script lang="ts">
 	import type { BoardModel, FileModel, PostModel } from "../data/data";
-	import moment from "moment";
+	import dayjs from "dayjs";
 	import ExpandableImage from "./ExpandableImage.svelte";
-	import { onMount } from "svelte";
 	import { Utility } from "../data/utility";
-	import { RenderRawPost } from "../data/postrender";
+	import { RenderRawPostYotsuba } from "../data/postrender";
 	import PostMenu from "./PostMenu.svelte";
-	import { moderatorUserStore } from "../data/stores";
+	import { moderatorUserStore, postHoverStore } from "../data/stores";
 	import ExpandableVideo from "./ExpandableVideo.svelte";
+	import ImageOff from "@lucide/svelte/icons/image-off";
+	import Trash2 from "@lucide/svelte/icons/trash-2";
+	import { link } from "svelte-spa-router";
 
 	interface Props {
 		post: PostModel;
@@ -31,14 +33,10 @@
 		return post.dateTime + "Z";
 	}
 
-	const time = moment(getDateTime());
+	const time = dayjs(getDateTime());
 
 	let showDropdown: boolean = $state(false);
-	let menu: HTMLElement = $state();
-
-	onMount(() => {
-		jQuery(".post-contents a").attr("tinro-ignore", "true");
-	});
+	let menu: HTMLElement | undefined = $state();
 
 	function toggleMenu(value: boolean | null) {
 		showDropdown = value ?? !showDropdown;
@@ -46,26 +44,34 @@
 		if (showDropdown) {
 			//setImmediate(() => {menu.focus();});
 			setTimeout(() => {
-				menu.focus();
+				menu?.focus();
 			}, 0);
 		}
 	}
 
 	function menuKeyDown(e: KeyboardEvent) {
 		if (e.keyCode === 27) {
-			menu.blur();
+			menu?.blur();
 			e.preventDefault();
 		}
 	}
 
 	function getFilename(file: FileModel): string {
-		if (file.extension) return `${file.filename}.${file.extension}`;
+		if (file.extension) return `${file.filename}${file.extension}`;
 
 		return file.filename;
 	}
+
+	let postHighlighted = $derived.by(() => {
+		let hoveredPost = $postHoverStore;
+		if (hoveredPost && hoveredPost.boardId === board.id && hoveredPost.postId === post.postId)
+			return true;
+
+		return false;
+	});
 </script>
 
-<div id="p{post.postId}" class="post reply">
+<div id="p{post.postId}" data-boardid={board.id} data-postid={post.postId} class="post reply {postHighlighted ? "border-highlight! bg-selected!" : ""}">
 	<div id="pi{post.postId}" class="postInfo">
 		{#if subject}
 			<span class="subject">{subject}</span>
@@ -77,14 +83,21 @@
 			{time.local().format("ddd DD/MM/yy h:mm:ss A")}
 		</span>
 		<span>
-			<a href="/{board.shortName}/thread/{post.threadId}#p{post.postId}"
-				>No. {post.postId}</a
-			>
+			<a href="/{board.shortName}/thread/{post.threadId}?postid={post.postId}" use:link>
+				No. {post.postId}
+			</a>
 		</span>
 
+		{#if post.deleted}
+			<span class="inline-block translate-y-[1px] text-highlight" title="Deleted">
+				<Trash2 size="1em" />
+			</span>
+		{/if}
+
 		<!-- svelte-ignore a11y_click_events_have_key_events -->
-		<span class="menu-button" onclick={() => toggleMenu(!showDropdown)}>
-			▼
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
+		<span class="relative">
+			<button class="px-1! py-1.5! leading-0" onclick={() => toggleMenu(!showDropdown)}><span class="font-bold flex translate-y-[-3px]">...</span></button>
 			<div
 				tabindex="-1"
 				class="menu"
@@ -99,7 +112,6 @@
 				bind:this={menu}
 			>
 				<PostMenu
-					on:postaction
 					boardId={board.id}
 					postId={post.postId}
 					moderator={!!$moderatorUserStore}
@@ -107,9 +119,9 @@
 			</div>
 		</span>
 		{#if backquotes}
-			{#each backquotes as backquoteId (backquoteId)}
+			{#each backquotes as backquoteId}
 				<div class="backquote">
-					<a href="#p{backquoteId}" class="quotelink" tinro-ignore
+					<a data-postid={backquoteId} href="#p{backquoteId}" class="quoteLink"
 						>&gt;&gt;{backquoteId}</a
 					>
 				</div>
@@ -120,7 +132,7 @@
 		{@const file = post.files[0]}
 		<div class="file">
 			<div class="fileText">
-				<a href={file.imageUrl} tinro-ignore
+				<a href={file.imageUrl}
 					>{getFilename(file)}</a
 				>
 				({Utility.ToHumanReadableSize(file.fileSize)}{post.files[0]
@@ -129,14 +141,11 @@
 					: ""})
 			</div>
 			{#if !file.thumbnailUrl && !file.imageUrl}
-				<img
-					class="fileThumb"
-					style="width: 125px;"
-					src="/image-error.png"
-					alt="Missing file"
-				/>
+				<div title="Missing file" class="inline fileThumb">
+					<ImageOff size={"125px"} color="currentColor"  />
+				</div>
 			{:else}
-				<a class="fileThumb" href={file.imageUrl} tinro-ignore>
+				<a class="fileThumb" href={file.imageUrl}>
 					<!-- <img src={post.thumbnailUrl} alt={post.post.mediaFilename}/> -->
 					{#if file.extension === "webm"}
 						<ExpandableVideo
@@ -174,18 +183,25 @@
 					</div>
 
 					<div></div>
-					{#if file.extension === "webm"}
-						<ExpandableVideo
-							videoUrl={file.imageUrl}
-							thumbUrl={file.thumbnailUrl}
-							altText={file.filename}
-						/>
+
+					{#if !file.thumbnailUrl && !file.imageUrl}
+						<div title="Missing file" class="inline fileThumb">
+							<ImageOff size={"125px"} color="currentColor"  />
+						</div>
 					{:else}
-						<ExpandableImage
-							fullImageUrl={file.imageUrl}
-							thumbUrl={file.thumbnailUrl}
-							altText={file.filename}
-						/>
+						{#if file.extension === "webm"}
+							<ExpandableVideo
+								videoUrl={file.imageUrl}
+								thumbUrl={file.thumbnailUrl}
+								altText={file.filename}
+							/>
+						{:else}
+							<ExpandableImage
+								fullImageUrl={file.imageUrl}
+								thumbUrl={file.thumbnailUrl}
+								altText={file.filename}
+							/>
+						{/if}
 					{/if}
 				</figure>
 			{/each}
@@ -193,7 +209,7 @@
 	{/if}
 	<blockquote class="post-contents">
 		{#if post.contentRaw}
-			{@html RenderRawPost(post.contentRaw)}
+			{@html RenderRawPostYotsuba(post)}
 		{:else if post.contentHtml}
 			{@html post.contentHtml.replace("\n", "<br/>")}
 		{/if}
@@ -211,15 +227,10 @@
 		display: none;
 	}
 
-	.menu-button {
-		cursor: pointer;
-		position: relative;
-	}
-
 	.menu {
 		position: absolute;
-		top: 100%;
-		left: 0;
+		top: 0%;
+		left: 100%;
 		cursor: initial;
 	}
 

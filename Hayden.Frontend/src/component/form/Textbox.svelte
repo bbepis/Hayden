@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { HTMLInputAttributes } from "svelte/elements";
-	import { Search } from "@lucide/svelte";
+	import Search from "@lucide/svelte/icons/search";
 
 	type Props = HTMLInputAttributes & {
 		showSearch?: boolean;
@@ -45,5 +45,5 @@
 			}}
 		/>
 	{/if}
-	
+
 </div>

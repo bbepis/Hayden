@@ -17,7 +17,7 @@
         expanded = $bindable(false),
         onClick = () => {
         const newValue = !expanded;
-        
+
         if (!newValue && !isElementInViewport(img)) {
             img.scrollIntoView();
         }
@@ -51,7 +51,7 @@
         <source src={videoUrl} />
     </video>
 {:else}
-    <a href={videoUrl} onclick={onClickInternal} tinro-ignore>
+    <a href={videoUrl} onclick={onClickInternal}>
         <img bind:this={img} src={thumbUrl} alt={altText} decoding="async"/>
     </a>
 {/if}

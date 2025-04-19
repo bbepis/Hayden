@@ -19,7 +19,7 @@
         expanded = $bindable(false),
         onClick = () => {
         const newValue = !expanded;
-        
+
         if (!newValue && !isElementInViewport(img)) {
             img.scrollIntoView();
         }
@@ -43,7 +43,7 @@
     }
 </script>
 
-<a href={fullImageUrl} onclick={onClickInternal} tinro-ignore>
+<a href={fullImageUrl} onclick={onClickInternal}>
     <img
         bind:this={img}
         onload={() => loading = false}

@@ -64,8 +64,8 @@ namespace Hayden.WebServer.Controllers.Api
 		}
 
 		[AdminAccessFilter(ModeratorRole.Moderator, ModeratorRole.Admin)]
-		[HttpPost("moderator/getreports")]
-		public async Task<IActionResult> GetReports(int page,
+		[HttpGet("moderator/getreports")]
+		public async Task<IActionResult> GetReports([FromQuery] int page,
 			[FromServices] IServiceProvider serviceProvider,
 			[FromServices] IDataProvider dataProvider)
 		{
@@ -85,12 +85,12 @@ namespace Hayden.WebServer.Controllers.Api
 				.ThenByDescending(x => x.TimeReported)
 				.Select(x => new { x.BoardId, x.PostId })
 				.Distinct()
-				.Skip(page * pageSize).Take(pageSize)
+				.Skip((page - 1) * pageSize).Take(pageSize)
 				.Join(dbContext.Reports, post => post, report => new { report.BoardId, report.PostId },
 					(post, report) => report)
 				.ToListAsync();
 
-			var boards = await dbContext.Boards.ToArrayAsync();
+			var boards = await dataProvider.GetBoardInfo();
 
 			var reports = new List<ReportedPostInfo>();
 

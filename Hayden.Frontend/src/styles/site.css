@@ -13,23 +13,29 @@ button, input::file-selector-button {
 	font-size: 1em;
 	font-weight: 500;
 	font-family: inherit;
-	background-color: #1a1a1a;
+	background-color: var(--box-background-color);
 	cursor: pointer;
 	transition: border-color 0.2s, background-color 0.2s;
 	background-color: var(--box-header-background-color);
 	border: 1px solid var(--post-border-color);
 	color: var(--text-color);
 	outline: none;
+	accent-color: var(--color-highlight);
 }
 
-button:hover {
+button:not(:disabled):hover, input:not(:disabled)::file-selector-button:hover {
 	border-color: var(--color-highlight);
 	background-color: var(--box-background-color);
 }
 
-button:focus,
-button:focus-visible {
-	outline: 4px auto -webkit-focus-ring-color;
+button:disabled, input:disabled::file-selector-button {
+	cursor: not-allowed;
+	background-color: var(--page-background-color);
+}
+
+button:not(:disabled):focus,
+button:not(:disabled):focus-visible {
+	/* outline: 4px auto -webkit-focus-ring-color; */
   border: 1px solid var(--color-highlight);
 }
 
@@ -38,7 +44,7 @@ input:not(:where([type="file"])) {
 	border: 1px solid #666;
 }
 
-input:focus, select:focus {
+input:not(:disabled):focus, select:not(:disabled):focus {
   outline: none !important;
   border: 1px solid var(--color-highlight);
 }

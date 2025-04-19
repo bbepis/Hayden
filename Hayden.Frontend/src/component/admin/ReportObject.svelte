@@ -1,4 +1,5 @@
 <script lang="ts">
+	import dayjs from "dayjs";
 	import { Api } from "../../data/api";
 	import type { ReportModel, ReportedPostModel } from "../../data/data";
 	import Post from "../Post.svelte";
@@ -9,17 +10,15 @@
 
 	let { reportedPost = $bindable() }: Props = $props();
 
-	function getSeverityClass(severity: number) {
+	function getSeverity(severity: number) : { text: string, class: string } {
 		if (severity == 4) // immediate
-			return "severity-immediate"
+			return { text: "Immediate", class: "severity-immediate" };
 		if (severity == 3) // high
-			return "severity-high"
+			return { text: "High", class: "severity-high" };
 		if (severity == 2) // medium
-			return "severity-medium"
-		if (severity == 1) // low
-			return "severity-low"
-
-		return "";
+			return { text: "Medium", class: "severity-medium" };
+		//if (severity == 1) // low
+			return { text: "Low", class: "severity-low" };
 	}
 
 	async function markResolved(report: ReportModel) {
@@ -31,17 +30,26 @@
 	}
 </script>
 
-<div>
-	{#each reportedPost.reports as report}
-		<div class="report-block {getSeverityClass(report.severity)}" class:resolved={report.resolved}>
-			<span class="ip-address">{report.ipAddress}</span><br/>
-			{report.reason}<br/>
-			<button onclick={() => { markResolved(report) }}>Mark resolved</button>
-		</div>
-	{/each}
+{#each reportedPost.reports as report, i}
+	{@const severity = getSeverity(4)}
+	<div>
+		<span class="{severity.class}">{severity.text}</span>
+	</div>
+	<div>{dayjs().toLocaleString()}</div>
+	<blockquote class="whitespace-pre-line">{report.reason}</blockquote>
 
-	<Post post={reportedPost.post} board={reportedPost.board} />
-</div>
+	{#if i === 0}
+		<div style="grid-row: span 1 / span 1">
+			<Post post={reportedPost.post} board={reportedPost.board} />
+		</div>
+	{/if}
+	<!-- <div>{}</div>
+	<div class="report-block {getSeverityClass(report.severity)}" class:resolved={report.resolved}>
+		<span class="ip-address">{report.ipAddress}</span><br/>
+		{report.reason}<br/>
+		<button onclick={() => { markResolved(report) }}>Mark resolved</button>
+	</div> -->
+{/each}
 
 <style>
 	.report-block {
@@ -50,14 +58,6 @@
 		padding: 2px 6px;
 		margin: 2px 0;
 		white-space: pre-line;
-	}
-
-	.report-block button {
-		background-color: var(--box-header-background-color);
-		border: solid 1px var(--post-border-color);
-		color: var(--text-color);
-		border-radius: 4px;
-		margin: 2px 0;
 	}
 
 	.resolved {
@@ -70,18 +70,20 @@
 	}
 
 	.severity-immediate {
-		border-left: 2px solid red;
+		font-weight: bold;
+		background-color: var(--color-highlight);
 	}
 
 	.severity-high {
-		border-left: 2px solid orange;
+		font-weight: bold;
+		color: var(--color-highlight);
 	}
 
 	.severity-medium {
-		border-left: 2px solid yellow;
+		font-weight: bold;
 	}
 
 	.severity-low {
-		border-left: 2px solid blue;
+		opacity: 70%;
 	}
 </style>

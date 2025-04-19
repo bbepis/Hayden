@@ -10,21 +10,15 @@
 	let { boardId, postId, moderator }: Props = $props();
 
 	const reportPost: (boardId: number, postId: number) => void = getContext("reportPost");
+	const deletePost: (boardId: number, postId: number) => void = getContext("deletePost");
+	const banUser: (boardId: number, postId: number) => void = getContext("banUser");
 
 	function showDeletePostModal() {
-		dispatch("postaction", {
-			action: "delete-post",
-			boardId: boardId,
-			postId: postId,
-		});
+		deletePost(boardId, postId);
 	}
 
 	function showBanIpModal() {
-		dispatch("postaction", {
-			action: "ban-ip",
-			boardId: boardId,
-			postId: postId,
-		});
+		banUser(boardId, postId);
 	}
 
 	function showReportModal() {
@@ -32,14 +26,17 @@
 	}
 </script>
 
+{#snippet menuItem(text: string, callback: () => void)}
+	<!-- svelte-ignore a11y_click_events_have_key_events -->
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
+	<div class="postborder cursor-pointer select-none transition-colors hover:bg-box-header hover:border-highlight p-1" onclick={callback}>{text}</div>
+{/snippet}
+
 <div class="menu">
-	<div class="menu-item p-1" onclick={showReportModal}>Report</div>
+	{@render menuItem("Report", showReportModal)}
 	{#if moderator}
-		<div class="menu-item" onclick={showDeletePostModal}>Delete post</div>
-		<!-- <div class="menu-item">
-        Delete image
-    </div> -->
-		<div class="menu-item" onclick={showBanIpModal}>Ban poster IP</div>
+		{@render menuItem("Delete post", showDeletePostModal)}
+		{@render menuItem("Ban poster IP", showBanIpModal)}
 	{/if}
 </div>
 
@@ -47,15 +44,5 @@
 	.menu {
 		width: 150px;
 		background-color: var(--post-background-color);
-	}
-
-	.menu-item {
-		border: 1px solid var(--post-border-color);
-		cursor: pointer;
-		user-select: none;
-	}
-
-	.menu-item:hover {
-		background-color: var(--box-background-color);
 	}
 </style>

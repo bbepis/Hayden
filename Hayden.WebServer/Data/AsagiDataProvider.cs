@@ -194,6 +194,13 @@ namespace Hayden.WebServer.Data
 			return Task.FromResult<IList<DBBoard>>(boardInfos);
 		}
 
+		public Task<IDictionary<ushort, BoardStats>> GetBoardStats()
+		{
+			var boardInfos = Boards.Values.Select(CreateBoardInfo).ToArray();
+
+			return Task.FromResult<IDictionary<ushort, BoardStats>>(boardInfos.ToDictionary(x => x.Id, x => (BoardStats)null));
+		}
+
 		public async Task<ApiController.JsonPostModel> GetPost(string board, ulong postid)
 		{
 			if (!Boards.Values.Contains(board))

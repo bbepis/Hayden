@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 using Hayden.Consumers.HaydenMysql.DB;
 using Hayden.WebServer.Data;
 using Hayden.WebServer.Search;
+using Hayden.WebServer.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Newtonsoft.Json.Linq;
@@ -137,7 +138,9 @@ namespace Hayden.WebServer.Controllers.Api
 		{
 			var boardInfos = await dataProvider.GetBoardInfo();
 
-			return Json(boardInfos);
+			var jsonModels = boardInfos.Select(x => new JsonBoardModel(x, StatsService.CurrentStats?.FirstOrDefault(y => y.Key == x.Id).Value));
+
+			return Json(jsonModels);
 		}
 
 		[HttpGet("board/{board}/index")]
@@ -151,6 +154,49 @@ namespace Hayden.WebServer.Controllers.Api
 			public long totalThreadCount { get; set; }
 			public DBBoard boardInfo { get; set; }
 			public JsonThreadModel[] threads { get; set; }
+		}
+
+		public class JsonBoardModel
+		{
+			public ushort id { get; set; }
+			public string shortName { get; set; }
+			public string longName { get; set; }
+			public string category { get; set; }
+
+			public bool isNSFW { get; set; }
+			public byte multiImageLimit { get; set; }
+			public bool isReadOnly { get; set; }
+			public bool showsDeletedPosts { get; set; }
+
+			public string additionalMetadata { get; set; }
+
+			public long? threadCount { get; set; }
+			public long? postCount { get; set; }
+			public long? imageCount { get; set; }
+
+			public JsonBoardModel() { }
+
+			public JsonBoardModel(DBBoard board, BoardStats stats)
+			{
+				id = board.Id;
+				shortName = board.ShortName;
+				longName = board.LongName;
+				category = board.Category;
+
+				isNSFW = board.IsNSFW;
+				multiImageLimit = board.MultiImageLimit;
+				isReadOnly = board.IsReadOnly;
+				showsDeletedPosts = board.ShowsDeletedPosts;
+
+				additionalMetadata = board.AdditionalMetadata;
+
+				if (stats != null)
+				{
+					threadCount = stats.ThreadCount;
+					postCount = stats.PostCount;
+					imageCount = stats.ImageCount;
+				}
+			}
 		}
 
 		public class JsonThreadModel

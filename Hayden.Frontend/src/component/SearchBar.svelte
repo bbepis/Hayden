@@ -1,11 +1,12 @@
 <script lang="ts">
     import { clickOutside } from "./clickOutside";
-	import { router } from 'tinro';
     import type { BoardModel } from "../data/data";
 	import { Utility } from "../data/utility";
-	import { searchParamStore } from "../data/stores";
-	import CryptoES from "crypto-es";
+	import { MD5 } from "crypto-es/lib/md5.js";
+	import { WordArray } from "crypto-es/lib/core.js";
 	import Textbox from "./form/Textbox.svelte";
+	import { push } from 'svelte-spa-router'
+
 
 	interface Props {
 		boardInfo?: BoardModel[] | null;
@@ -34,9 +35,10 @@
 
 	let isLnx = false;
 
-	function enterHandler(event: KeyboardEvent) {
-		if (event.key === "Enter") {
-			event.preventDefault();
+	function enterHandler(e: KeyboardEvent) {
+		if (e.key === "Enter") {
+			e.preventDefault();
+			e.stopPropagation();
 			performSearch(true);
 		}
 	}
@@ -55,8 +57,7 @@
 		if (Object.keys(params).length == 0)
 			return;
 
-		router.goto(`/search?${new URLSearchParams(params).toString()}`);
-		searchParamStore.set(params)
+		push(`/search?${new URLSearchParams(params).toString()}`);
 	}
 
 	function GoToPostNumber() {
@@ -79,7 +80,7 @@
 
 			const data = <ArrayBuffer>event.target.result;
 
-			searchParams.md5hash = CryptoES.MD5(CryptoES.lib.WordArray.create(data)).toString();
+			searchParams.md5hash = MD5(WordArray.create(data)).toString();
 		};
 
 		reader.readAsArrayBuffer(fileList[0]);

@@ -55,7 +55,7 @@
 {/snippet}
 
 <Modal bind:this={modal} title="Report post">
-	<div class="grid grid-cols-[max\-content_1fr] gap-y-1">
+	<div class="grid grid-cols-[max\-content_1fr] gap-y-1 min-w-[400px]">
 		{@render header("Board")}
 		<Textbox disabled value={boardInfo?.find(x => x.id == setBoardId)?.shortName ?? setBoardId?.toString()} />
 		{@render header("Post number")}
@@ -69,7 +69,7 @@
 			{/each}
 		</select>
 		{@render header("Additional info")}
-		<Textbox area bind:value={additionalInfo} />
+		<Textbox area bind:value={additionalInfo} class="min-h-[100px]" />
 
 		<div></div>
 		<div class="ml-auto">

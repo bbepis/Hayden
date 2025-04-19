@@ -1,9 +1,11 @@
 <script lang="ts">
-    import { BoardModel, InfoObject } from "./data/data";
+	import type { BoardModel } from "./data/data";
     import { Utility } from "./data/utility";
     import { moderatorUserStore, boardInfoStore, theme as themeStore } from "./data/stores"
     import { Api } from "./data/api";
     import SearchBar from "./component/SearchBar.svelte";
+	import { link } from "svelte-spa-router";
+
     interface Props {
         children?: import('svelte').Snippet;
     }
@@ -28,7 +30,7 @@
 <header>
     <nav class="bg-post-bg mb-3 py-2 px-8 text">
         <div class="flex gap-x-3">
-            <a class="font-bold text! content-center" href="/">{Utility.infoObject.siteName}</a>
+            <a class="font-bold text! content-center" href="/" use:link>{Utility.infoObject.siteName}</a>
 			<div class="separator"></div>
 			<div class="flex content-center gap-x-1.5">
 				{#if $boardInfoStore}
@@ -46,7 +48,7 @@
 									<div class="dropdown-menu">
 
 									{#each groupedBoard.values as board, index}
-										<div class="nav-item"><a class="nav-link board-nav-link" href="/board/{board.shortName}" title={board.longName}>/{board.shortName}/</a></div>
+										<div class="nav-item"><a class="nav-link board-nav-link" href="/{board.shortName}" title={board.longName}>/{board.shortName}/</a></div>
 									{/each}
 
 								</div></div>
@@ -54,9 +56,26 @@
 
 						{:else}
 
-							{#each boardInfo as board, index}
-								<a class="content-center not-hover:text!" href="/board/{board.shortName}" title={board.longName}>/{board.shortName}/</a>
-							{/each}
+							{@const groupedBoards = [Utility.groupByArray(boardInfo, b => b.category)[0]]}
+							{@const singleGroup = groupedBoards.length <= 1}
+
+
+
+							<div class="flex flex-wrap gap-x-1.5">
+								{#each groupedBoards as groupedBoard, i}
+									{#if i > 0}
+										<div class="separator"></div>
+									{/if}
+
+									{#if !singleGroup}
+										<span><b class="underline">{groupedBoard.key}</b></span>
+									{/if}
+
+									{#each groupedBoard.values as board, index}
+										<a class="content-center not-hover:text!" href="/{board.shortName}" title={board.longName} use:link>/{board.shortName}/</a>
+									{/each}
+								{/each}
+							</div>
 
 						{/if}
 					{:catch}
@@ -64,29 +83,15 @@
 					{/await}
 				{/if}
 			</div>
-			<!-- <li class="nav-item dropdown">
-				<a class="nav-link dropdown-toggle" href="#" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
-					Boards
-				</a>
-				<div class="dropdown-menu" aria-labelledby="navbarDropdown">
 
-				</div>
-			</li> -->
 			{#if $moderatorUserStore}
 				<div class="separator"></div>
-				<div class="nav-item">
-					<a class="nav-link" href="/Admin">Admin</a>
-				</div>
-				<div class="nav-item">
-					<button type="button" class="btn btn-link nav-link nav-button" onclick={() => { $moderatorUserStore = null; Api.UserLogoutAsync(); }}>Logout</button>
-					<!-- <a class="nav-link" href="#" on:click={() => { $moderatorUserStore = null; Api.UserLogoutAsync(); } }>Logout</a> -->
-				</div>
+				<a class="text! content-center" href="/admin" use:link>Admin</a>
+				<a href="#" class="text! content-center" onclick={() => { $moderatorUserStore = null; Api.UserLogoutAsync(); }}>Logout</a>
 			{/if}
-			<!-- <li class="nav-item">
-				<a class="nav-link" href="/Search">Search</a>
-			</li> -->
+
 			{#if Utility.infoObject.searchEnabled}
-				<div class="ml-auto">
+				<div class="ml-auto content-center">
 					<SearchBar boardInfo={loadedBoardInfo} />
 				</div>
 			{/if}
@@ -104,7 +109,7 @@
 
 <footer class="bg-post-bg py-2 px-8 text footer">
     <div class="flex">
-        <div class="content-center"><a href="https://github.com/bbepis/Hayden" tinro-ignore>Hayden</a> 2.0</div>
+        <div class="content-center"><a href="https://github.com/bbepis/Hayden">Hayden</a> 1.0</div>
         <!-- <a href="/legal" class="legal-link">Legal</a> -->
         <div class="flex-grow-1"></div>
         <select class="p-1 h-7 border-0! theme-select"
@@ -140,8 +145,7 @@
     }
 
     .theme-select {
-        
-		background-color: var(--box-background-color);
+		background-color: var(--color-box-header);
     }
 
     .logo {
@@ -151,18 +155,6 @@
         margin: auto;
         display: block;
         float: none;
-    }
-
-    .nav-button {
-        border: 0px transparent;
-        font-size: unset;
-        line-height: unset;
-        color: var(--link-text-color) !important;
-        transition: none;
-    }
-
-    .nav-button:hover {
-        color: var(--link-hover-color) !important;
     }
 
     .separator {

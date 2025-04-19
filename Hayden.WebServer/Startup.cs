@@ -84,6 +84,8 @@ namespace Hayden.WebServer
 				ServerConfig.Captcha.HCaptchaTesting ? HCaptchaProvider.DummySiteKey : ServerConfig.Captcha.HCaptchaSiteKey,
 				ServerConfig.Captcha.HCaptchaTesting ? HCaptchaProvider.DummySecret : ServerConfig.Captcha.HCaptchaSecret));
 
+			services.AddHostedService<StatsService>();
+
 			services.AddMvc(x => { x.EnableEndpointRouting = false; });
 		}
 

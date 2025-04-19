@@ -15,6 +15,7 @@ public interface IDataProvider
 
 	// Post info
 	Task<IList<DBBoard>> GetBoardInfo();
+	Task<IDictionary<ushort, BoardStats>> GetBoardStats();
 	Task<ApiController.JsonPostModel> GetPost(string board, ulong postid);
 	Task<ApiController.JsonThreadModel> GetThread(string board, ulong threadid);
 	Task<ApiController.JsonBoardPageModel> GetBoardPage(string board, int? page);
@@ -35,4 +36,11 @@ public interface IDataProvider
 	Task<DBModerator> GetModerator(string username);
 
 	Task<bool> RegisterModerator(DBModerator moderator);
+}
+
+public class BoardStats
+{
+	public long ThreadCount { get; set; }
+	public long PostCount { get; set; }
+	public long ImageCount { get; set; }
 }

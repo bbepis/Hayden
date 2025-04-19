@@ -1,4 +1,4 @@
-export class InfoObject {
+export interface InfoObject {
     apiEndpoint: string;
     rawEndpoint: string;
     hCaptchaSiteKey: string | null;
@@ -18,7 +18,7 @@ export interface NewsItem {
     Content: string;
 }
 
-export class BoardModel {
+export interface BoardModel {
     id: number;
 
     shortName: string;
@@ -26,16 +26,20 @@ export class BoardModel {
     category: string;
     isNSFW: boolean;
     isReadOnly: boolean;
+
+	threadCount?: number;
+	postCount?: number;
+	imageCount?: number;
 }
 
-export class BoardPageModel {
+export interface BoardPageModel {
     threads: ThreadModel[];
 
     totalThreadCount: number;
     boardInfo: BoardModel;
 }
 
-export class ThreadModel {
+export interface ThreadModel {
     threadId: number;
 
     board: BoardModel;
@@ -50,7 +54,7 @@ export class ThreadModel {
     posts: PostModel[];
 }
 
-export class PostModel {
+export interface PostModel {
     postId: number;
     threadId: number;
 
@@ -67,7 +71,7 @@ export class PostModel {
     files: FileModel[];
 }
 
-export class FileModel {
+export interface FileModel {
     fileId: number;
 
     md5Hash: Uint8Array;
@@ -91,19 +95,19 @@ export class FileModel {
     thumbnailUrl: string;
 }
 
-export class ReportedPostModel {
+export interface ReportedPostModel {
 	post: PostModel;
 	board: BoardModel;
 
 	reports: ReportModel[];
 }
 
-export class ReportModel {
+export interface ReportModel {
     id: number;
 	ipAddress: string;
 	reason: string;
 	severity: number;
-	resolved: boolean = false;
+	resolved: boolean;
 }
 
 export enum ModeratorRole {

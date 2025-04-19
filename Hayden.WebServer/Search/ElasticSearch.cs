@@ -34,7 +34,7 @@ public class ElasticSearch : ISearchService
 				i.Settings(s => s.Setting("codec", "best_compression")
 					.SoftDeletes(sd =>
 						sd.Retention(r => r.Operations(0)))
-					.NumberOfShards(1)
+					.NumberOfShards(2)
 					.NumberOfReplicas(0)
 				));
 				
@@ -156,7 +156,7 @@ public class ElasticSearch : ISearchService
 				))
 			.ToArray();
 
-		return new SearchResults(threadIdArray, searchResult.Hits.Count);
+		return new SearchResults(threadIdArray, searchResult.Total);
 	}
 
 	public async Task IndexBatch(IEnumerable<PostIndex> posts, CancellationToken token = default)

@@ -1,9 +1,6 @@
 
 <script lang="ts">
-    import { createEventDispatcher } from 'svelte';
     import { Utility } from '../data/utility';
-
-	const dispatch = createEventDispatcher();
 
     function goToPageHandler(page: number) : (e : Event) => void {
         return function (e : Event) {
@@ -15,58 +12,51 @@
                 return;
             }
 
-            //currentPage = page;
-            dispatch('page', {
-                page: page
-            });
+			pageCallback(page);
         }
     }
 
     interface Props {
         currentPage: number;
         maxPage: number;
+		pageCallback: (page: number) => void;
     }
 
-    let { currentPage, maxPage }: Props = $props();
+    let { currentPage, maxPage, pageCallback }: Props = $props();
 </script>
 
 <!-- svelte-ignore a11y_invalid_attribute -->
-<div class="justify-content-center">
-    <ul class="pagination pagination-lg justify-content-center">
-        <li class="page-item" class:disabled={currentPage <= 1}><a tinro-ignore class="page-link" onclick={goToPageHandler(currentPage - 1)} href="#">Previous</a></li>
+<div class="flex justify-center text-lg gap-x-2">
+	<button disabled={currentPage <= 1} onclick={goToPageHandler(currentPage - 1)}>Previous</button>
 
-        {#if currentPage > 2}
-            <li class="page-item"><a tinro-ignore class="page-link" onclick={goToPageHandler(1)} href="#">1</a></li>
-        {/if}
+	{#if currentPage > 2}
+		<button onclick={goToPageHandler(1)}>1</button>
+	{/if}
 
-        {#if currentPage > 3}
-            <li class="page-item gotopage-item disabled">
-                <a tinro-ignore id="gotopage-link1" class="page-link" href="#">...</a>
-                <form id="gotopage-form1" class="d-none page-link">
-                    <input type="number" name="pageno" class="gotopage-input" />
-                </form>
-            </li>
-            {/if}
+	{#if currentPage > 3}
+		<button disabled>...</button>
+	{/if}
 
-        {#each Utility.RangeTo(currentPage - 1, currentPage + 2) as i}
-            {#if !(i < 1 || i > maxPage)}
-            <li class="page-item" class:active={i === currentPage}><a tinro-ignore class="page-link" onclick={goToPageHandler(i)} href="#">{i}</a></li>
-            {/if}
-        {/each}
+	{#each Utility.RangeTo(currentPage - 1, currentPage + 2) as i}
+		{#if !(i < 1 || i > maxPage)}
+			<button class:active={i === currentPage} onclick={goToPageHandler(i)}>{i}</button>
+		{/if}
+	{/each}
 
-        {#if currentPage < maxPage - 2}
-            <li class="page-item gotopage-item disabled">
-                <a tinro-ignore id="gotopage-link2" class="page-link" href="#">...</a>
-                <form id="gotopage-form2" class="d-none page-link">
-                    <input type="number" name="pageno" class="gotopage-input" />
-                </form>
-            </li>
-        {/if}
+	{#if currentPage < maxPage - 2}
+		<button disabled>...</button>
+	{/if}
 
-        {#if currentPage < maxPage - 1}
-            <li class="page-item"><a class="page-link" onclick={goToPageHandler(maxPage)} href="#">{maxPage}</a></li>
-            {/if}
+	{#if currentPage < maxPage - 1}
+		<button onclick={goToPageHandler(maxPage)}>{maxPage}</button>
+	{/if}
 
-        <li class="page-item" class:disabled={currentPage >= maxPage}><a tinro-ignore class="page-link" onclick={goToPageHandler(currentPage + 1)} href="#">Next</a></li>
-    </ul>
+	<button disabled={currentPage >= maxPage} onclick={goToPageHandler(currentPage + 1)}>Next</button>
 </div>
+
+<style>
+	.active {
+		background-color: var(--selected-color);
+		border: 1px solid var(--color-highlight);
+	}
+</style>

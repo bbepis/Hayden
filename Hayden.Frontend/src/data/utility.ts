@@ -73,7 +73,7 @@ export class Utility {
 			url += "?" + searchParams.toString();
 		}
 
-		const result = await fetch(url);
+		const result = await fetch(url, { credentials: "include" });
 
 		if (!result.ok) {
 			throw result;

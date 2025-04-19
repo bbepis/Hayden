@@ -1,10 +1,10 @@
-import type { BoardModel, BoardPageModel } from "./data";
+import type { BoardModel, BoardPageModel, ReportedPostModel } from "./data";
 import { Utility } from "./utility";
 
 export class Api {
     static async GetBoardPage(board: string, page: number | null = null): Promise<BoardPageModel>
     {
-        const params = {}
+        const params: Record<string, string> = {}
         if (page !== null) {
             params["page"] = page.toString();
         }
@@ -53,9 +53,9 @@ export class Api {
         return <Promise<BoardModel[]>>Utility.FetchData("/board/all/info");
     }
 
-    static async GetReportsAsync(page: number): Promise<BoardModel[]>
+    static async GetReportsAsync(page: number): Promise<ReportedPostModel[]>
     {
-        return <Promise<BoardModel[]>>Utility.FetchData("/moderator/getreports", { page });
+		return <Promise<ReportedPostModel[]>>Utility.FetchData("/moderator/getreports", { page });
     }
 
     static async MarkReportResolvedAsync(reportId: number): Promise<void>

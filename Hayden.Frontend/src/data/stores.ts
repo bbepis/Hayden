@@ -14,6 +14,8 @@ export const moderatorUserStore = writable<ModeratorRole | null>(null);
 export const boardInfoStore = writable<Promise<BoardModel[]> | null>(null);
 export const searchParamStore = writable<Record<string, string> | null>(null);
 
+export const postHoverStore = writable<{ boardId: number, postId: number } | undefined>();
+
 export const statusStore = writable("Idle");
 export const progressStore = writable(0);
 
