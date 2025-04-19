@@ -105,8 +105,10 @@ public class AsagiImporter : IImporter
 
 		IAsyncEnumerable<uint> threadIdEnumerable;
 
-		// checking the *_threads table is significantly faster, if it exists
-		if (threads != null)
+		// checking the *_threads table is significantly faster, if it exists.
+		// however it's less reliable since these side tables are usually out of sync
+		bool useFasterMethod = false;
+		if (threads != null && useFasterMethod)
 		{
 			var query = threads.AsNoTracking();
 
