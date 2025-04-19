@@ -365,9 +365,9 @@ namespace Hayden.Consumers
 
 							foreach (var media in post.Media)
 							{
-								var existingFile = postMappings.First(x => x.Index == media.Index);
+								var existingFile = postMappings.FirstOrDefault(x => x.Index == media.Index);
 
-								if (media.IsDeleted && existingFile.IsDeleted != media.IsDeleted)
+								if (existingFile != null && media.IsDeleted && existingFile.IsDeleted != media.IsDeleted)
 								{
 									existingFile.IsDeleted = media.IsDeleted;
 									dbContext.Update(existingFile);
