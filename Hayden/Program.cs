@@ -274,20 +274,21 @@ public class Program
 		if (configFile.Source == null)
 			throw new Exception("Source config section must be present.");
 
-		if (usingConsumer)
-		{
-			if (configFile.Consumer == null)
-				throw new Exception("Consumer config section must be present.");
+		if (usingConsumer && configFile.Consumer == null)
+			throw new Exception("Consumer config section must be present.");
 
+		if (configFile.Consumer != null)
 			serviceCollection.AddSingleton(configFile.Consumer);
-		}
 
 		serviceCollection.AddSingleton(configFile);
 		serviceCollection.AddSingleton(configFile.Source);
 		serviceCollection.AddSingleton(configFile.Hayden);
 
 		if (exportSettings != null)
+		{
 			serviceCollection.AddSingleton(exportSettings);
+			configFile.Hayden.ScraperType = "export";
+		}
 
 		SerilogManager.LevelSwitch.MinimumLevel = configFile.Hayden.DebugLogging ? LogEventLevel.Verbose : LogEventLevel.Information;
 

@@ -1,13 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Text;
-using System.Text.Json;
 using System.Text.Json.Serialization;
 using Hayden.Config;
 using Hayden.Models;
-using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
 using Serilog;
 
 namespace Hayden.ImportExport;
@@ -69,7 +65,7 @@ public class JsonImporter : IForwardOnlyImporter
 		
 		await foreach (var thread in InternalEnumerateEntries(path))
 		{
-			if (!boardHashset.Contains(thread.Board))
+			if (boardHashset.Count > 0 && !boardHashset.Contains(thread.Board))
 				continue;
 
 			foreach (var post in thread.Posts)

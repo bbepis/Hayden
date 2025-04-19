@@ -97,9 +97,13 @@ public class ExportArchiver : IArchiver
 		if (ForwardOnlyImporter != null)
 			return ForwardOnlyImporter.RetrieveThreads(SourceConfig.Boards.Keys.ToArray());
 
+		string[] boardList = SourceConfig.Boards.Keys.Count > 0
+			? SourceConfig.Boards.Keys.ToArray()
+			: Importer.GetBoardList().Result;
+
 		async IAsyncEnumerable<(ThreadPointer, Thread)> InnerEnumerable()
 		{
-			foreach (var board in SourceConfig.Boards.Keys)
+			foreach (var board in boardList)
 			{
 				var threadQueue = new List<ThreadPointer>();
 

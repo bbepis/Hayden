@@ -159,6 +159,9 @@ namespace Hayden.ImportExport
 
 		public async Task<string[]> GetBoardTables()
 		{
+			if (boardTables != null)
+				return boardTables;
+
 			await using var dbConnection = new MySqlConnection(connectionString);
 			await dbConnection.OpenAsync();
 
