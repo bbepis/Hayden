@@ -64,17 +64,21 @@ namespace Hayden
 
 		protected override Thread ConvertThread(FoolFuukaThread thread, string board)
 		{
+			DateTime? utcExpiredTimestamp =
+				thread.OriginalPost.TimestampExpired == 0 ? null
+				: Utility.ConvertNewYorkTimestamp(thread.OriginalPost.TimestampExpired).UtcDateTime;
+
 			return new Thread
 			{
 				ThreadId = thread.OriginalPost.PostNumber,
 				Title = thread.OriginalPost.Title,
-				IsArchived = thread.Archived,
 				OriginalObject = thread,
 				Posts = thread.Posts.Select(x => x.ConvertToPost()).ToArray(),
+				DeletedTime = thread.OriginalPost.Deleted ? utcExpiredTimestamp : null,
+				ArchivedTime = !thread.OriginalPost.Deleted ? utcExpiredTimestamp : null,
 				AdditionalMetadata = new()
 				{
 					Sticky = thread.OriginalPost.Sticky.GetValueOrDefault(),
-					Deleted = thread.OriginalPost.Deleted.GetValueOrDefault()
 				}
 			};
 		}
@@ -319,7 +323,10 @@ namespace Hayden
 
 		[JsonConverter(typeof(BoolIntConverter))]
 		[JsonProperty("deleted")]
-		public bool? Deleted { get; set; }
+		public bool Deleted { get; set; }
+
+		[JsonProperty("timestamp_expired")]
+		public uint TimestampExpired { get; set; }
 
 		[JsonProperty("media")]
 		public FoolFuukaPostMedia Media { get; set; }
@@ -361,11 +368,11 @@ namespace Hayden
 			return new Post
 			{
 				PostNumber = PostNumber,
-				TimePosted = DateTimeOffset.FromUnixTimeSeconds(UnixTimestamp),
+				TimePosted =  DateTimeOffset.FromUnixTimeSeconds(UnixTimestamp),
 				Author = Author,
 				Tripcode = Tripcode,
 				Email = Email,
-				IsDeleted = Deleted ?? false,
+				TimeDeleted = Deleted ? DateTimeOffset.FromUnixTimeSeconds(TimestampExpired).UtcDateTime : null,
 				ContentRendered = null,
 				ContentRaw = SanitizedComment.TrimAndNullify(),
 				ContentType = ContentType.Yotsuba,

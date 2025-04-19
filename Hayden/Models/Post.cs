@@ -21,7 +21,7 @@ public class Post
 	public string ContentRaw { get; set; }
 	public ContentType ContentType { get; set; }
 
-	public bool? IsDeleted { get; set; }
+	public DateTimeOffset? TimeDeleted { get; set; }
 
 	public Media[] Media { get; set; }
 

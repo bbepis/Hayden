@@ -82,7 +82,7 @@ public class JSArchiveImporter : IImporter
 		return new Thread
 		{
 			ThreadId = pointer.ThreadId,
-			IsArchived = false,
+			ArchivedTime = null,
 			Title = threadPosts[0].subject,
 			Posts = threadPosts.Select(x => new Post
 			{

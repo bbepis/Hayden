@@ -6,6 +6,7 @@ using System.IO.Abstractions;
 using Serilog;
 using System.Linq;
 using System.IO;
+using System;
 
 namespace Hayden.Consumers.HaydenMysql;
 internal class MaintenanceManager
@@ -279,6 +280,58 @@ internal class MaintenanceManager
 		}
 
 		Log.Information("Completed processing {processed} / {total}", counter, fileCount);
+	}
+
+	public async Task RecountStats()
+	{
+		using var context = new HaydenDbContext(DbContextOptions);
+
+		int counter = 0;
+
+		var boards = await context.Boards.AsNoTracking().ToArrayAsync();
+
+		foreach (var board in boards)
+		{
+			Log.Information("Inspecting board /{board}/", board.ShortName);
+
+			ulong maxThreadId = 0;
+
+			while (true)
+			{
+				var baseQuery = context.Threads.AsNoTracking()
+					.Where(x => x.BoardId == board.Id && x.ImageCount == 0 && x.ThreadId > maxThreadId)
+					.OrderBy(x => x.ThreadId)
+					.Take(1024);
+
+				var result = await baseQuery
+					.GroupBy(x => 1)
+					.Select(g => new
+					{
+						Count = g.Count(),
+						MaxThreadId = g.Max(x => x.ThreadId)
+					})
+					.FirstOrDefaultAsync();
+
+				if (result == null || result.Count == 0)
+					break;
+
+				await baseQuery
+					.ExecuteUpdateAsync(x => x
+						.SetProperty(x => x.PostCount, y => (uint)context.Posts.Where(z => y.BoardId == z.BoardId && y.ThreadId == z.ThreadId).Count())
+						.SetProperty(x => x.ImageCount, y => (uint)context.FileMappings.Where(fm =>
+							fm.BoardId == y.BoardId
+							&& context.Posts.Where(z => y.BoardId == z.BoardId && y.ThreadId == z.ThreadId).Select(p => p.PostId).Contains(fm.PostId)
+						).Count()
+				));
+
+				counter += result.Count;
+				maxThreadId = result.MaxThreadId;
+
+				Log.Information("Processed {processed} / ?", counter);
+			}
+		}
+
+		Log.Information($"Recounted all thread stats");
 	}
 
 	public async Task PerformUpgrade()

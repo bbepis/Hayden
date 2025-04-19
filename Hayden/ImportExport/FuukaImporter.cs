@@ -41,7 +41,7 @@ namespace Hayden.ImportExport
 
 			CdnUrl = sourceConfig.ImageboardWebsite;
 
-			if (!CdnUrl.EndsWith('/'))
+			if (CdnUrl != null && !CdnUrl.EndsWith('/'))
 				CdnUrl += "/";
 		}
 
@@ -95,7 +95,7 @@ namespace Hayden.ImportExport
 			return new Thread
 			{
 				ThreadId = pointer.ThreadId,
-				IsArchived = false,
+				ArchivedTime = null,
 				Title = threadPosts[0].title,
 				Posts = threadPosts.Select(x => new Post
 				{
@@ -108,7 +108,7 @@ namespace Hayden.ImportExport
 					ContentRaw = x.comment,
 					ContentRendered = null,
 					ContentType = ContentType.Yotsuba,
-					IsDeleted = x.deleted,
+					TimeDeleted = x.deleted ? DateTimeOffset.MinValue : null,
 					OriginalObject = x,
 					Media = x.media_hash == null
 						? Array.Empty<Media>()
@@ -118,6 +118,7 @@ namespace Hayden.ImportExport
 							{
 								Filename = HttpUtility.HtmlDecode(Path.GetFileNameWithoutExtension(x.media)),
 								FileExtension = Path.GetExtension(x.media),
+								TimestampedFilename = Path.GetFileNameWithoutExtension(x.media_filename),
 								Index = 0,
 								FileSize = x.media_size,
 								IsSpoiler = x.spoiler,

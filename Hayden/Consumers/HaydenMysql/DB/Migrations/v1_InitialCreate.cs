@@ -63,7 +63,7 @@ namespace Hayden.Consumers.HaydenMysql.DB.Migrations
 						.MarkUtf8(ActiveProvider),
 					PasswordHash = table.Column<byte[]>(type: isSqlite ? "BLOB" : "binary(64)", fixedLength: true, maxLength: 64, nullable: false),
                     PasswordSalt = table.Column<byte[]>(type: isSqlite ? "BLOB" : "binary(32)", fixedLength: true, maxLength: 32, nullable: false),
-                    Role = table.Column<ModeratorRole>(type: isSqlite ? "INTEGER" : "enum('Janitor','Moderator','Developer','Admin')", nullable: false)
+                    Role = table.Column<int>(type: isSqlite ? "INTEGER" : "int", nullable: false)
                 },
                 constraints: table =>
                 {

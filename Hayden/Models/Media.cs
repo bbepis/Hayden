@@ -9,6 +9,7 @@ public class Media
 	public string ThumbnailUrl { get; set; }
 
 	public string Filename { get; set; }
+	public string TimestampedFilename { get; set; }
 
 	public bool? IsSpoiler { get; set; }
 	public bool IsDeleted { get; set; }

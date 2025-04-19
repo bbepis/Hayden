@@ -79,7 +79,7 @@ namespace Hayden
 			{
 				ThreadId = thread.OriginalPost.PostNumber,
 				Title = thread.Subject,
-				IsArchived = thread.Locked,
+				ArchivedTime = thread.Archived ? DateTimeOffset.MinValue : null,
 				OriginalObject = thread,
 				Posts = thread.Posts.Select(x => x.ConvertToPost(ImageboardWebsite)).ToArray(),
 				AdditionalMetadata = null

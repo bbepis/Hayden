@@ -6,12 +6,10 @@ using System.Linq;
 using System.Security.Cryptography;
 using System.Threading.Tasks;
 using System.Web;
-using Hayden.Config;
 using Hayden.Consumers.Asagi;
 using Hayden.Consumers.HaydenMysql.DB;
 using Hayden.WebServer.Controllers.Api;
 using Hayden.WebServer.DB.Elasticsearch;
-using Hayden.WebServer.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -81,7 +79,7 @@ namespace Hayden.WebServer.Data
 				author = post.name,
 				contentHtml = null,
 				contentRaw = post.comment,
-				deleted = post.deleted,
+				deleted = (post.deleted || post.timestamp_expired.HasValue) ? Utility.ConvertNewYorkTimestamp(post.timestamp_expired.Value).UtcDateTime : null,
 				dateTime = Utility.ConvertNewYorkTimestamp(post.timestamp.Value).UtcDateTime,
 				files = image?.media == null
 					? Array.Empty<ApiController.JsonFileModel>()
@@ -114,12 +112,18 @@ namespace Hayden.WebServer.Data
 		{
 			var op = posts.Select(x => x.p).FirstOrDefault(x => x.op);
 
+			var isArchived = op?.locked ?? false;
+
+			var expiredTime = op != null && op.timestamp_expired.GetValueOrDefault() != 0
+				? Utility.ConvertNewYorkTimestamp(op.timestamp_expired.Value).UtcDateTime
+				: (DateTime?)null;
+
 			return new ApiController.JsonThreadModel
 			{
 				board = CreateBoardInfo(board),
 				threadId = threadInfo.thread_num,
-				archived = op?.locked ?? false,
-				deleted = op?.deleted ?? false,
+				archived = isArchived ? expiredTime : null,
+				deleted = !isArchived ? expiredTime : null,
 				subject = op?.title,
 				lastModified = Utility.ConvertNewYorkTimestamp(threadInfo.time_bump).UtcDateTime,
 				posts = posts.Select(post => CreatePostModel(board, post.p, post.i)).ToArray()

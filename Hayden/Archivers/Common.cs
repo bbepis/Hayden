@@ -286,7 +286,8 @@ namespace Hayden
 				Board = board,
 				Title = thread.Title,
 				AdditionalMetadata = thread.AdditionalMetadata,
-				IsArchived = thread.IsArchived,
+				ArchivedTime = thread.ArchivedTime,
+				DeletedTime = thread.DeletedTime,
 				OriginalObject = null,
 				Posts = thread.Posts,
 				ThreadId = thread.ThreadId

@@ -16,7 +16,7 @@ namespace Hayden.Consumers
 		public Task ProcessFileDownload(QueuedImageDownload queuedImageDownload, string imageTempFilename, string thumbTempFilename)
 			=> Task.CompletedTask;
 
-		public Task ThreadUntracked(ulong threadId, string board, bool deleted)
+		public Task ThreadUntracked(ulong threadId, string board, DateTimeOffset? timeDeleted, DateTimeOffset? timeArchived)
 			=> Task.CompletedTask;
 
 		public Task<IList<ExistingThreadInfo>> CheckExistingThreads(IEnumerable<ulong> threadIdsToCheck, string board, bool archivedOnly, MetadataMode metadataMode = MetadataMode.FullHashMetadata, bool excludeDeletedPosts = true)

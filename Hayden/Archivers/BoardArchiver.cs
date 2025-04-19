@@ -914,7 +914,7 @@ namespace Hayden
 							Log.Warning($"Thread /{board}/{threadNumber} is malformed (DMCA?)");
 
 							HandleThreadRemoval(threadPointer);
-							await ThreadConsumer.ThreadUntracked(threadNumber, board, true);
+							await ThreadConsumer.ThreadUntracked(threadNumber, board, DateTime.UtcNow, null);
 
 							return new ThreadUpdateTaskResult(true, Array.Empty<QueuedImageDownload>(), ThreadUpdateStatus.Deleted, 0);
 						}
@@ -959,7 +959,7 @@ namespace Hayden
 
 						Log.Verbose($"{workerId,-2}: Thread /{board}/{threadNumber}: New {threadUpdateInfo.NewPosts.Count} / updated {threadUpdateInfo.UpdatedPosts.Count} / deleted {threadUpdateInfo.DeletedPosts.Count}");
 						
-						if (!threadUpdateInfo.HasChanges && !threadUpdateInfo.Thread.IsArchived)
+						if (!threadUpdateInfo.HasChanges && threadUpdateInfo.Thread.ArchivedTime == null)
 						{
 							return new ThreadUpdateTaskResult(true, Array.Empty<QueuedImageDownload>(), ThreadUpdateStatus.NotModified, 0);
 						}
@@ -970,17 +970,17 @@ namespace Hayden
 
 						var images = await ThreadConsumer.ConsumeThread(threadUpdateInfo);
 
-						if (response.Data.IsArchived)
+						if (response.Data.ArchivedTime != null)
 						{
 							Log.Debug($"{workerId,-2}: Thread /{board}/{threadNumber} has been archived");
 
 							HandleThreadRemoval(threadPointer);
-							await ThreadConsumer.ThreadUntracked(threadNumber, board, false);
+							await ThreadConsumer.ThreadUntracked(threadNumber, board, null, response.Data.ArchivedTime ?? DateTimeOffset.UtcNow);
 						}
 
 						return new ThreadUpdateTaskResult(true,
 							images,
-							response.Data.IsArchived ? ThreadUpdateStatus.Archived : ThreadUpdateStatus.Ok,
+							response.Data.ArchivedTime != null ? ThreadUpdateStatus.Archived : ThreadUpdateStatus.Ok,
 							threadUpdateInfo.NewPosts.Count - threadUpdateInfo.DeletedPosts.Count);
 
 					case ResponseType.NotModified:
@@ -993,7 +993,7 @@ namespace Hayden
 						Log.Debug($"{workerId,-2}: Thread /{board}/{threadNumber} has been pruned or deleted");
 
 						HandleThreadRemoval(new ThreadPointer(board, threadNumber));
-						await ThreadConsumer.ThreadUntracked(threadNumber, board, true);
+						await ThreadConsumer.ThreadUntracked(threadNumber, board, DateTime.UtcNow, null);
 
 						return new ThreadUpdateTaskResult(true, Array.Empty<QueuedImageDownload>(), ThreadUpdateStatus.Deleted, 0);
 

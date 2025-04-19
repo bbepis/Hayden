@@ -25,7 +25,6 @@ namespace Hayden.Consumers
 		protected class WrittenThread
 		{
 			public Thread Thread { get; set; }
-			public bool ThreadDeleted { get; set; }
 			public List<ulong> DeletedPostIds { get; set; }
 
 			public WrittenThread() {}
@@ -204,7 +203,7 @@ namespace Hayden.Consumers
 
 				if (foundPost != null)
 				{
-					foundPost.IsDeleted = true;
+					foundPost.TimeDeleted = DateTimeOffset.UtcNow;
 				}
 				else if (!writtenThread.DeletedPostIds.Contains(deletedPostId))
 				{
@@ -249,17 +248,17 @@ namespace Hayden.Consumers
 			}
 		}
 
-		public Task ThreadUntracked(ulong threadId, string board, bool deleted)
+		public Task ThreadUntracked(ulong threadId, string board, DateTimeOffset? timeDeleted, DateTimeOffset? timeArchived)
 		{
-			if (deleted)
+			if (timeDeleted != null || timeArchived != null)
 			{
 				string threadFileName = Path.Combine(ArchiveDirectory, board, threadId.ToString(), "thread.json");
 
 				if (File.Exists(threadFileName))
 				{
 					var thread = ReadJson(threadFileName);
-					
-					thread.ThreadDeleted = true;
+					thread.Thread.DeletedTime = timeDeleted;
+					thread.Thread.ArchivedTime = timeArchived;
 
 					WriteJson(threadFileName, thread);
 				}
@@ -306,7 +305,7 @@ namespace Hayden.Consumers
 					continue;
 				}
 
-				if (archivedOnly && writtenThread.Thread.IsArchived != true)
+				if (archivedOnly && writtenThread.Thread.ArchivedTime == null)
 					continue;
 
 				if (metadataMode == MetadataMode.ThreadIdOnly)
@@ -327,7 +326,7 @@ namespace Hayden.Consumers
 				}
 
 				existingThreads.Add(new ExistingThreadInfo(threadId,
-					writtenThread.Thread.IsArchived,
+					writtenThread.Thread.ArchivedTime != null,
 					writtenThread.Thread.Posts.Max(x => x.TimePosted),
 					threadHashList));
 			}

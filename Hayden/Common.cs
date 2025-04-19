@@ -15,9 +15,26 @@ namespace Hayden
 			Formatting = Formatting.None
 	    });
 
+	    public static readonly JsonSerializer LeanSerializer = JsonSerializer.Create(new JsonSerializerSettings
+	    {
+		    NullValueHandling = NullValueHandling.Ignore,
+			DefaultValueHandling = DefaultValueHandling.Ignore,
+			Formatting = Formatting.None
+	    });
+
 	    public static JObject SerializeObject(object o)
 	    {
 			return JObject.FromObject(o, JsonSerializer);
+	    }
+
+	    public static string SerializeAdditionalMetadata(object o)
+	    {
+			if (o == null)
+				return null;
+
+			var writer = new StringBuilderWriter();
+			LeanSerializer.Serialize(writer, o);
+			return writer.ToString();
 	    }
 
 		public enum MediaType

@@ -53,17 +53,23 @@ namespace Hayden
 
 		protected override Thread ConvertThread(YotsubaThread thread, string board)
 		{
+			DateTimeOffset? archivedTime = null;
+
+			if (thread.Archived && thread.OriginalPost.ArchivedOn.GetValueOrDefault() == 0)
+				archivedTime = DateTimeOffset.MinValue;
+			else if (thread.Archived)
+				archivedTime = DateTimeOffset.FromUnixTimeSeconds(thread.OriginalPost.ArchivedOn.Value);
+
 			return new Thread
 			{
 				ThreadId = thread.OriginalPost.PostNumber,
 				Title = HttpUtility.HtmlDecode(thread.OriginalPost.Subject)?.TrimAndNullify(),
-				IsArchived = thread.Archived,
+				ArchivedTime = archivedTime,
 				OriginalObject = thread,
 				Posts = thread.Posts.Select(x => x.ConvertToPost(board)).ToArray(),
 				AdditionalMetadata = new()
 				{
 					Sticky = thread.OriginalPost.Sticky.GetValueOrDefault(),
-					Locked = thread.OriginalPost.Closed.GetValueOrDefault()
 				}
 			};
 		}
@@ -267,6 +273,7 @@ namespace Hayden
 						FileUrl = $"https://i.4cdn.org/{board}/{TimestampedFilenameFull}",
 						ThumbnailUrl = $"https://i.4cdn.org/{board}/{TimestampedFilename}s.jpg",
 						Filename = HttpUtility.HtmlDecode(OriginalFilename)?.Trim(),
+						TimestampedFilename = TimestampedFilename?.ToString(),
 						FileExtension = FileExtension,
 						ThumbnailExtension = "jpg",
 						Index = 0,

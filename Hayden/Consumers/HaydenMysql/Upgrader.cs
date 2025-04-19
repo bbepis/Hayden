@@ -24,9 +24,6 @@ public class HaydenDbUpgrader
 		var completedMigrations = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
 		var isNew = completedMigrations.Length == 0;
 
-		await PerformVersion2Upgrade(fileSystem, migrator, config);
-		return;
-
 		while (true)
 		{
 			var pendingMigrations = (await context.Database.GetPendingMigrationsAsync()).ToArray();

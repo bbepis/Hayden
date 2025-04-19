@@ -15,9 +15,12 @@ namespace Hayden.Consumers.HaydenMysql.DB
 		public string Title { get; set; }
 		public DateTime LastModified { get; set; }
 
-		public bool IsArchived { get; set; }
-		public bool IsDeleted { get; set; }
+		public DateTime? TimeArchived { get; set; }
+		public DateTime? TimeDeleted { get; set; }
 		public bool IsPinned { get; set; }
+
+		public uint PostCount { get; set; }
+		public uint ImageCount { get; set; }
 
 		[Column(TypeName = "json")]
 		public string AdditionalMetadata { get; set; }

@@ -134,7 +134,7 @@ namespace Hayden.Consumers
 			{
 				Logger.Debug("Post /{board}/{threadNumber}/{postNumber} has been deleted", board, threadUpdateInfo.ThreadPointer.ThreadId, postNumber);
 
-				await SetUntracked(postNumber, board, true);
+				await SetUntracked(postNumber, board, DateTime.UtcNow, null);
 			}
 
 			return imageDownloads;
@@ -156,9 +156,9 @@ namespace Hayden.Consumers
 		}
 
 		/// <inheritdoc/>
-		public async Task ThreadUntracked(ulong threadId, string board, bool deleted)
+		public async Task ThreadUntracked(ulong threadId, string board, DateTimeOffset? timeDeleted, DateTimeOffset? timeArchived)
 		{
-			await SetUntracked(threadId, board, deleted);
+			await SetUntracked(threadId, board, timeDeleted, timeArchived);
 		}
 
 
@@ -462,16 +462,16 @@ namespace Hayden.Consumers
 		/// <param name="postNumber">The number of the post.</param>
 		/// <param name="board">The board that the post belongs to.</param>
 		/// <param name="deleted">True if the post was explicitly deleted, false if not.</param>
-		public async Task SetUntracked(ulong postNumber, string board, bool deleted)
+		public async Task SetUntracked(ulong postNumber, string board, DateTimeOffset? timeDeleted, DateTimeOffset? timeArchived)
 		{
-			uint currentTimestamp = Utility.GetNewYorkTimestamp(DateTimeOffset.Now);
+			uint currentTimestamp = Utility.GetNewYorkTimestamp(timeDeleted ?? timeArchived ?? DateTime.UtcNow);
 
 			await using var rentedConnection = await ConnectionPool.RentConnectionAsync();
 
 			await rentedConnection.Object.CreateQuery($"UPDATE `{board}` SET deleted = @deleted, timestamp_expired = @timestamp_expired WHERE num = @post_no AND subnum = 0")
 								  .SetParam("@timestamp_expired", currentTimestamp)
 								  .SetParam("@post_no", postNumber)
-								  .SetParam("@deleted", deleted ? 1 : 0)
+								  .SetParam("@deleted", timeDeleted != null ? 1 : 0)
 								  .ExecuteNonQueryAsync();
 		}
 

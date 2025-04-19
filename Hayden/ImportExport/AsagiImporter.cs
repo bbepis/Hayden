@@ -210,10 +210,16 @@ public class AsagiImporter : IImporter
 		if (threadPosts.Length == 0)
 			return null;
 
+		var isArchived = threadPosts[0].post.locked;
+		var expiredTime = threadPosts[0].post.timestamp_expired.GetValueOrDefault() != 0
+			? Utility.ConvertNewYorkTimestamp(threadPosts[0].post.timestamp_expired.Value)
+			: (DateTimeOffset?)null;
+
 		return new Thread
 		{
 			ThreadId = pointer.ThreadId,
-			IsArchived = false,
+			ArchivedTime = isArchived ? expiredTime : null,
+			DeletedTime = !isArchived ? expiredTime : null,
 			Title = threadPosts[0].post.title,
 			Posts = threadPosts.Select(x => new Post
 			{
@@ -226,7 +232,7 @@ public class AsagiImporter : IImporter
 				ContentRaw = x.post.comment,
 				ContentRendered = null,
 				ContentType = ContentType.Yotsuba,
-				IsDeleted = x.post.deleted,
+				TimeDeleted = x.post.deleted ? Utility.ConvertNewYorkTimestamp(x.post.timestamp_expired.Value) : (DateTimeOffset?)null,
 				OriginalObject = x,
 				Media = x.post.media_hash == null
 					? Array.Empty<Media>()
@@ -236,6 +242,7 @@ public class AsagiImporter : IImporter
 						{
 							Filename = HttpUtility.HtmlDecode(Path.GetFileNameWithoutExtension(x.post.media_filename)),
 							FileExtension = Path.GetExtension(x.post.media_filename),
+							TimestampedFilename = Path.GetFileNameWithoutExtension(x.post.media_orig),
 							Index = 0,
 							FileSize = x.post.media_size,
 							IsSpoiler = x.post.spoiler,
@@ -253,11 +260,7 @@ public class AsagiImporter : IImporter
 					AsagiExif = !string.IsNullOrWhiteSpace(x.post.exif) ? x.post.exif : null
 				}
 			}).ToArray(),
-			AdditionalMetadata = new()
-			{
-				Locked = threadPosts[0].post.locked,
-				TimeExpired = threadPosts[0].post.timestamp_expired,
-			}
+			AdditionalMetadata = null
 		};
 	}
 

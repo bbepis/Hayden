@@ -24,6 +24,7 @@ using Newtonsoft.Json.Converters;
 using Newtonsoft.Json.Serialization;
 using Hayden.Consumers.HaydenMysql;
 using System.Text.RegularExpressions;
+using Hayden.Config;
 
 namespace Hayden;
 
@@ -97,6 +98,11 @@ public class Program
 		purgeOrphanedFiles.AddOption(dbConfigOption);
 		purgeOrphanedFiles.SetHandler(MaintenancePurgeOrphanedFilesAsync, dbConfigOption);
 		maintainCommand.Add(purgeOrphanedFiles);
+
+		var recalcThreadStats = new Command("recount-stats", "Recalculates all thread stats");
+		recalcThreadStats.AddOption(dbConfigOption);
+		recalcThreadStats.SetHandler(MaintenanceRecalcStatsAsync, dbConfigOption);
+		maintainCommand.Add(recalcThreadStats);
 
 		var deleteThreadsTaskCommand = new Command("deletethreads", "Deletes a list of threads and their posts");
 		var threadsArgument = new Argument<string[]>("threads", "A list of threads formatted as '/board/threadid'") { Arity = ArgumentArity.ZeroOrMore };
@@ -190,6 +196,14 @@ public class Program
 
 		var maintenanceManager = new MaintenanceManager(config.Consumer);
 		await maintenanceManager.PurgeOrphanedFiles();
+	}
+
+	private static async Task MaintenanceRecalcStatsAsync(string configPath)
+	{
+		var config = JsonConvert.DeserializeObject<ConfigFile>(File.ReadAllText(configPath));
+
+		var maintenanceManager = new MaintenanceManager(config.Consumer);
+		await maintenanceManager.RecountStats();
 	}
 
 	private static async Task MaintenanceRunDeleteThreadsAsync(string configPath, string[] threads)

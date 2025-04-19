@@ -271,6 +271,7 @@ namespace Hayden.Consumers
 								PostId = post.PostNumber,
 								FileId = null,
 								Filename = media.Filename ?? "",
+								TimestampedFilename = media.TimestampedFilename ?? (media.FileUrl != null ? FileSystem.Path.GetFileNameWithoutExtension(media.FileUrl) : null),
 								Index = media.Index,
 								IsDeleted = media.IsDeleted,
 								IsSpoiler = media.IsSpoiler.GetValueOrDefault(),
@@ -382,13 +383,15 @@ namespace Hayden.Consumers
 					{
 						BoardId = boardId,
 						ThreadId = threadUpdateInfo.ThreadPointer.ThreadId,
-						IsDeleted = threadUpdateInfo.Thread.AdditionalMetadata?.Deleted
-						            ?? threadUpdateInfo.Thread.Posts.FirstOrDefault(x => x.PostNumber == threadUpdateInfo.ThreadPointer.ThreadId)?.IsDeleted
-						            ?? false,
-						IsArchived = threadUpdateInfo.Thread.IsArchived,
+						TimeDeleted = threadUpdateInfo.Thread.DeletedTime?.UtcDateTime
+						            ?? (threadUpdateInfo.Thread.Posts.FirstOrDefault(x => x.PostNumber == threadUpdateInfo.ThreadPointer.ThreadId)?.TimeDeleted?.UtcDateTime)
+						            ?? null,
+						TimeArchived = threadUpdateInfo.Thread.ArchivedTime?.UtcDateTime,
 						LastModified = threadUpdateInfo.Thread.Posts.DefaultIfEmpty().Max(x => x.TimePosted).UtcDateTime,
 						Title = threadUpdateInfo.Thread.Title.TrimAndNullify(),
-						AdditionalMetadata = threadUpdateInfo.Thread.AdditionalMetadata?.Serialize()
+						AdditionalMetadata = Common.SerializeAdditionalMetadata(threadUpdateInfo.Thread.AdditionalMetadata),
+						PostCount = (uint)threadUpdateInfo.NewPosts.Count,
+						ImageCount = (uint)threadUpdateInfo.NewPosts.Sum(x => x.Media?.Length ?? 0),
 					};
 
 					dbContext.Add(dbThread);
@@ -399,16 +402,19 @@ namespace Hayden.Consumers
 					CreateThread();
 				}
 				else if (threadUpdateInfo.NewPosts.Count > 0
-					|| threadUpdateInfo.Thread.IsArchived
-					|| threadUpdateInfo.Thread.Posts[0].IsDeleted == true)
+					|| threadUpdateInfo.Thread.ArchivedTime != null
+					|| threadUpdateInfo.Thread.Posts[0].TimeDeleted != null)
 				{
 					var dbThread = await dbContext.Threads.FirstOrDefaultAsync(x =>
 						x.BoardId == boardId && x.ThreadId == threadUpdateInfo.ThreadPointer.ThreadId);
 
 					if (dbThread != null)
 					{
-						dbThread.IsDeleted = threadUpdateInfo.Thread.Posts[0].IsDeleted ?? false;
-						dbThread.IsArchived = threadUpdateInfo.Thread.IsArchived;
+						dbThread.TimeDeleted = threadUpdateInfo.Thread.DeletedTime?.UtcDateTime;
+						dbThread.TimeArchived = threadUpdateInfo.Thread.ArchivedTime?.UtcDateTime;
+
+						dbThread.PostCount += (uint)threadUpdateInfo.NewPosts.Count;
+						dbThread.ImageCount += (uint)threadUpdateInfo.NewPosts.Sum(x => x.Media?.Length ?? 0);
 
 						var newLastModified = threadUpdateInfo.Thread.Posts.Max(x => x.TimePosted).UtcDateTime;
 
@@ -426,9 +432,9 @@ namespace Hayden.Consumers
 
 				HashSet<ulong> postNumbersToSkip = null;
 
-				if (!threadUpdateInfo.IsNewThread && threadUpdateInfo.NewPosts.Any(x => x.IsDeleted == true))
+				if (!threadUpdateInfo.IsNewThread && threadUpdateInfo.NewPosts.Any(x => x.TimeDeleted != null))
 				{
-					var checkedPostIds = threadUpdateInfo.NewPosts.Where(x => x.IsDeleted == true)
+					var checkedPostIds = threadUpdateInfo.NewPosts.Where(x => x.TimeDeleted != null)
 						.Select(x => x.PostNumber)
 						.ToArray();
 
@@ -457,7 +463,7 @@ namespace Hayden.Consumers
 						ContentHtml = post.ContentRendered.TrimAndNullify(),
 						ContentRaw = post.ContentRaw.TrimAndNullify(),
 						ContentType = post.ContentType,
-						IsDeleted = post.IsDeleted ?? false,
+						TimeDeleted = post.TimeDeleted?.UtcDateTime,
 						Author = post.Author == "Anonymous" ? null : post.Author.TrimAndNullify(),
 						Tripcode = post.Tripcode.TrimAndNullify(),
 						Email = post.Email.TrimAndNullify(),
@@ -509,7 +515,7 @@ namespace Hayden.Consumers
 							dbPost.ContentRaw = post.ContentRaw.TrimAndNullify();
 						}
 
-						dbPost.IsDeleted = false;
+						dbPost.TimeDeleted = null;
 						dbContext.Update(dbPost);
 
 						//foreach (var dbPostMapping in dbPostMappings)
@@ -532,7 +538,7 @@ namespace Hayden.Consumers
 
 						var dbPost = await dbContext.Posts.FirstAsync(x => x.BoardId == boardId && x.PostId == postNumber);
 
-						dbPost.IsDeleted = true;
+						dbPost.TimeDeleted = DateTime.UtcNow;
 						dbContext.Update(dbPost);
 					}
 				
@@ -652,9 +658,9 @@ namespace Hayden.Consumers
 		}
 
 		/// <inheritdoc/>
-		public async Task ThreadUntracked(ulong threadId, string board, bool deleted)
+		public async Task ThreadUntracked(ulong threadId, string board, DateTimeOffset? timeDeleted, DateTimeOffset? timeArchived)
 		{
-			if (!deleted)
+			if (timeDeleted == null && timeArchived == null)
 				return;
 
 			ushort boardId = BoardIdMappings[GetTranslatedBoardName(board)];
@@ -669,7 +675,12 @@ namespace Hayden.Consumers
 				return;
 			}
 
-			thread.IsDeleted = true;
+			thread.TimeDeleted = timeDeleted?.UtcDateTime;
+
+			if (thread.TimeArchived == null && timeArchived == DateTimeOffset.MinValue)
+				thread.TimeArchived = DateTime.UtcNow;
+			else
+				thread.TimeArchived = timeArchived?.UtcDateTime;
 			dbContext.Update(thread);
 
 			await dbContext.SaveChangesAsync();
@@ -685,16 +696,16 @@ namespace Hayden.Consumers
 			var query = dbContext.Threads.Where(x => x.BoardId == boardId && threadIdsToCheck.Contains(x.ThreadId));
 
 			if (archivedOnly)
-				query = query.Where(x => x.IsArchived);
+				query = query.Where(x => x.TimeArchived != null);
 
 			var items = new List<ExistingThreadInfo>();
 
 			if (metadataMode == MetadataMode.FullHashMetadata)
 			{
-				var threadInfos = await query.Select(x => new { x.ThreadId, x.LastModified, x.IsArchived }).ToDictionaryAsync(x => x.ThreadId);
+				var threadInfos = await query.Select(x => new { x.ThreadId, x.LastModified, x.TimeArchived }).ToDictionaryAsync(x => x.ThreadId);
 				
 				var postQuery =
-					dbContext.Posts.Where(x => x.BoardId == boardId && threadInfos.Keys.Contains(x.ThreadId) && (!excludeDeletedPosts || !x.IsDeleted))
+					dbContext.Posts.Where(x => x.BoardId == boardId && threadInfos.Keys.Contains(x.ThreadId) && (!excludeDeletedPosts || x.TimeDeleted == null))
 						.SelectMany(x =>
 						dbContext.FileMappings.Where(y => y.BoardId == boardId && y.PostId == x.PostId).DefaultIfEmpty(),
 						(post, mapping) => new { post, mapping });
@@ -719,7 +730,7 @@ namespace Hayden.Consumers
 						hashes.Add((postGroup.Key.PostId, hash));
 					}
 
-					items.Add(new ExistingThreadInfo(threadInfo.ThreadId, threadInfo.IsArchived, new DateTimeOffset(threadInfo.LastModified, TimeSpan.Zero), hashes));
+					items.Add(new ExistingThreadInfo(threadInfo.ThreadId, threadInfo.TimeArchived != null, new DateTimeOffset(threadInfo.LastModified, TimeSpan.Zero), hashes));
 				}
 			}
 			else if (metadataMode == MetadataMode.ThreadIdAndPostId)
@@ -774,7 +785,7 @@ namespace Hayden.Consumers
 
 				var allPosts = await dbContext.Posts
 					.AsNoTracking()
-					.Where(x => x.BoardId == boardId && x.ThreadId == threadId && (!excludeDeletedPosts || !x.IsDeleted))
+					.Where(x => x.BoardId == boardId && x.ThreadId == threadId && (!excludeDeletedPosts || x.TimeDeleted == null))
 					.Select(x => new { x.PostId, x.ContentRaw, x.ContentHtml })
 					.ToArrayAsync();
 

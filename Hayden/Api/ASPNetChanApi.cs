@@ -11,7 +11,6 @@ using Hayden.Config;
 using Hayden.Consumers.HaydenMysql.DB;
 using Hayden.Contract;
 using Hayden.Models;
-using Newtonsoft.Json.Linq;
 using Thread = Hayden.Models.Thread;
 
 namespace Hayden
@@ -129,7 +128,7 @@ namespace Hayden
 
 			var threadStats = page.QuerySelector("#thread_stats_page");
 			if (threadStats != null && threadStats.TextContent.Contains("Archived"))
-				thread.IsArchived = true;
+				thread.ArchivedTime = DateTimeOffset.MinValue;
 
 			return thread;
 		}

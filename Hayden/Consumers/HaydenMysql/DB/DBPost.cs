@@ -28,8 +28,7 @@ namespace Hayden.Consumers.HaydenMysql.DB
 		public string Email { get; set; }
 
 		public DateTime DateTime { get; set; }
-
-		public bool IsDeleted { get; set; }
+		public DateTime? TimeDeleted { get; set; }
 
 		[MaxLength(16)]
 		public byte[] PosterIP { get; set; }

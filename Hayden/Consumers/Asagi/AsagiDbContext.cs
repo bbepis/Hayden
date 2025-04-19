@@ -84,6 +84,7 @@ public class AsagiDbContext : DbContext
 		public uint? timestamp_expired { get => backing_timestamp_expired; set => backing_timestamp_expired = value.GetValueOrDefault(); }
 
 		public string media_filename { get; set; }
+		public string media_orig { get; set; }
 		public ushort media_w { get; set; }
 		public ushort media_h { get; set; }
 		public uint media_size { get; set; }

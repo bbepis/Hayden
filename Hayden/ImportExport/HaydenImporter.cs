@@ -111,7 +111,8 @@ public class HaydenImporter : IImporter
 		return new Thread
 		{
 			ThreadId = pointer.ThreadId,
-			IsArchived = thread.IsArchived,
+			ArchivedTime = thread.TimeArchived,
+			DeletedTime = thread.TimeDeleted,
 			Title = thread.Title,
 			Posts = threadPosts.Select(x => new Post
 			{
@@ -124,7 +125,7 @@ public class HaydenImporter : IImporter
 				ContentRaw = x.ContentRaw,
 				ContentRendered = x.ContentHtml,
 				ContentType = x.ContentType,
-				IsDeleted = x.IsDeleted,
+				TimeDeleted = x.TimeDeleted,
 				OriginalObject = x,
 				Media = fileMappings.Where(y => y.mapping.PostId == x.PostId).Select(m =>
 				{

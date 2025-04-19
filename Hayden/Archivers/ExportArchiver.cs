@@ -266,7 +266,7 @@ public class ExportArchiver : IArchiver
 			throw new NotImplementedException();
 		}
 
-		public Task ThreadUntracked(ulong threadId, string board, bool deleted) => Task.CompletedTask;
+		public Task ThreadUntracked(ulong threadId, string board, DateTimeOffset? timeDeleted, DateTimeOffset? timeArchived) => Task.CompletedTask;
 
 		public Task<IList<ExistingThreadInfo>> CheckExistingThreads(IEnumerable<ulong> threadIdsToCheck, string board, bool archivedOnly,
 			MetadataMode metadataMode = MetadataMode.FullHashMetadata, bool excludeDeletedPosts = true)

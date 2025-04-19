@@ -72,7 +72,7 @@ namespace Hayden
 			{
 				ThreadId = thread.OriginalPost.PostNumber,
 				Title = thread.OriginalPost.Subject,
-				IsArchived = thread.Locked,
+				ArchivedTime = thread.Locked ? DateTimeOffset.FromUnixTimeSeconds((long)thread.LockedAt.Value) : null,
 				OriginalObject = thread,
 				Posts = thread.Posts.Select(x => x.ConvertToPost()).ToArray(),
 				AdditionalMetadata = new()

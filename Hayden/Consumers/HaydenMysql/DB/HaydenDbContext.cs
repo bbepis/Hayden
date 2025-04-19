@@ -23,8 +23,6 @@ namespace Hayden.Consumers.HaydenMysql.DB;
 
 public class HaydenDbContext : DbContext
 {
-	public const string WebRelatedPrefix = "web.";
-
 	public virtual DbSet<DBBoard> Boards { get; set; }
 	public virtual DbSet<DBThread> Threads { get; set; }
 	public virtual DbSet<DBPost> Posts { get; set; }
@@ -32,11 +30,6 @@ public class HaydenDbContext : DbContext
 	public virtual DbSet<DBFile> Files { get; set; }
 
 	private ILogger Logger { get; } = SerilogManager.CreateSubLogger("HaydenDB");
-
-	// live imageboard only
-	public virtual DbSet<DBBannedPoster> BannedPosters { get; set; }
-	public virtual DbSet<DBModerator> Moderators { get; set; }
-	public virtual DbSet<DBReport> Reports { get; set; }
 
 	protected HaydenDbContext() { }
 
@@ -151,22 +144,6 @@ public class HaydenDbContext : DbContext
 			x.HasIndex(x => new { x.StreamHash });
 		});
 
-		modelBuilder.Entity<DBModerator>(x =>
-		{
-			if (Database.IsMySql())
-			{
-				x.Property(post => post.Role)
-					.HasConversion<EnumToStringConverter<ModeratorRole>>()
-					.HasColumnType(
-						"enum('Janitor','Moderator','Developer','Admin')");
-			}
-		});
-
-		modelBuilder.Entity<DBReport>(x =>
-		{
-			x.Property(x => x.Category).HasConversion<byte>();
-		});
-
 		modelBuilder.HasCharSet(CharSet.Utf8Mb4.Name, DelegationModes.ApplyToColumns);
 	}
 
@@ -226,7 +203,7 @@ public class HaydenDbContext : DbContext
 
 		var posts = await Posts.AsNoTracking()
 			.Where(x => x.BoardId == boardObj.Id && x.ThreadId == threadId)
-			.Where(x => boardObj.ShowsDeletedPosts || !x.IsDeleted)
+			.Where(x => boardObj.ShowsDeletedPosts || x.TimeDeleted == null)
 			.OrderBy(x => x.DateTime)
 			.ToArrayAsync();
 
@@ -297,6 +274,7 @@ class HaydenDbContextFactory : IDesignTimeDbContextFactory<HaydenDbContext>
 	{
 		var optionsBuilder = new DbContextOptionsBuilder<HaydenDbContext>();
 		optionsBuilder.UseMySql("Server=.", ServerVersion.Create(8, 0, 0, ServerType.MySql));
+		optionsBuilder.ReplaceService<IMigrationsIdGenerator, VersionedMigrationIdGenerator>();
 
 		return new HaydenDbContext(optionsBuilder.Options);
 	}

@@ -162,8 +162,8 @@ namespace Hayden.WebServer.Controllers.Api
 			public string subject { get; set; }
 			public DateTime lastModified { get; set; }
 
-			public bool archived { get; set; }
-			public bool deleted { get; set; }
+			public DateTime? archived { get; set; }
+			public DateTime? deleted { get; set; }
 
 			public JsonPostModel[] posts { get; set; }
 
@@ -174,8 +174,8 @@ namespace Hayden.WebServer.Controllers.Api
 				threadId = thread.ThreadId;
 				subject = thread.Title;
 				lastModified = thread.LastModified;
-				archived = thread.IsArchived;
-				deleted = thread.IsDeleted;
+				archived = thread.TimeArchived;
+				deleted = thread.TimeDeleted;
 
 				this.posts = posts;
 			}
@@ -196,7 +196,7 @@ namespace Hayden.WebServer.Controllers.Api
 
 			public DateTime dateTime { get; set; }
 
-			public bool deleted { get; set; }
+			public DateTime? deleted { get; set; }
 
 			public JsonFileModel[] files { get; set; }
 
@@ -208,8 +208,8 @@ namespace Hayden.WebServer.Controllers.Api
 				contentRaw = post.ContentRaw;
 				author = post.Author;
 				tripcode = post.Tripcode;
-				dateTime = post.DateTime;
-				deleted = post.IsDeleted;
+				dateTime = post.DateTime.ToUniversalTime();
+				deleted = post.TimeDeleted;
 
 				this.files = files;
 			}

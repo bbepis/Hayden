@@ -114,7 +114,7 @@ namespace Hayden.WebServer.Controllers.Api
 					ContentType = ContentType.Hayden,
 					DateTime = DateTime.UtcNow,
 					Email = null,
-					IsDeleted = false,
+					TimeDeleted = null,
 					PostId = nextPostId,
 					ThreadId = form.threadId,
 					Tripcode = null,
@@ -275,8 +275,8 @@ namespace Hayden.WebServer.Controllers.Api
 				var newThread = new DBThread
 				{
 					BoardId = board.Id,
-					IsArchived = false,
-					IsDeleted = false,
+					TimeArchived = null,
+					TimeDeleted = null,
 					LastModified = DateTime.UtcNow,
 					ThreadId = nextPostId,
 					Title = form.subject.TrimAndNullify()
@@ -293,7 +293,7 @@ namespace Hayden.WebServer.Controllers.Api
 					ContentType = ContentType.Hayden,
 					DateTime = DateTime.UtcNow,
 					Email = null,
-					IsDeleted = false,
+					TimeDeleted = null,
 					PostId = nextPostId,
 					ThreadId = nextPostId,
 					Tripcode = null,

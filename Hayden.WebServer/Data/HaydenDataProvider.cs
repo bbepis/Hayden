@@ -213,8 +213,8 @@ public class HaydenDataProvider : IDataProvider
 			threadModels[i] = new JsonThreadModel
 			{
 				board = item.b,
-				archived = false,
-				deleted = item.p.IsDeleted,
+				archived = null,
+				deleted = null,
 				lastModified = item.p.DateTime,
 				threadId = item.p.ThreadId,
 				posts = new[]
@@ -319,7 +319,7 @@ public class HaydenDataProvider : IDataProvider
 					PostDateUtc = x.post.DateTime,
 					PostRawText = x.post.ContentRaw ?? x.post.ContentHtml,
 					PosterID = additionalMetadata?.PosterID,
-					IsDeleted = x.post.IsDeleted,
+					IsDeleted = x.post.TimeDeleted != null,
 					Subject = isOp ? x.thread.Title : null,
 					PosterName = x.post.Author,
 					Tripcode = x.post.Tripcode,
@@ -374,7 +374,7 @@ public class HaydenDataProvider : IDataProvider
 
 		// actually delete the post from the db?
 		// flag on board object "PreserveDeleted"
-		post.IsDeleted = true;
+		post.TimeDeleted = DateTime.UtcNow;
 
 		await dbContext.SaveChangesAsync();
 

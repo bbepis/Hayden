@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
-using System.Security;
 using System.Threading;
 using System.Threading.Tasks;
 using Hayden.Api;
@@ -11,7 +10,6 @@ using Hayden.Consumers.HaydenMysql.DB;
 using Hayden.Contract;
 using Hayden.Models;
 using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
 using Thread = Hayden.Models.Thread;
 
 namespace Hayden
@@ -52,7 +50,7 @@ namespace Hayden
 			{
 				ThreadId = thread.OriginalPost.PostNumber,
 				Title = thread.OriginalPost.Subject,
-				IsArchived = thread.Archived,
+				ArchivedTime = thread.Archived ? DateTimeOffset.MinValue : null,
 				OriginalObject = thread,
 				Posts = thread.Posts.Select(x => x.ConvertToPost(board, ImageboardWebsite)).ToArray(),
 				AdditionalMetadata = new()

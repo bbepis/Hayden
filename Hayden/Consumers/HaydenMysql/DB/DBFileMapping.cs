@@ -14,6 +14,9 @@ namespace Hayden.Consumers.HaydenMysql.DB
 		
 		[Required, MaxLength(255)]
 		public string Filename { get; set; }
+		
+		[MaxLength(255)]
+		public string TimestampedFilename { get; set; }
 
 		public bool IsSpoiler { get; set; }
 		public bool IsDeleted { get; set; }

@@ -41,8 +41,9 @@ public interface IThreadConsumer : IDisposable
 	/// </summary>
 	/// <param name="threadId">The ID of the thread that has been completed.</param>
 	/// <param name="board">The board of the thread.</param>
-	/// <param name="deleted">True if the thread was deleted, otherwise false if archived.</param>
-	Task ThreadUntracked(ulong threadId, string board, bool deleted);
+	/// <param name="timeDeleted">The time to mark as when the thread is deleted, or null if not.</param>
+	/// <param name="timeArchived">The time to mark as when the thread is archived, or null if not.</param>
+	Task ThreadUntracked(ulong threadId, string board, DateTimeOffset? timeDeleted, DateTimeOffset? timeArchived);
 
 	/// <summary>
 	/// Returns a list of threads that are already stored in the consumer, to prevent re-scraping of them.
