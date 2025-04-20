@@ -4,7 +4,7 @@ using Nest;
 namespace Hayden.WebServer.DB.Elasticsearch
 {
 	[ElasticsearchType(RelationName = IndexName)]
-	public class PostIndex
+	public class PostDocument
 	{
 		public const string IndexName = "post_index";
 		

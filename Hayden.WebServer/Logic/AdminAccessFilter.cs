@@ -1,8 +1,9 @@
-﻿using System;
+using System;
 using System.Linq;
 using System.Threading.Tasks;
 using Hayden.Consumers.HaydenMysql.DB;
 using Hayden.WebServer.Controllers.Api;
+using Hayden.WebServer.WebDb;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;

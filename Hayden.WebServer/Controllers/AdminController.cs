@@ -6,6 +6,7 @@ using Hayden.Consumers.HaydenMysql.DB;
 using Hayden.WebServer.Controllers.Api;
 using Hayden.WebServer.DB.Elasticsearch;
 using Hayden.WebServer.Logic;
+using Hayden.WebServer.WebDb;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -75,7 +76,7 @@ namespace Hayden.WebServer.Controllers
 				var dbContext = provider.GetRequiredService<HaydenDbContext>();
 
 				CurrentStatus = "Deleting index";
-				var deleteResponse = await elasticClient.Indices.DeleteAsync(Indices.Index<PostIndex>());
+				var deleteResponse = await elasticClient.Indices.DeleteAsync(Indices.Index<PostDocument>());
 
 				if (!deleteResponse.IsValid && deleteResponse.ApiCall?.HttpStatusCode != 404)
 				{
@@ -86,8 +87,8 @@ namespace Hayden.WebServer.Controllers
 				//Startup.StartupLogger.Log(LogLevel.Information, deleteResponse.DebugInformation);
 
 				CurrentStatus = "Creating index";
-				var createIndexResponse = await elasticClient.Indices.CreateAsync(PostIndex.IndexName, c => c
-					.Map<PostIndex>(m => m.AutoMap())
+				var createIndexResponse = await elasticClient.Indices.CreateAsync(PostDocument.IndexName, c => c
+					.Map<PostDocument>(m => m.AutoMap())
 				);
 
 				// Startup.StartupLogger.Log(LogLevel.Information, createIndexResponse.DebugInformation);
@@ -121,7 +122,7 @@ namespace Hayden.WebServer.Controllers
 						Progress = (reindexCount * subBatchSize) / (float)total;
 
 						var response = await elasticClient.IndexManyAsync(subBatch
-							.Select(x => new PostIndex()
+							.Select(x => new PostDocument()
 							{
 								PostId = x.PostId,
 								ThreadId = x.ThreadId,

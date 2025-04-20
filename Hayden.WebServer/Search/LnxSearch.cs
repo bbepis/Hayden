@@ -8,6 +8,7 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Hayden.WebServer.Config;
 using Hayden.WebServer.DB.Elasticsearch;
 using Microsoft.Extensions.Options;
 using Newtonsoft.Json;
@@ -21,11 +22,16 @@ public class LnxSearch : ISearchService
 	protected ServerSearchConfig Config { get; set; }
 	private static HttpClient HttpClient { get; } = new HttpClient();
 
-	public LnxSearch(IOptions<ServerConfig> config)
+	public LnxSearch(ConfigOption<ServerSearchConfig> config)
 	{
-		Config = config.Value.Search;
+		Config = config.Snapshot();
 
 		CacheMemoryStream = new MemoryStream();
+	}
+
+	public async Task<bool> CheckIfIndexExists()
+	{
+		return false;
 	}
 
 	public async Task CreateIndex()
@@ -117,7 +123,7 @@ public class LnxSearch : ISearchService
 
 	private MemoryStream CacheMemoryStream { get; }
 	private static UTF8Encoding NoBomEncoding { get; } = new UTF8Encoding(false);
-	public async Task IndexBatch(IEnumerable<PostIndex> posts, CancellationToken token = default)
+	public async Task IndexBatch(IEnumerable<PostDocument> posts, CancellationToken token = default)
 	{
 		CacheMemoryStream.SetLength(0);
 

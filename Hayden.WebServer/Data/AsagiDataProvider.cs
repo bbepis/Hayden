@@ -3,17 +3,15 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
-using System.Security.Cryptography;
 using System.Threading.Tasks;
 using System.Web;
 using Hayden.Consumers.Asagi;
 using Hayden.Consumers.HaydenMysql.DB;
+using Hayden.WebServer.Config;
 using Hayden.WebServer.Controllers.Api;
 using Hayden.WebServer.DB.Elasticsearch;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Options;
-using Newtonsoft.Json;
 using Serilog;
 
 namespace Hayden.WebServer.Data
@@ -21,19 +19,17 @@ namespace Hayden.WebServer.Data
 	public class AsagiDataProvider : IDataProvider
 	{
 		private AsagiDbContext dbContext { get; }
-		private AuxiliaryDbContext AuxiliaryDbContext { get; set; }
-		private IOptions<ServerConfig> ServerConfig { get; }
+		private ConfigOption<ServerDataConfig> DataConfig { get; }
 
 		// TODO: this should not be static
 		private static Dictionary<ushort, string> Boards { get; set; } = new();
 
 		private ILogger Logger { get; } = SerilogManager.CreateSubLogger("Asagi");
 
-		public AsagiDataProvider(AsagiDbContext context, IOptions<ServerConfig> serverConfig, IServiceProvider serviceProvider)
+		public AsagiDataProvider(AsagiDbContext context, ConfigOption<ServerDataConfig> dataConfig, IServiceProvider serviceProvider)
 		{
 			dbContext = context;
-			ServerConfig = serverConfig;
-			AuxiliaryDbContext = serviceProvider.GetService<AuxiliaryDbContext>();
+			DataConfig = dataConfig;
 		}
 
 		public bool SupportsWriting => false;
@@ -60,14 +56,14 @@ namespace Hayden.WebServer.Data
 
 		private string GetMediaUrl(string board, string asagiFilename, bool thumbnail)
 		{
-			string prefix = !string.IsNullOrWhiteSpace(ServerConfig.Value.Data.ImagePrefix) ? ServerConfig.Value.Data.ImagePrefix : "/image";
+			string prefix = !string.IsNullOrWhiteSpace(DataConfig.Value.ImagePrefix) ? DataConfig.Value.ImagePrefix : "/image";
 
 			return string.Join('/', prefix, GetMediaInternalPath(board, asagiFilename, thumbnail, '/')); 
 		}
 
 		private string GetMediaFilename(string board, string asagiFilename, bool thumbnail)
 		{
-			return Path.Join(ServerConfig.Value.Data.FileLocation, GetMediaInternalPath(board, asagiFilename, thumbnail, Path.DirectorySeparatorChar)); 
+			return Path.Join(DataConfig.Value.FileLocation, GetMediaInternalPath(board, asagiFilename, thumbnail, Path.DirectorySeparatorChar)); 
 		}
 
 		private ApiController.JsonPostModel CreatePostModel(string board,
@@ -136,45 +132,15 @@ namespace Hayden.WebServer.Data
 
 			try
 			{
-				if (AuxiliaryDbContext != null)
-				{
-					await AuxiliaryDbContext.Database.EnsureCreatedAsync();
-
-					if (AuxiliaryDbContext.Moderators.All(x => x.Role != ModeratorRole.Admin))
-					{
-						var code = Convert.ToHexString(RandomNumberGenerator.GetBytes(8));
-
-						ApiController.RegisterCodes.Add(code, ModeratorRole.Admin);
-
-						Console.WriteLine("No admin account detected. Use this code to register an admin account:");
-						Console.WriteLine(code);
-					}
-				}
-
 				await tempContext.Database.OpenConnectionAsync();
-
-				var indexes = AuxiliaryDbContext != null
-					? AuxiliaryDbContext.BoardIndexes.AsEnumerable().Select(x => (x.Id, x.ShortName)).ToArray()
-					: Array.Empty<(ushort, string)>();
 
 				var boardList = tempContext.GetBoardTables();
 
-				foreach (var existingTable in indexes)
-				{
-					Boards[existingTable.Item1] = existingTable.Item2;
-				}
-
-				foreach (var newBoard in boardList.Except(Boards.Values.ToArray()).OrderBy(x => x))
+				foreach (var newBoard in boardList.OrderBy(x => x))
 				{
 					ushort newIndex = 1;
 
-					while (Boards.ContainsKey(newIndex))
-						newIndex++;
-
-					Boards[newIndex] = newBoard;
-
-					if (AuxiliaryDbContext != null)
-						await SetIndexPosition(newIndex, 0);
+					Boards[newIndex++] = newBoard;
 				}
 			}
 			catch (Exception ex)
@@ -333,9 +299,6 @@ namespace Hayden.WebServer.Data
 			if (threadModels.Any(x => x == null))
 				threadModels = threadModels.Where(x => x != null).ToArray();
 
-			if (ServerConfig.Value.Search.Debug)
-				Console.WriteLine(JsonConvert.SerializeObject(threadModels));
-
 			return new ApiController.JsonBoardPageModel
 			{
 				totalThreadCount = hitCount,
@@ -344,43 +307,7 @@ namespace Hayden.WebServer.Data
 			};
 		}
 
-		public async Task<(ushort BoardId, ulong IndexPosition)[]> GetIndexPositions()
-		{
-			if (AuxiliaryDbContext == null)
-				throw new InvalidOperationException("Auxiliary database does not exist");
-
-			return await AuxiliaryDbContext.BoardIndexes.AsAsyncEnumerable().Select(x => (x.Id, x.IndexPosition)).ToArrayAsync();
-		}
-
-		public async Task SetIndexPosition(ushort boardId, ulong indexPosition)
-		{
-			if (AuxiliaryDbContext == null)
-				throw new InvalidOperationException("Auxiliary database does not exist");
-
-			var existingIndex = await AuxiliaryDbContext.BoardIndexes.FirstOrDefaultAsync(x => x.Id == boardId);
-
-			if (existingIndex == null)
-			{
-				existingIndex = new AuxiliaryDbContext.BoardIndex
-				{
-					Id = boardId,
-					ShortName = Boards[boardId],
-					IndexPosition = indexPosition
-				};
-
-				AuxiliaryDbContext.Add(existingIndex);
-			}
-			else
-			{
-				existingIndex.IndexPosition = indexPosition;
-				AuxiliaryDbContext.Update(existingIndex);
-			}
-
-			await AuxiliaryDbContext.SaveChangesAsync();
-			AuxiliaryDbContext.ChangeTracker.Clear();
-		}
-
-		public async IAsyncEnumerable<PostIndex> GetIndexEntities(string board, ulong minPostNo)
+		public async IAsyncEnumerable<PostDocument> GetIndexEntities(string board, ulong minPostNo)
 		{
 			if (!Boards.Values.Contains(board))
 				yield break;
@@ -395,7 +322,7 @@ namespace Hayden.WebServer.Data
 
 			await foreach (var post in query.AsAsyncEnumerable())
 			{
-				yield return new PostIndex
+				yield return new PostDocument
 				{
 					BoardId = boardId,
 					PostId = post.num,
@@ -447,20 +374,6 @@ namespace Hayden.WebServer.Data
 						{
 							Logger.Warning("Banned file does not exist and cannot be deleted: {filename}", filename);
 						}
-
-						var command = ServerConfig.Value.Extensions.ImageDeleteCommand.Replace("{I}", filename);
-
-						if (!string.IsNullOrWhiteSpace(command))
-						{
-							if (OperatingSystem.IsLinux())
-							{
-								Process.Start("bash", new [] { "-c", command });
-							}
-							else if (OperatingSystem.IsWindows())
-							{
-								Process.Start("cmd.exe", new[] { "/C", command });
-							}
-						}
 					}
 
 					tryDeleteFile(GetMediaFilename(board, image.media, false));
@@ -476,26 +389,6 @@ namespace Hayden.WebServer.Data
 				}
 			}
 
-			await dbContext.SaveChangesAsync();
-			return true;
-		}
-
-		public async Task<DBModerator> GetModerator(ushort userId)
-		{
-			return await AuxiliaryDbContext.Moderators.FirstOrDefaultAsync(x => x.Id == userId);
-		}
-
-		public async Task<DBModerator> GetModerator(string username)
-		{
-			return await AuxiliaryDbContext.Moderators.FirstOrDefaultAsync(x => x.Username == username);
-		}
-
-		public async Task<bool> RegisterModerator(DBModerator moderator)
-		{
-			if (await AuxiliaryDbContext.Moderators.AnyAsync(x => x.Username == moderator.Username))
-				return false;
-
-			dbContext.Add(moderator);
 			await dbContext.SaveChangesAsync();
 			return true;
 		}

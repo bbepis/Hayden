@@ -6,11 +6,14 @@ using System.Security.Cryptography;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
+using AngleSharp.Common;
 using Hayden.Consumers;
 using Hayden.Consumers.HaydenMysql.DB;
 using Hayden.Models;
+using Hayden.WebServer.Config;
 using Hayden.WebServer.Controllers.Api;
 using Hayden.WebServer.DB.Elasticsearch;
+using Hayden.WebServer.WebDb;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
@@ -23,9 +26,9 @@ namespace Hayden.WebServer.Data;
 public class HaydenDataProvider : IDataProvider
 {
 	private HaydenDbContext dbContext { get; }
-	private IOptions<ServerConfig> config { get; }
+	private ConfigOption<ServerDataConfig> config { get; }
 
-	public HaydenDataProvider(HaydenDbContext context, IOptions<ServerConfig> config)
+	public HaydenDataProvider(HaydenDbContext context, ConfigOption<ServerDataConfig> config)
 	{
 		dbContext = context;
 		this.config = config;
@@ -35,7 +38,7 @@ public class HaydenDataProvider : IDataProvider
 
 	public async Task<bool> PerformInitialization(IServiceProvider services)
 	{
-		await using var dbContext = services.GetRequiredService<HaydenDbContext>();
+		await using var dbContext = services.GetRequiredService<WebDbContext>();
 
 		try
 		{
@@ -47,7 +50,7 @@ public class HaydenDataProvider : IDataProvider
 			return false;
 		}
 
-		await dbContext.UpgradeOrCreateAsync();
+		//await dbContext.UpgradeOrCreateAsync();
 
 		if (dbContext.Moderators.All(x => x.Role != ModeratorRole.Admin))
 		{
@@ -288,7 +291,7 @@ public class HaydenDataProvider : IDataProvider
 		await System.IO.File.WriteAllTextAsync("index-positions.json", JsonConvert.SerializeObject(dictionary));
 	}
 
-	public async IAsyncEnumerable<PostIndex> GetIndexEntities(string board, ulong minPostNo)
+	public async IAsyncEnumerable<PostDocument> GetIndexEntities(string board, ulong minPostNo)
 	{
 		var boardInfo = await dbContext.Boards.AsNoTracking().Where(x => x.ShortName == board).FirstAsync();
 
@@ -330,7 +333,7 @@ public class HaydenDataProvider : IDataProvider
 				if (x.file?.Md5Hash != null)
 					md5Base64 = Convert.ToBase64String(x.file.Md5Hash);
 
-				yield return new PostIndex
+				yield return new PostDocument
 				{
 					BoardId = x.post.BoardId,
 					PostId = x.post.PostId,
@@ -382,9 +385,9 @@ public class HaydenDataProvider : IDataProvider
 			{
 				file.FileBanned = true;
 
-				var fullFilename = HaydenThreadConsumer.CalculateFilename(config.Value.Data.FileLocation,
+				var fullFilename = HaydenThreadConsumer.CalculateFilename(config.Value.FileLocation,
 					Common.MediaType.FullImage,	file.Id, file.Extension);
-				var thumbFilename = HaydenThreadConsumer.CalculateFilename(config.Value.Data.FileLocation,
+				var thumbFilename = HaydenThreadConsumer.CalculateFilename(config.Value.FileLocation,
 					Common.MediaType.Thumbnail,	file.Id, file.Extension);
 
 				System.IO.File.Delete(fullFilename);
@@ -394,32 +397,18 @@ public class HaydenDataProvider : IDataProvider
 
 		// actually delete the post from the db?
 		// flag on board object "PreserveDeleted"
-		post.TimeDeleted = DateTime.UtcNow;
+		post.IsBanned = true;
 
 		await dbContext.SaveChangesAsync();
 
 		return true;
 	}
 
-	public async Task<DBModerator> GetModerator(ushort userId) => await dbContext.Moderators.FirstOrDefaultAsync(x => x.Id == userId);
-
-	public async Task<DBModerator> GetModerator(string username) => await dbContext.Moderators.FirstOrDefaultAsync(x => x.Username == username);
-
-	public async Task<bool> RegisterModerator(DBModerator moderator)
-	{
-		if (await dbContext.Moderators.AnyAsync(x => x.Username == moderator.Username))
-			return false;
-
-		dbContext.Add(moderator);
-		await dbContext.SaveChangesAsync();
-		return true;
-	}
-
-	public static (string imageUrl, string thumbnailUrl) GenerateUrls(DBFile file, string board, ServerConfig config)
+	public static (string imageUrl, string thumbnailUrl) GenerateUrls(DBFile file, string board, ServerDataConfig config)
 	{
 		// https://github.com/dotnet/runtime/issues/36510
-		var prefix = !string.IsNullOrWhiteSpace(config.Data.ImagePrefix)
-			? config.Data.ImagePrefix
+		var prefix = !string.IsNullOrWhiteSpace(config.ImagePrefix)
+			? config.ImagePrefix
 			: "/image";
 
 		string imageUrl = null, thumbUrl = null;

@@ -3,56 +3,54 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Hayden.WebServer.Config;
 using Hayden.WebServer.DB.Elasticsearch;
-using Microsoft.Extensions.Options;
 using Nest;
 
 namespace Hayden.WebServer.Search;
 
 public class ElasticSearch : ISearchService
 {
-	protected ServerSearchConfig Config { get; set; }
+	protected ConfigOption<ServerSearchConfig> Config { get; set; }
 	protected ElasticClient EsClient { get; set; }
 
-	public ElasticSearch(IOptions<ServerConfig> config, ElasticClient esClient)
+	public ElasticSearch(ConfigOption<ServerSearchConfig> config, ElasticClient esClient)
 	{
-		Config = config.Value.Search;
+		Config = config;
 		EsClient = esClient;
+	}
+
+	public async Task<bool> CheckIfIndexExists()
+	{
+		return (await EsClient.Indices.ExistsAsync(Config.Value.IndexName)).Exists;
 	}
 
 	public async Task CreateIndex()
 	{
-		var indexName = Config.IndexName;
+		// await EsClient.Indices.DeleteAsync(indexName);
 
-		bool alreadyExists = (await EsClient.Indices.ExistsAsync(indexName)).Exists;
-			
-		if (!alreadyExists)
-		{
-			// await EsClient.Indices.DeleteAsync(indexName);
+		var createResult = await EsClient.Indices.CreateAsync(Config.Value.IndexName, i =>
+			i.Settings(s => s.Setting("codec", "best_compression")
+				.SoftDeletes(sd =>
+					sd.Retention(r => r.Operations(0)))
+				.NumberOfShards(2)
+				.NumberOfReplicas(0)
+			));
 
-			var createResult = await EsClient.Indices.CreateAsync(indexName, i =>
-				i.Settings(s => s.Setting("codec", "best_compression")
-					.SoftDeletes(sd =>
-						sd.Retention(r => r.Operations(0)))
-					.NumberOfShards(2)
-					.NumberOfReplicas(0)
-				));
-				
 #pragma warning disable CS0618 // Type or member is obsolete
-			var mapResult = await EsClient.MapAsync<PostIndex>(c =>
-				c.AutoMap()
-					.SourceField(s => s.Enabled(false))
-					.AllField(a => a.Enabled(false))
-					.Dynamic(false)
-					.Index(indexName));
+		var mapResult = await EsClient.MapAsync<PostDocument>(c =>
+			c.AutoMap()
+				.SourceField(s => s.Enabled(false))
+				.AllField(a => a.Enabled(false))
+				.Dynamic(false)
+				.Index(Config.Value.IndexName));
 #pragma warning restore CS0618 // Type or member is obsolete
 
-			if (!mapResult.IsValid)
-			{
-				Console.WriteLine(mapResult.ServerError?.ToString());
-				Console.WriteLine(mapResult.DebugInformation);
-				return;
-			}
+		if (!mapResult.IsValid)
+		{
+			Console.WriteLine(mapResult.ServerError?.ToString());
+			Console.WriteLine(mapResult.DebugInformation);
+			return;
 		}
 	}
 
@@ -63,9 +61,9 @@ public class ElasticSearch : ISearchService
 			.Replace("*", "\\*")
 			.Replace("?", "\\?");
 
-		Func<QueryContainerDescriptor<PostIndex>, QueryContainer> searchDescriptor = x =>
+		Func<QueryContainerDescriptor<PostDocument>, QueryContainer> searchDescriptor = x =>
 		{
-			var allQueries = new List<Func<QueryContainerDescriptor<PostIndex>, QueryContainer>>();
+			var allQueries = new List<Func<QueryContainerDescriptor<PostDocument>, QueryContainer>>();
 
 			if (!string.IsNullOrWhiteSpace(searchRequest.Subject))
 				allQueries.Add(y => y.Match(z => z.Field(a => a.Subject).Query(searchRequest.Subject)));
@@ -114,7 +112,7 @@ public class ElasticSearch : ISearchService
 			{
 				allQueries.Add(y => y.Bool(z =>
 					z.Should(searchRequest.Boards
-						.Select<ushort, Func<QueryContainerDescriptor<PostIndex>, QueryContainer>>(boardId =>
+						.Select<ushort, Func<QueryContainerDescriptor<PostDocument>, QueryContainer>>(boardId =>
 						{
 							return a => a.Term(b => b.Field(f => f.BoardId).Value(boardId));
 						}))));
@@ -133,8 +131,8 @@ public class ElasticSearch : ISearchService
 			return x.Bool(y => y.Must(allQueries));
 		};
 
-		var searchResult = await EsClient.SearchAsync<PostIndex>(x => x
-			.Index(Config.IndexName)
+		var searchResult = await EsClient.SearchAsync<PostDocument>(x => x
+			.Index(Config.Value.IndexName)
 			.Size(searchRequest.ResultSize)
 			.Skip(searchRequest.Offset)
 			.DocValueFields(f => f.Fields(p => p.BoardId, p => p.ThreadId, p => p.PostId))
@@ -143,25 +141,25 @@ public class ElasticSearch : ISearchService
 				? y.Ascending(z => z.PostDateUtc)
 				: y.Descending(z => z.PostDateUtc)));
 
-		if (Config.Debug)
+		if (Config.Value.Debug)
 			Console.WriteLine(searchResult.ApiCall.DebugInformation);
 
 		if (!searchResult.IsValid)
 			return null;
 
 		var threadIdArray = searchResult.Hits.Select(x =>
-				(BoardId: x.Fields.ValueOf<PostIndex, ushort>(y => y.BoardId),
-					ThreadId: x.Fields.ValueOf<PostIndex, ulong>(y => y.ThreadId),
-					PostId: x.Fields.ValueOf<PostIndex, ulong>(y => y.PostId)
+				(BoardId: x.Fields.ValueOf<PostDocument, ushort>(y => y.BoardId),
+					ThreadId: x.Fields.ValueOf<PostDocument, ulong>(y => y.ThreadId),
+					PostId: x.Fields.ValueOf<PostDocument, ulong>(y => y.PostId)
 				))
 			.ToArray();
 
 		return new SearchResults(threadIdArray, searchResult.Total);
 	}
 
-	public async Task IndexBatch(IEnumerable<PostIndex> posts, CancellationToken token = default)
+	public async Task IndexBatch(IEnumerable<PostDocument> posts, CancellationToken token = default)
 	{
-		await EsClient.IndexManyAsync(posts, Config.IndexName, token);
+		await EsClient.IndexManyAsync(posts, Config.Value.IndexName, token);
 	}
 
 	public Task Commit() => Task.CompletedTask;

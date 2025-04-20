@@ -13,6 +13,7 @@ using Hayden.Consumers.HaydenMysql.DB;
 using Hayden.MediaInfo;
 using Hayden.WebServer.Routing;
 using Hayden.WebServer.Services.Captcha;
+using Hayden.WebServer.WebDb;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -48,6 +49,7 @@ namespace Hayden.WebServer.Controllers.Api
 		[HttpPost("makepost")]
 		public async Task<IActionResult> MakePost(
 			[FromServices] HaydenDbContext dbContext,
+			[FromServices] WebDbContext webDbContext,
 			[FromServices] ICaptchaProvider captchaProvider,
 			[FromServices] IMediaInspector mediaInspector,
 			[FromForm] PostForm form)
@@ -58,7 +60,7 @@ namespace Hayden.WebServer.Controllers.Api
 			if (string.IsNullOrWhiteSpace(form.text) && form.file == null)
 				return BadRequest(new { message = "You must have text or an attached file." });
 
-			var banResult = await CheckBanAsync(dbContext);
+			var banResult = await CheckBanAsync(webDbContext);
 			if (banResult != null)
 				return banResult;
 
@@ -211,6 +213,7 @@ namespace Hayden.WebServer.Controllers.Api
 		[HttpPost("makethread")]
 		public async Task<IActionResult> MakeThread(
 			[FromServices] HaydenDbContext dbContext,
+			[FromServices] WebDbContext webDbContext,
 			[FromServices] ICaptchaProvider captchaProvider,
 			[FromServices] IMediaInspector mediaInspector,
 			[FromForm] NewThreadForm form)
@@ -231,7 +234,7 @@ namespace Hayden.WebServer.Controllers.Api
 			if (form.file != null && board.MultiImageLimit == 0 && moderator == null)
 				return BadRequest(new { message = "You must not have an attached file; images have been turned off for this board." });
 
-			var banResult = await CheckBanAsync(dbContext);
+			var banResult = await CheckBanAsync(webDbContext);
 			if (banResult != null)
 				return banResult;
 
@@ -336,7 +339,7 @@ namespace Hayden.WebServer.Controllers.Api
 		#region Helpers
 
 		[NonAction]
-		private async Task<IActionResult> CheckBanAsync(HaydenDbContext dbContext)
+		private async Task<IActionResult> CheckBanAsync(WebDbContext dbContext)
 		{
 			var ipAddress = HttpContext.Connection.RemoteIpAddress.GetAddressBytes();
 

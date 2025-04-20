@@ -6,6 +6,7 @@ using System.Security.Cryptography;
 using System.Threading.Tasks;
 using Hayden.Consumers.HaydenMysql.DB;
 using Hayden.WebServer.Data;
+using Hayden.WebServer.WebDb;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Cryptography.KeyDerivation;
@@ -21,12 +22,12 @@ namespace Hayden.WebServer.Controllers.Api
 		internal static Dictionary<string, ModeratorRole> RegisterCodes = new Dictionary<string, ModeratorRole>();
 
 		[HttpPost("user/login")]
-		public async Task<IActionResult> UserLoginAsync([FromServices] IDataProvider dataProvider,
+		public async Task<IActionResult> UserLoginAsync([FromServices] WebDbContext webDbContext,
 			[FromForm] string username, [FromForm] string password)
 		{
 			var delayTask = Task.Delay(1000);
 
-			var user = await dataProvider.GetModerator(username);
+			var user = await webDbContext.GetModerator(username);
 
 			if (user != null)
 			{
@@ -54,7 +55,7 @@ namespace Hayden.WebServer.Controllers.Api
 		}
 
 		[HttpPost("user/register")]
-		public async Task<IActionResult> UserRegisterAsync([FromServices] IDataProvider dataProvider,
+		public async Task<IActionResult> UserRegisterAsync([FromServices] WebDbContext webDbContext,
 			[FromForm] string username, [FromForm] string password, [FromForm] string registerCode)
 		{
 			await Task.Delay(1000);
@@ -78,7 +79,7 @@ namespace Hayden.WebServer.Controllers.Api
 				PasswordSalt = salt
 			};
 
-			if (!await dataProvider.RegisterModerator(moderator))
+			if (!await webDbContext.RegisterModerator(moderator))
 			{
 				return BadRequest(new { error = "Username already exists" });
 			}
@@ -94,20 +95,12 @@ namespace Hayden.WebServer.Controllers.Api
 		}
 
 		[HttpPost("user/info")]
-		public async Task<IActionResult> GetUserInfoAsync([FromServices] IServiceProvider services)
+		public async Task<IActionResult> GetUserInfoAsync([FromServices] WebDbContext webDbContext)
 		{
-			var dataProvider = services.GetService<IDataProvider>();
-			if (dataProvider == null) // fallback
-				return Json(new
-				{
-					id = (int?)null,
-					role = (int?)null
-				});
-
 			var authenticateResult = await AuthenticateAsync(HttpContext);
 
 			var moderator = authenticateResult.Principal != null
-				? await authenticateResult.Principal.GetModeratorAsync(dataProvider)
+				? await authenticateResult.Principal.GetModeratorAsync(webDbContext)
 				: null;
 
 			return Json(new
@@ -177,19 +170,19 @@ namespace Hayden.WebServer.Controllers.Api
 			return principal?.GetUserID().HasValue ?? false;
 		}
 
-		public static async Task<DBModerator> GetModeratorAsync(this ClaimsPrincipal principal, IDataProvider dataProvider)
+		public static async Task<DBModerator> GetModeratorAsync(this ClaimsPrincipal principal, WebDbContext webDbContext)
 		{
 			var id = principal.GetUserID();
 
 			if (!id.HasValue)
 				return null;
 
-			return await dataProvider.GetModerator(id.Value);
+			return await webDbContext.GetModerator(id.Value);
 		}
 
 		public static Task<DBModerator> GetModeratorAsync(this HttpContext context)
 			=> context.User != null
-				? GetModeratorAsync(context.User, context.RequestServices.GetRequiredService<IDataProvider>())
+				? GetModeratorAsync(context.User, context.RequestServices.GetRequiredService<WebDbContext>())
 				: Task.FromResult<DBModerator>(null);
 	}
 }

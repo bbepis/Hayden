@@ -23,44 +23,51 @@ using Hayden.Config;
 using Microsoft.EntityFrameworkCore;
 using Hayden.Consumers.Asagi;
 using Nest;
+using Hayden.WebServer.WebDb;
+using Hayden.WebServer.Config;
 
 namespace Hayden.WebServer
 {
-	public class Startup
+	public class Startup : StartupBase
 	{
-		public Startup(IConfiguration configuration, IWebHostEnvironment env)
+		public Startup(IConfiguration configuration, IWebHostEnvironment env, ConfigService configService)
 		{
 			Configuration = configuration;
 			Environment = env;
+			ConfigService = configService;
 		}
 
 		public IConfiguration Configuration { get; }
 		public IWebHostEnvironment Environment { get; }
+		public ConfigService ConfigService { get; }
 
 		internal static ServerConfig ServerConfig { get; set; }
 
 		// This method gets called by the runtime. Use this method to add services to the container.
-		public void ConfigureServices(IServiceCollection services)
+		public override void ConfigureServices(IServiceCollection services)
 		{
 			services.AddRazorPages();
-			services.AddOptions();			
+			services.AddOptions();
 
-			switch (ServerConfig.Data.ProviderType?.ToLower())
+			var dataConfig = ConfigService.GetConfig<ServerDataConfig>().Snapshot();
+			var searchConfig = ConfigService.GetConfig<ServerSearchConfig>().Snapshot();
+
+			switch (dataConfig.ProviderType?.ToLower())
 			{
-				case "hayden": services.AddHaydenDataProvider(ServerConfig); break;
-				case "asagi": services.AddAsagiDataProvider(ServerConfig); break;
-				case null: throw new Exception("Data provider type was null");
-				default: throw new Exception($"Unknown data provider type: {ServerConfig.Data.ProviderType}");
+				case "hayden": services.AddHaydenDataProvider(dataConfig); break;
+				case "asagi": services.AddAsagiDataProvider(dataConfig); break;
+				case null: throw new Exception("Data provider type was not provided");
+				default: throw new Exception($"Unknown data provider type: {dataConfig.ProviderType}");
 			}
 			
-			if (ServerConfig.Search?.Enabled == true)
+			if (searchConfig.Enabled == true)
 			{
-				switch (ServerConfig.Search.ServerType?.ToLower())
+				switch (searchConfig.ServerType?.ToLower())
 				{
-					case "elasticsearch": services.AddElasticSearch(ServerConfig.Search); break;
+					case "elasticsearch": services.AddElasticSearch(searchConfig); break;
 					case "lnx": services.AddLnxSearch(); break;
-					case null: throw new Exception("Search server type was null");
-					default: throw new Exception($"Unknown search server type: {ServerConfig.Data.ProviderType}");
+					case null: throw new Exception("Search server type was not provided");
+					default: throw new Exception($"Unknown search server type: {searchConfig.ServerType}");
 				}
 
 				services.AddHostedService<SearchSyncService>();
@@ -101,9 +108,9 @@ namespace Hayden.WebServer
 		}
 
 		// This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
-		public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
+		public override void Configure(IApplicationBuilder app)
 		{
-			if (env.IsDevelopment())
+			if (Environment.IsDevelopment())
 			{
 				ApiController.RegisterCodes.Add("development", ModeratorRole.Developer);
 				app.UseDeveloperExceptionPage();
@@ -124,7 +131,7 @@ namespace Hayden.WebServer
 				ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
 			});
 
-			if (!env.IsDevelopment() && ServerConfig.RedirectToHTTPS)
+			if (!Environment.IsDevelopment() && ServerConfig.RedirectToHTTPS)
 			{
 				app.UseHttpsRedirection();
 			}
@@ -149,7 +156,7 @@ namespace Hayden.WebServer
 				await next();
 			});
 
-			if (env.IsDevelopment())
+			if (Environment.IsDevelopment())
 			{
 				app.Use(async (context, next) =>
 				{
@@ -196,14 +203,22 @@ namespace Hayden.WebServer
 
 	public static class ServiceExtensions
 	{
-		public static IServiceCollection AddHaydenDataProvider(this IServiceCollection services, ServerConfig serverConfig)
+		public static IServiceCollection AddWebDb(this IServiceCollection services, string filename)
+		{
+			services.AddDbContext<WebDbContext>(x =>
+				x.UseSqlite($"Data Source={filename}"));
+
+			return services;
+		}
+
+		public static IServiceCollection AddHaydenDataProvider(this IServiceCollection services, ServerDataConfig dataConfig)
 		{
 			services.AddScoped<IDataProvider, HaydenDataProvider>();
 
-			if (serverConfig.Data.DBType == DatabaseType.MySql)
+			if (dataConfig.DatabaseType == DatabaseType.MySql)
 			{
 				services.AddDbContext<HaydenDbContext>(x =>
-					x.UseMySql(serverConfig.Data.DBConnectionString, ServerVersion.AutoDetect(serverConfig.Data.DBConnectionString),
+					x.UseMySql(dataConfig.ConnectionString, ServerVersion.AutoDetect(dataConfig.ConnectionString),
 						y =>
 						{
 							y.CommandTimeout(86400);
@@ -211,10 +226,10 @@ namespace Hayden.WebServer
 						})
 					.AddQueryHints());
 			}
-			else if (serverConfig.Data.DBType == DatabaseType.Sqlite)
+			else if (dataConfig.DatabaseType == DatabaseType.Sqlite)
 			{
 				services.AddDbContext<HaydenDbContext>(x =>
-					x.UseSqlite(serverConfig.Data.DBConnectionString));
+					x.UseSqlite(dataConfig.ConnectionString));
 			}
 			else
 			{
@@ -224,25 +239,19 @@ namespace Hayden.WebServer
 			return services;
 		}
 
-		public static IServiceCollection AddAsagiDataProvider(this IServiceCollection services, ServerConfig serverConfig)
+		public static IServiceCollection AddAsagiDataProvider(this IServiceCollection services, ServerDataConfig dataConfig)
 		{
 			services.AddScoped<IDataProvider, AsagiDataProvider>();
 
-			if (serverConfig.Data.DBType == DatabaseType.MySql)
+			if (dataConfig.DatabaseType == DatabaseType.MySql)
 			{
 				services.AddDbContext<AsagiDbContext>(builder =>
 					((DbContextOptionsBuilder<AsagiDbContext>)builder)
-					.ConfigureAsagiMysql(serverConfig.Data.DBConnectionString));
+					.ConfigureAsagiMysql(dataConfig.ConnectionString));
 			}
 			else
 			{
 				throw new Exception("Unsupported database type");
-			}
-
-			if (!string.IsNullOrWhiteSpace(serverConfig.Data.AuxiliaryDbLocation))
-			{
-				services.AddDbContext<AuxiliaryDbContext>(x => x
-					.UseSqlite("Data Source=" + serverConfig.Data.AuxiliaryDbLocation));
 			}
 
 			return services;

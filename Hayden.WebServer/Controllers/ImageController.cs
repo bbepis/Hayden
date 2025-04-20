@@ -1,9 +1,5 @@
 using System.IO;
-using System.Threading.Tasks;
-using Hayden.Consumers.HaydenMysql.DB;
-using Hayden.WebServer.Data;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
 namespace Hayden.WebServer.Controllers

@@ -2,8 +2,12 @@ using System;
 using System.Collections.Generic;
 using System.CommandLine;
 using System.IO;
+using System.IO.Abstractions;
 using System.Threading.Tasks;
+using Hayden.WebServer.Config;
+using Hayden.WebServer.WebDb;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
@@ -45,14 +49,9 @@ public static class Program
 		return rootCommand;
 	}
 
-	private static async Task<int> RunServer(string[] args, string configFile, ushort port)
+	private static async Task<int> RunServer(string[] args, string auxiliaryDb, bool sqlLogging, ushort port)
 	{
-		if (!File.Exists(configFile))
-			throw new Exception("Could not find configuration file. Make sure it exists (defaults to config.json)");
-
-		var	serverConfig = JsonConvert.DeserializeObject<ServerConfig>(File.ReadAllText(configFile));
-
-		if (!serverConfig.SqlLogging)
+		if (!sqlLogging)
 		{
 			SerilogManager.Config
 				.MinimumLevel.Override("Microsoft.EntityFrameworkCore", LogEventLevel.Warning)
@@ -67,7 +66,7 @@ public static class Program
 
 		SerilogManager.SetLogger();
 
-		var host = CreateHostBuilder(args, serverConfig, port)
+		var host = CreateHostBuilder(args, auxiliaryDb, port)
 			.Build();
 
 		if (!await Startup.PerformInitialization(host.Services))
@@ -77,45 +76,27 @@ public static class Program
 		return 0;
 	}
 
-	public static IHostBuilder CreateHostBuilder(string[] args, ServerConfig config, ushort port) =>
-		Host.CreateDefaultBuilder(args)
+	public static IHostBuilder CreateHostBuilder(string[] args, string auxiliaryDbPath, ushort port)
+	{
+
+		return Host.CreateDefaultBuilder(args)
 			.UseSerilog()
-			.ConfigureServices(services =>
-			{
-				Startup.ServerConfig = config;
-				services.AddSingleton(Options.Create(config));
-			})
 			.ConfigureWebHostDefaults(webBuilder =>
 			{
-				webBuilder.UseStartup<Startup>()
+				ConfigService configService = null;
+
+				webBuilder
+					.ConfigureServices(x => x.AddWebDbConfiguration(initialWebDbOptions, out configService))
+					.UseStartup(e => new Startup(e.Configuration, e.HostingEnvironment, configService))
 					.ConfigureKestrel(c => c.ListenAnyIP(port));
 			});
+
+	}
 
 	private static void GenerateConfig(string outputFile)
 	{
 		var sampleServerConfig = new ServerConfig()
 		{
-			Data = new ServerDataConfig()
-			{
-				ProviderType = "Foobar",
-				DBType = Config.DatabaseType.None,
-				DBConnectionString = "Foobar",
-				AuxiliaryDbLocation = null,
-				FileLocation = null,
-				ImagePrefix = null
-			},
-
-			Search = new ServerSearchConfig()
-			{
-				Enabled = false,
-				ServerType = "Foobar",
-				Endpoint = "localhost:1234",
-				Debug = false,
-				IndexName = "hayden_index",
-				Username = "username",
-				Password = "password"
-			},
-
 			Captcha = new ServerCaptchaConfig()
 			{
 				HCaptchaTesting = true,

@@ -7,9 +7,10 @@ namespace Hayden.WebServer.Search;
 
 public interface ISearchService
 {
+	Task<bool> CheckIfIndexExists();
 	Task CreateIndex();
 	Task<SearchResults> PerformSearch(SearchRequest searchRequest);
-	Task IndexBatch(IEnumerable<PostIndex> posts, CancellationToken token = default);
+	Task IndexBatch(IEnumerable<PostDocument> posts, CancellationToken token = default);
 	Task Commit();
 }
 

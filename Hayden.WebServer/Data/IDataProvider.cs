@@ -22,20 +22,7 @@ public interface IDataProvider
 	Task<ApiController.JsonBoardPageModel> ReadSearchResults((ushort BoardId, ulong ThreadId, ulong PostId)[] threadIdArray, long hitCount);
 
 	// Search indexing
-	Task<(ushort BoardId, ulong IndexPosition)[]> GetIndexPositions();
-	Task SetIndexPosition(ushort boardId, ulong indexPosition);
-
-	IAsyncEnumerable<PostIndex> GetIndexEntities(string board, ulong minPostNo);
-
-	// Moderation
-	Task<bool> DeletePost(ushort boardId, ulong postId, bool banImages);
-
-	// User handling
-
-	Task<DBModerator> GetModerator(ushort userId);
-	Task<DBModerator> GetModerator(string username);
-
-	Task<bool> RegisterModerator(DBModerator moderator);
+	IAsyncEnumerable<PostDocument> GetIndexEntities(string board, ulong minPostNo);
 }
 
 public class BoardStats

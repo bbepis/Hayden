@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using Hayden.WebServer.Data;
 using Microsoft.Extensions.DependencyInjection;
 using System.Collections.Generic;
+using Hayden.WebServer.WebDb;
 
 namespace Hayden.WebServer.Controllers.Api
 {
@@ -23,26 +24,26 @@ namespace Hayden.WebServer.Controllers.Api
 		[AdminAccessFilter(ModeratorRole.Moderator, ModeratorRole.Admin)]
 		[HttpPost("moderator/banuser")]
 		public async Task<IActionResult> BanUser(ushort boardId, ulong postId, ulong seconds, bool indefinite, string internalReason, string publicReason,
-            [FromServices] HaydenDbContext dbContext)
+            [FromServices] WebDbContext dbContext)
 		{
-            var post = await dbContext.Posts.FirstOrDefaultAsync(x => x.BoardId == boardId && x.PostId == postId);
+   //         var post = await dbContext.Posts.FirstOrDefaultAsync(x => x.BoardId == boardId && x.PostId == postId);
 
-            if (post == null)
-                return NotFound("Could not find post");
+   //         if (post == null)
+   //             return NotFound("Could not find post");
 
-			if (post.PosterIP == null)
-				return UnprocessableEntity("Post does not have an IP address associated with it");
+			//if (post.PosterIP == null)
+			//	return UnprocessableEntity("Post does not have an IP address associated with it");
 
-			dbContext.BannedPosters.Add(new DBBannedPoster
-			{
-				IPAddress = post.PosterIP,
-				Reason = internalReason,
-				PublicReason = publicReason,
-				TimeBannedUTC = DateTime.UtcNow,
-				TimeUnbannedUTC = indefinite ? null : DateTime.UtcNow + TimeSpan.FromSeconds(seconds)
-			});
+			//dbContext.BannedPosters.Add(new DBBannedPoster
+			//{
+			//	IPAddress = post.PosterIP,
+			//	Reason = internalReason,
+			//	PublicReason = publicReason,
+			//	TimeBannedUTC = DateTime.UtcNow,
+			//	TimeUnbannedUTC = indefinite ? null : DateTime.UtcNow + TimeSpan.FromSeconds(seconds)
+			//});
 
-			await dbContext.SaveChangesAsync();
+			//await dbContext.SaveChangesAsync();
 
 			return Ok();
 		}
@@ -73,10 +74,7 @@ namespace Hayden.WebServer.Controllers.Api
 
 			using var serviceScope = serviceProvider.CreateScope();
 
-			var dbContext = serviceScope.ServiceProvider.GetService<HaydenDbContext>();
-
-			if (dbContext == null)
-				return UnprocessableEntity(new { error = "Reports require Hayden database structure" });
+			var dbContext = serviceScope.ServiceProvider.GetService<WebDbContext>();
 
 			// we actually want to grab the top 20 posts, so we have to do some fucky calculations
 			var reportedPosts = await dbContext.Reports
@@ -125,10 +123,7 @@ namespace Hayden.WebServer.Controllers.Api
 		{
 			using var serviceScope = serviceProvider.CreateScope();
 
-			var dbContext = serviceScope.ServiceProvider.GetService<HaydenDbContext>();
-
-			if (dbContext == null)
-				return UnprocessableEntity(new { error = "Reports require Hayden database structure" });
+			var dbContext = serviceScope.ServiceProvider.GetService<WebDbContext>();
 
 			var report = await dbContext.Reports.FindAsync(reportId);
 

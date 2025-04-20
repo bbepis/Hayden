@@ -1,16 +1,16 @@
 using System;
-using System.Data.Common;
 using System.Linq;
-using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Hayden.WebServer.Data;
 using Hayden.WebServer.Search;
-using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
+using Hayden.WebServer.WebDb;
+using Serilog;
+using Hayden.WebServer.Config;
 
 namespace Hayden.WebServer.Services;
 
@@ -18,35 +18,41 @@ public class SearchSyncService : BackgroundService
 {
 	private IDataProvider DataProvider { get; }
 	private ISearchService SearchService { get; }
-	private ServerSearchConfig Config { get; }
+	private WebDbContext WebDbContext { get; }
+	private IOptions<ServerSearchConfig> Config { get; }
 
-	public SearchSyncService(IServiceProvider services, IOptions<ServerConfig> config)
+	private static ILogger Logger { get; } = SerilogManager.CreateSubLogger("SearchSync");
+
+	public SearchSyncService(IServiceProvider services, IOptions<ServerSearchConfig> config)
 	{
 		var scope = services.CreateScope();
 
 		DataProvider = scope.ServiceProvider.GetRequiredService<IDataProvider>();
 		SearchService = scope.ServiceProvider.GetService<ISearchService>();
-		Config = config.Value.Search;
+		Config = config;
 	}
 
 	protected override async Task ExecuteAsync(CancellationToken stoppingToken)
 	{
-		if (SearchService == null || Config == null || !Config.Enabled)
+		if (SearchService == null || Config == null || !Config.Value.Enabled)
 		{
-			Console.WriteLine("Disabling elasticsearch");
+			Logger.Warning("Search service has been disabled");
 			return;
 		}
 
-		if (string.IsNullOrWhiteSpace(Config.IndexName))
+		if (string.IsNullOrWhiteSpace(Config.Value.IndexName))
 		{
 			throw new Exception("Elasticsearch.IndexName must be a valid index name");
 		}
-			
-		Console.WriteLine("Creating search index");
 
-		await SearchService.CreateIndex();
-			
-		Console.WriteLine("Indexing post searches");
+		if (!await SearchService.CheckIfIndexExists())
+		{
+			Logger.Information("Creating search index");
+
+			await SearchService.CreateIndex();
+		}
+
+		Logger.Information("Starting post indexing");
 
 		while (true)
 		{
@@ -57,25 +63,27 @@ public class SearchSyncService : BackgroundService
 				// https://github.com/elastic/elasticsearch/issues/60149
 					
 				var boardList = await DataProvider.GetBoardInfo();
-				var indexPositions = await DataProvider.GetIndexPositions();
+				var indexPositions = await WebDbContext.IndexPositions.ToArrayAsync();
 
 				// Console.WriteLine("! " + string.Join(", ", indexPositions.Select(x => $"[{x.BoardId}] = {x.IndexPosition:N0}")));
 
 				foreach (var board in boardList)
 				{
-					ulong minPostNo;
+					var indexPosition = await WebDbContext.IndexPositions.FirstOrDefaultAsync(x => x.BoardId == board.Id);
 
-					if (indexPositions.Any(x => x.BoardId == board.Id))
-						minPostNo = indexPositions.First(x => x.BoardId == board.Id).IndexPosition;
-					else
-						minPostNo = 0;
+					if (indexPosition == null)
+					{
+						indexPosition = new DBIndexPosition { BoardId = board.Id, PostPosition = 0 };
+						WebDbContext.IndexPositions.Add(indexPosition);
+						await WebDbContext.SaveChangesAsync();
+					}
 
 					int i = 0;
 					const int batchSize = 20000;
 
-					Console.WriteLine($"[{board.ShortName}]: Retrieving index entities > {minPostNo}");
+					Logger.Verbose($"[{board.ShortName}]: Retrieving index entities > {indexPosition.PostPosition}");
 
-					await foreach (var batch in DataProvider.GetIndexEntities(board.ShortName, minPostNo).Batch(batchSize))
+					await foreach (var batch in DataProvider.GetIndexEntities(board.ShortName, indexPosition.PostPosition).Batch(batchSize))
 					{
 						await SearchService.IndexBatch(batch, stoppingToken);
 
@@ -83,9 +91,12 @@ public class SearchSyncService : BackgroundService
 
 						var maxPostId = batch.Max(x => x.PostId);
 
-						await DataProvider.SetIndexPosition(board.Id, maxPostId);
+						indexPosition.PostPosition = maxPostId;
 
-						Console.WriteLine($"[{board.ShortName}]: Indexed {i} ({maxPostId})");
+						WebDbContext.Update(indexPosition);
+						await WebDbContext.SaveChangesAsync();
+
+						Logger.Verbose($"[{board.ShortName}]: Indexed {i} ({maxPostId})");
 
 						if (stoppingToken.IsCancellationRequested)
 							return;
@@ -96,7 +107,7 @@ public class SearchSyncService : BackgroundService
 			}
 			catch (Exception ex)
 			{
-				Console.WriteLine(ex);
+				Logger.Error(ex, "Failure during post indexing");
 			}
 
 			await Task.Delay(TimeSpan.FromMinutes(1), stoppingToken);
