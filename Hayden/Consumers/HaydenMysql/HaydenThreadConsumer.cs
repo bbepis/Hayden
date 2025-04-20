@@ -468,7 +468,7 @@ namespace Hayden.Consumers
 						Tripcode = post.Tripcode.TrimAndNullify(),
 						Email = post.Email.TrimAndNullify(),
 						DateTime = post.TimePosted.UtcDateTime,
-						AdditionalMetadata = post.AdditionalMetadata?.Serialize()
+						AdditionalMetadata = Common.SerializeAdditionalMetadata(post.AdditionalMetadata)
 					});
 				}
 

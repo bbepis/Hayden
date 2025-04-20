@@ -1,7 +1,6 @@
 using System;
 using Hayden.Consumers.HaydenMysql.DB;
 using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
 
 namespace Hayden.Models;
 
@@ -36,6 +35,12 @@ public class Post
 		[JsonProperty("posterID")]
 		public string PosterID { get; set; }
 
+		[JsonProperty("subject")]
+		public string Subject { get; set; }
+
+		[JsonProperty("modifications")]
+		public PostModification Modifications { get; set; }
+
 		[JsonProperty("countryCode")]
 		public string CountryCode { get; set; }
 		[JsonProperty("countryName")]
@@ -59,38 +64,7 @@ public class Post
 		[JsonProperty("infinitynext_globalid")]
 		public ulong? InfinityNextGlobalId { get; set; }
 
-		public string Serialize()
-		{
-			JObject jsonObject = new JObject();
-
-			void addString(string key, string value)
-			{
-				if (!string.IsNullOrWhiteSpace(value))
-					jsonObject[key] = value;
-			}
-
-			void addBool(string key, bool value)
-			{
-				if (value)
-					jsonObject[key] = true;
-			}
-
-			addString("capcode", Capcode);
-			addString("posterID", PosterID);
-			addString("countryCode", CountryCode);
-			addString("countryName", CountryName);
-			addString("boardFlagCode", BoardFlagCode);
-			addString("boardFlagName", BoardFlagName);
-			addString("exif", Exif);
-			addString("asagi_exif", AsagiExif);
-
-			addBool("ponychan_mature", PonychanMature ?? false);
-			addBool("ponychan_anonymous", PonychanAnonymous ?? false);
-
-			if (InfinityNextGlobalId.HasValue)
-				jsonObject["infinitynext_globalid"] = InfinityNextGlobalId.Value;
-
-			return jsonObject.HasValues ? jsonObject.ToString(Formatting.None) : null;
-		}
+		[JsonProperty("source")]
+		public string Source { get; set; }
 	}
 }

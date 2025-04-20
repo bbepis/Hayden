@@ -116,10 +116,11 @@ namespace Hayden.Tests.Consumers
 			Assert.AreEqual(post.TimePosted.UtcDateTime, dbPost.DateTime);
 			Assert.AreEqual(post.TimeDeleted ?? null, dbPost.TimeDeleted);
 
-			if (post.AdditionalMetadata.Serialize() == null)
+			var additionalMetadata = Common.SerializeAdditionalMetadata(post.AdditionalMetadata);
+			if (additionalMetadata == null)
 				Assert.AreEqual(null, dbPost.AdditionalMetadata);
 			else
-				Assert.IsTrue(JToken.DeepEquals(JToken.Parse(post.AdditionalMetadata.Serialize()), JToken.Parse(dbPost.AdditionalMetadata)));
+				Assert.IsTrue(JToken.DeepEquals(JToken.Parse(additionalMetadata), JToken.Parse(dbPost.AdditionalMetadata)));
 		}
 
 		private void AssertDataIsSame(Post post, QueuedImageDownload queuedImageDownload)
