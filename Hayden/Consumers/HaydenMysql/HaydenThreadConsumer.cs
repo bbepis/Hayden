@@ -217,7 +217,8 @@ namespace Hayden.Consumers
 						var mappings = (await dbContext.FileMappings
 							.AsNoTracking()
 							.Where(x => x.BoardId == boardId && postNumbers.Contains(x.PostId))
-							.Join(dbContext.Files, mapping => mapping.FileId, file => file.Id, (mapping, file) => new { mapping, file })
+							.GroupJoin(dbContext.Files, mapping => mapping.FileId, file => file.Id, (mapping, file) => new { mapping, file })
+							.SelectMany(x => x.file.DefaultIfEmpty(), (x, file) => new { x.mapping, file })
 							.ToArrayAsync())
 							.ToLookup(x => x.mapping.PostId);
 
@@ -226,15 +227,129 @@ namespace Hayden.Consumers
 							var recordedCount = mappings[post.PostNumber].Count();
 							if (recordedCount != post.Media.Length)
 							{
+								if (recordedCount == 0)
+								{
+									foreach (var media in post.Media)
+									{
+										var existingFile = await dbContext.Files
+											.AsNoTracking()
+											.Where(file =>
+												(media.Sha256Hash != null && media.Sha256Hash == file.Sha256Hash)
+												|| (media.Sha1Hash != null && media.Sha1Hash == file.Sha1Hash)
+												|| (media.Md5Hash != null && media.Md5Hash == file.Md5Hash))
+											.FirstOrDefaultAsync();
+
+										if (existingFile == null)
+										{
+											existingFile = new DBFile
+											{
+												Sha256Hash = media.Sha256Hash,
+												Sha1Hash = media.Sha1Hash,
+												Md5Hash = media.Md5Hash,
+												FileExists = false,
+												ThumbnailExists = false,
+												ImageHeight = media.ImageHeight.HasValue ? (ushort)media.ImageHeight.Value : null,
+												ImageWidth = media.ImageWidth.HasValue ? (ushort)media.ImageWidth.Value : null,
+												Size = media.FileSize ?? 0,
+												Extension = media.FileExtension.TrimStart('.'),
+												ThumbnailExtension = media.ThumbnailExtension?.TrimStart('.')
+											};
+
+											dbContext.Add(existingFile);
+											await dbContext.SaveChangesAsync();
+										}
+										else
+										{
+											var entry = dbContext.Files.Local.FindEntry(existingFile.Id);
+											if (entry != null)
+												existingFile = entry.Entity;
+
+											if (existingFile.ImageHeight == null)
+											{
+												existingFile.ImageHeight = media.ImageHeight.HasValue
+													? (ushort)media.ImageHeight.Value
+													: null;
+												existingFile.ImageWidth = media.ImageWidth.HasValue
+													? (ushort)media.ImageWidth.Value
+													: null;
+
+												if (entry == null)
+													dbContext.Update(existingFile);
+												else
+													entry.State = EntityState.Modified;
+											}
+										}
+
+										var fileMapping = new DBFileMapping
+										{
+											BoardId = boardId,
+											PostId = post.PostNumber,
+											FileId = existingFile.Id,
+											Filename = media.Filename ?? "",
+											TimestampedFilename = media.TimestampedFilename ?? (media.FileUrl != null ? FileSystem.Path.GetFileNameWithoutExtension(media.FileUrl) : null),
+											Index = media.Index,
+											IsDeleted = media.IsDeleted,
+											IsSpoiler = media.IsSpoiler,
+											AdditionalMetadata = SerializeAdditionalMetadata(media.AdditionalMetadata)
+										};
+
+										dbContext.Add(fileMapping);
+									}
+
+									continue;
+								}
+
 								Logger.Warning($"Post media count mismatch; incoming post has {post.Media.Length} files but we've only recorded {recordedCount}. Skipping checking post for missing images");
 								continue;
 							}
 
 							foreach (var mapping in mappings[post.PostNumber])
 							{
-								if (!mapping.file.FileExists || !mapping.file.ThumbnailExists)
+								var media = post.Media[mapping.mapping.Index];
+								var file = mapping.file;
+
+								if (file == null)
 								{
-									QueueDownload(post.Media[mapping.mapping.Index], mapping.file);
+									file = await dbContext.Files
+										.FirstOrDefaultAsync(x =>
+											(media.Md5Hash != null && !ConsumerConfig.IgnoreMd5Hash && x.Md5Hash == media.Md5Hash)
+											|| (media.Sha1Hash != null && !ConsumerConfig.IgnoreSha1Hash && x.Sha1Hash == media.Sha1Hash)
+											|| (media.Sha256Hash != null && x.Sha256Hash == media.Sha256Hash)
+										);
+
+									if (file == null)
+									{
+										file = new DBFile
+										{
+											Sha256Hash = media.Sha256Hash,
+											Sha1Hash = media.Sha1Hash,
+											Md5Hash = media.Md5Hash,
+											FileExists = false,
+											ThumbnailExists = false,
+											ImageHeight = media.ImageHeight.HasValue ? (ushort)media.ImageHeight.Value : null,
+											ImageWidth = media.ImageWidth.HasValue ? (ushort)media.ImageWidth.Value : null,
+											Size = media.FileSize ?? 0,
+											Extension = media.FileExtension?.TrimStart('.') ?? "",
+											ThumbnailExtension = media.ThumbnailExtension?.TrimStart('.')
+										};
+
+										dbContext.Add(file);
+										await dbContext.SaveChangesAsync();
+									}
+
+									mapping.mapping.FileId = file.Id;
+									dbContext.Update(mapping.mapping);
+								}
+
+								if (mapping.file == null || !mapping.file.FileExists || !mapping.file.ThumbnailExists)
+								{
+									QueueDownload(media, file);
+								}
+
+								if (mapping.mapping.TimestampedFilename != media.TimestampedFilename)
+								{
+									mapping.mapping.TimestampedFilename = media.TimestampedFilename;
+									dbContext.Update(mapping.mapping);
 								}
 							}
 						}
