@@ -54,6 +54,7 @@ namespace Hayden
 			return await MakeHtmlCall(new Uri($"{ImageboardWebsite}{board}/res/{threadNumber}.html"), client, modifiedSince, cancellationToken);
 		}
 
+		private Regex LolcowContentLinkRegex = new Regex(@"<a (?:onclick[^>]+"")?\s*href=""[^""]+\d+\.html#\d+"">(&gt;&gt;[^<]+)</a>", RegexOptions.Compiled);
 		protected override Thread ConvertThread(IHtmlDocument page, string board)
 		{
 			var thread = new Thread();
@@ -134,6 +135,11 @@ namespace Hayden
 				//post.Tripcode = postElement.QuerySelector(".poster-trip").TextContent.TrimAndNullify();
 				
 				post.ContentRendered = postElement.QuerySelector("div.body").InnerHtml.TrimAndNullify();
+
+				if (post.ContentRendered != null)
+				{
+					post.ContentRendered = LolcowContentLinkRegex.Replace(post.ContentRendered, "<span class=\"quote\">$1</span>");
+				}
 
 				if (fileUrl != null)
 				{
