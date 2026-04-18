@@ -43,17 +43,60 @@ public class Program
 		return await rootCommand.InvokeAsync(args);
 	}
 
+	private static ConfigFile LoadConfigFile(string configPath)
+	{
+		if (!File.Exists(configPath))
+		{
+			Log.Error("Could not find config: {configPath}", configPath);
+			Environment.Exit(2);
+		}
+
+		var rawConfigFile = JObject.Parse(File.ReadAllText(configPath));
+
+		return rawConfigFile.ToObject<ConfigFile>();
+	}
+
 	private static RootCommand CreateCommandParser()
 	{
 		var rootCommand = new RootCommand("Hayden all-chan archival software");
 
 		// scrape
-		var scrapeCommand = new Command("scrape", "Scrape using a config");
+		var scrapeCommand = new Command("scrape", "Long-term scrape using a config");
 		var configArg = new Argument<string>("config path", () => "config.json", "The path to the .json config file") { Arity = ArgumentArity.ExactlyOne };
 		scrapeCommand.Add(configArg);
-		scrapeCommand.SetHandler((configFile) => RunScrape(configFile, null), configArg);
+		scrapeCommand.SetHandler(configPath => RunScrape(LoadConfigFile(configPath), null, null), configArg);
 
 		rootCommand.Add(scrapeCommand);
+
+		// immediate
+		var immediateCommand = new Command("immediate", "Short-term scrape to the local directory");
+		var threadsArg = new Argument<string[]>("thread URLs", "A list of 4chan thread URLs to scrape") { Arity = ArgumentArity.OneOrMore };
+		immediateCommand.Add(threadsArg);
+		immediateCommand.SetHandler(threadUrls =>
+		{
+			var configFile = new ConfigFile()
+			{
+				Consumer = new ConsumerConfig()
+				{
+					Type = "Filesystem",
+					DownloadLocation = Directory.GetCurrentDirectory(),
+					FullImagesEnabled = true,
+					ThumbnailsEnabled = true
+				},
+				Source = new SourceConfig()
+				{
+					Type = "4chan"
+				},
+				Hayden = new HaydenConfigOptions()
+				{
+					ScraperType = "interactive"
+				}
+			};
+
+			return RunScrape(configFile, null, new InteractiveSettings() { ThreadUrls = threadUrls });
+		}, threadsArg);
+
+		rootCommand.Add(immediateCommand);
 
 		// export
 		var exportCommand = new Command("export", "Dump a database to a standard format");
@@ -64,7 +107,10 @@ public class Program
 		exportCommand.Add(outputFileArg);
 		exportCommand.Add(compressionLevelArg);
 
-		exportCommand.SetHandler((configFile, outputFile, compressionLevel) => RunScrape(configFile, new ExportSettings() { OutputFile = outputFile, CompressionLevel = compressionLevel > 0 ? compressionLevel : null }),
+		exportCommand.SetHandler((configFile, outputFile, compressionLevel)
+				=> RunScrape(LoadConfigFile(configFile),
+				new ExportSettings { OutputFile = outputFile, CompressionLevel = compressionLevel > 0 ? compressionLevel : null },
+				null),
 			exportConfigArg, outputFileArg, compressionLevelArg);
 
 		rootCommand.Add(exportCommand);
@@ -229,22 +275,19 @@ public class Program
 		await maintenanceManager.DeleteThreads(threadPointers.ToArray());
 	}
 
-	private static async Task<int> RunScrape(string configPath, ExportSettings exportSettings)
+	private static void WriteInfoString()
 	{
-		if (!File.Exists(configPath))
-		{
-			Log.Error("Could not find config: {configPath}", configPath);
-			return 2;
-		}
-
-		var rawConfigFile = JObject.Parse(File.ReadAllText(configPath));
-
-		var tokenSource = new CancellationTokenSource();
-
 		Log.Information("Hayden v0.9.0");
 		Log.Information("By Bepis");
+	}
 
-		var archivalTask = Task.Run(() => CreateBoardArchiverExecutor(rawConfigFile, exportSettings, tokenSource));
+	private static async Task<int> RunScrape(ConfigFile configFile, ExportSettings exportSettings, InteractiveSettings interactiveSettings)
+	{
+		var tokenSource = new CancellationTokenSource();
+
+		WriteInfoString();
+
+		var archivalTask = Task.Run(() => CreateBoardArchiverExecutor(configFile, exportSettings, interactiveSettings, tokenSource));
 
 		var terminateTask = WaitForTerminateAsync();
 		await Task.WhenAny(archivalTask, terminateTask).ConfigureAwait(false);
@@ -257,13 +300,12 @@ public class Program
 		return await archivalTask.ConfigureAwait(false);
 	}
 
-	private static async Task<int> CreateBoardArchiverExecutor(JObject rawConfigFile, ExportSettings exportSettings, CancellationTokenSource tokenSource)
+	private static async Task<int> CreateBoardArchiverExecutor(ConfigFile configFile, ExportSettings exportSettings,
+		InteractiveSettings interactiveSettings, CancellationTokenSource tokenSource)
 	{
 		bool usingConsumer = exportSettings == null;
 
 		var serviceCollection = new ServiceCollection();
-
-		var configFile = rawConfigFile.ToObject<ConfigFile>();
 
 		if (configFile == null)
 			throw new Exception("Invalid config file");
@@ -287,6 +329,11 @@ public class Program
 		{
 			serviceCollection.AddSingleton(exportSettings);
 			configFile.Hayden.ScraperType = "export";
+		}
+
+		if (interactiveSettings != null)
+		{
+			serviceCollection.AddSingleton(interactiveSettings);
 		}
 
 		SerilogManager.LevelSwitch.MinimumLevel = configFile.Hayden.DebugLogging ? LogEventLevel.Verbose : LogEventLevel.Information;
@@ -355,7 +402,7 @@ public class Program
 
 		var frontendApi = serviceProvider.GetService<IFrontendApi>();
 
-		if (frontendApi != null && configFile.Source != null && (configFile.Source.Boards?.Length ?? 0) == 0)
+		if (frontendApi != null && configFile.Source != null && (configFile.Source.Boards?.Length ?? 0) == 0 && interactiveSettings == null)
 		{
 			await using var rentedClient = await serviceProvider.GetRequiredService<ProxyProvider>().RentHttpClient();
 
@@ -379,6 +426,7 @@ public class Program
 			"search" => ActivatorUtilities.CreateInstance<SearchArchiver>(serviceProvider),
 			"import" => ActivatorUtilities.CreateInstance<ImportArchiver>(serviceProvider),
 			"export" => ActivatorUtilities.CreateInstance<ExportArchiver>(serviceProvider),
+			"interactive" => ActivatorUtilities.CreateInstance<InteractiveArchiver>(serviceProvider),
 			_ => throw new ArgumentOutOfRangeException($"Unknown archiver type: {configFile.Hayden.ScraperType}")
 		};
 

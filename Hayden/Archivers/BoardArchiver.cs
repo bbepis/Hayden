@@ -584,7 +584,7 @@ namespace Hayden
 				return !ThreadIdBlacklist.Contains(threadPointer);
 		}
 
-		private void HandleThreadRemoval(ThreadPointer threadPointer)
+		protected virtual void HandleThreadRemoval(ThreadPointer threadPointer)
 		{
 			lock (TrackedThreads)
 				TrackedThreads.Remove(threadPointer);
@@ -687,7 +687,7 @@ namespace Hayden
 		/// <param name="board">The board to retrieve threads from.</param>
 		/// <param name="firstRun">True if this is the first cycle in the archival loop, otherwise false. Controls whether or not the database is called to find existing threads</param>
 		/// <returns>A list of thread IDs.</returns>
-		protected async Task<MaybeAsyncEnumerable<ThreadPointer>> GetBoardThreads(CancellationToken token, string board, bool firstRun)
+		protected async Task<MaybeAsyncEnumerable<ThreadPointer>> GetBoardThreads(CancellationToken token, string board, bool firstRun, bool suppressTotalLog = false)
 		{
 			var cooldownTask = Task.Delay(ApiCooldownTimespan, token);
 
@@ -821,8 +821,9 @@ namespace Hayden
 					{
 						var computedThreads = await threadList.ToListAsync();
 
-						Log.Information("Enqueued {computedThreadsCount} threads from board /{board}/",
-							computedThreads.Count, board);
+						if (!suppressTotalLog)
+							Log.Information("Enqueued {computedThreadsCount} threads from board /{board}/",
+								computedThreads.Count, board);
 
 						threads = new MaybeAsyncEnumerable<ThreadPointer>(computedThreads);
 					}
