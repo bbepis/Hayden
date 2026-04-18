@@ -25,7 +25,7 @@ namespace Hayden.Proxy
 		private int _proxyCount = 0;
 		public override int ProxyCount => _proxyCount;
 
-		public override async Task InitializeAsync(bool needsToTest)
+		public override async Task InitializeAsync(bool needsToTest, string testUrl)
 		{
 			List<HttpClientProxy> proxies = new List<HttpClientProxy>();
 
@@ -97,7 +97,8 @@ namespace Hayden.Proxy
 
 					try
 					{
-						var result = await proxy.Client.GetAsync("https://icanhazip.com");
+						// TODO: this should probably be checking the target website
+						var result = await proxy.Client.GetAsync(testUrl ?? "https://icanhazip.com");
 
 						if (!result.IsSuccessStatusCode)
 							success = false;

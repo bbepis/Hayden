@@ -15,7 +15,7 @@ namespace Hayden.Proxy
 
 		public override int ProxyCount => 1;
 
-		public override Task InitializeAsync(bool needsToTest)
+		public override Task InitializeAsync(bool needsToTest, string testUrl)
 		{
 			return Task.CompletedTask;
 		}
