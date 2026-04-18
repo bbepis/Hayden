@@ -1,4 +1,5 @@
 using System;
+using System.Data.Common;
 using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Reflection;
@@ -6,9 +7,11 @@ using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Hayden.Config;
 using Hayden.Consumers.HaydenMysql.DB.Migrations;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Design;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
@@ -28,6 +31,7 @@ public class HaydenDbContext : DbContext
 	public virtual DbSet<DBPost> Posts { get; set; }
 	public virtual DbSet<DBFileMapping> FileMappings { get; set; }
 	public virtual DbSet<DBFile> Files { get; set; }
+	public virtual DbSet<DBSource> Sources { get; set; }
 
 	private ILogger Logger { get; } = SerilogManager.CreateSubLogger("HaydenDB");
 
@@ -144,6 +148,7 @@ public class HaydenDbContext : DbContext
 			x.HasIndex(x => new { x.StreamHash });
 		});
 
+		if (!isSqlite)
 		modelBuilder.HasCharSet(CharSet.Utf8Mb4.Name, DelegationModes.ApplyToColumns);
 	}
 
@@ -359,11 +364,18 @@ public static class HaydenDbContextExtensions
 				x.EnableIndexOptimizedBooleanColumns();
 				x.MaxBatchSize(1000);
 				x.CommandTimeout(900000);
+				x.EnableRetryOnFailure(8);
 			});
 		}
 		else if (databaseType == DatabaseType.Sqlite)
 		{
 			builder.UseSqlite(connectionString);
+
+			using var sqliteConnection = new SqliteConnection(connectionString);
+			sqliteConnection.Open();
+			using var command = sqliteConnection.CreateCommand();
+			command.CommandText = "PRAGMA journal_mode=WAL;";
+			command.ExecuteNonQuery();
 		}
 
 		builder.ReplaceService<IMigrationsIdGenerator, VersionedMigrationIdGenerator>();

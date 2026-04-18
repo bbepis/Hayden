@@ -230,7 +230,6 @@ public class AsagiImporter : IImporter
 				Author = x.post.name,
 				Tripcode = x.post.trip,
 				Email = x.post.email,
-				Subject = x.post.title,
 				ContentRaw = x.post.comment,
 				ContentRendered = null,
 				ContentType = ContentType.Yotsuba,
@@ -247,11 +246,17 @@ public class AsagiImporter : IImporter
 							TimestampedFilename = Path.GetFileNameWithoutExtension(x.post.media_orig),
 							Index = 0,
 							FileSize = x.post.media_size,
-							IsSpoiler = x.post.spoiler,
+							IsSpoiler = x.post.spoiler > 0,
+							ImageWidth = x.post.media_w,
+							ImageHeight = x.post.media_h,
 							ThumbnailExtension = x.image == null ? null : Path.GetExtension(x.image.preview_op ?? x.image.preview_reply),
 							Md5Hash = TryConvertBase64(x.post.media_hash),
 							FileUrl = GetMediaPath(x.post, x.image, false),
 							ThumbnailUrl = GetMediaPath(x.post, x.image, true),
+							AdditionalMetadata = new()
+							{
+								CustomSpoiler = x.post.spoiler >= 2 ? x.post.spoiler : null,
+							}
 						}
 					},
 				AdditionalMetadata = new()
@@ -259,7 +264,8 @@ public class AsagiImporter : IImporter
 					Capcode = x.post.capcode == "N" || x.post.capcode == null ? null : x.post.capcode,
 					CountryCode = x.post.poster_country,
 					PosterID = x.post.poster_hash,
-					AsagiExif = !string.IsNullOrWhiteSpace(x.post.exif) ? x.post.exif : null
+					AsagiExif = !string.IsNullOrWhiteSpace(x.post.exif) ? x.post.exif : null,
+					Subject = x.post.title
 				}
 			}).ToArray(),
 			AdditionalMetadata = null

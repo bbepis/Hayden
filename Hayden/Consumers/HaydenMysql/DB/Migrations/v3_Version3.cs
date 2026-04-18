@@ -1,4 +1,5 @@
 using System;
+using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
@@ -71,6 +72,43 @@ namespace Hayden.Consumers.HaydenMysql.DB.Migrations
 			migrationBuilder.Sql("ALTER TABLE threads DROP COLUMN IsArchived;");
 			migrationBuilder.Sql("ALTER TABLE threads DROP COLUMN IsDeleted;");
 			migrationBuilder.Sql("ALTER TABLE posts DROP COLUMN IsDeleted;");
+
+			migrationBuilder.AddColumn<bool>(
+				name: "IsBanned",
+				table: "posts",
+				type: isSqlite ? "INTEGER" : "tinyint(1)",
+				nullable: false,
+				defaultValue: false);
+
+			migrationBuilder.AddColumn<byte>(
+				name: "Source",
+				table: "posts",
+				type: isSqlite ? "INTEGER" : "tinyint unsigned",
+				nullable: true,
+				defaultValue: null);
+
+			migrationBuilder.AddColumn<ushort>(
+				name: "Ordering",
+				table: "boards",
+				type: isSqlite ? "INTEGER" : "smallint unsigned",
+				nullable: false,
+				defaultValue: (ushort)0);
+
+			migrationBuilder.CreateTable(
+				name: "sources",
+				columns: table => new
+				{
+					Id = table.Column<byte>(type: "tinyint unsigned", nullable: false)
+						.Annotation("MySql:ValueGenerationStrategy", MySqlValueGenerationStrategy.IdentityColumn),
+					Name = table.Column<string>(type: "varchar(255)", maxLength: 255, nullable: false)
+						.Annotation("MySql:CharSet", "utf8mb4"),
+					Notes = table.Column<string>(type: "longtext", nullable: true)
+						.Annotation("MySql:CharSet", "utf8mb4")
+				},
+				constraints: table =>
+				{
+					table.PrimaryKey("PK_sources", x => x.Id);
+				});
 		}
 
         /// <inheritdoc />

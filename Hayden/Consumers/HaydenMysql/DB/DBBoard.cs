@@ -27,6 +27,8 @@ namespace Hayden.Consumers.HaydenMysql.DB
 		
 		public bool ShowsDeletedPosts { get; set; }
 
+		public ushort Ordering { get; set; }
+
 		[Column(TypeName = "json")]
 		public string AdditionalMetadata { get; set; }
 	}

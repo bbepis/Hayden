@@ -18,5 +18,7 @@ namespace Hayden
 		public bool DebugLogging { get; set; } = false;
 
 		public string ScraperType { get; set; } = "archive";
+
+		public string Source { get; set; } = null;
 	}
 }

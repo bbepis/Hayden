@@ -154,7 +154,6 @@ public class TarJsonImporter : IForwardOnlyImporter
 							? Instant.FromUnixTimeSeconds((long)x.TimestampUtc).ToDateTimeOffset()
 							: DateTimeOffset.UnixEpoch,
 						ContentType = ContentType.Yotsuba,
-						Subject = x.Subject, // this should only be applicable to 8chan posts
 						Media = x.FileUrl == null && string.IsNullOrWhiteSpace(x.Md5String)
 							? Array.Empty<Media>()
 							: new Media[]
@@ -176,6 +175,7 @@ public class TarJsonImporter : IForwardOnlyImporter
 						AdditionalMetadata = new Post.PostAdditionalMetadata
 						{
 							Capcode = x.Capcode.TrimAndNullify(),
+							Subject = x.Subject
 						}
 					}).ToArray()
 				};

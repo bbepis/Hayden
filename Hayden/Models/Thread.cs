@@ -15,11 +15,14 @@ public class Thread
 	public DateTimeOffset? ArchivedTime { get; set; }
 	
 	public object OriginalObject { get; set; }
-	public ThreadAdditionalMetadata AdditionalMetadata { get; set; }
+	public ThreadAdditionalMetadata AdditionalMetadata { get; set; } = new();
 
 	public class ThreadAdditionalMetadata
 	{
 		[JsonProperty("sticky")]
 		public bool Sticky { get; set; }
+
+		[JsonProperty("uniqueIps")]
+		public uint? UniqueIps { get; set; }
 	}
 }

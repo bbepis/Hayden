@@ -68,7 +68,7 @@ namespace Hayden
 				var timeElement = postElement.QuerySelector(".post-time > time");
 				post.TimePosted = DateTimeOffset.Parse(timeElement.GetAttribute("datetime"));
 
-				post.Subject = postElement.QuerySelector(".post-subject").TextContent.TrimAndNullify();
+				post.AdditionalMetadata.Subject = postElement.QuerySelector(".post-subject").TextContent.TrimAndNullify();
 				post.Tripcode = postElement.QuerySelector(".poster-trip").TextContent.TrimAndNullify();
 
 				var capcode = postElement.QuerySelector(".poster-capcode").TextContent.TrimAndNullify();
@@ -123,7 +123,7 @@ namespace Hayden
 			}
 
 			thread.ThreadId = postList[0].PostNumber;
-			thread.Title = postList[0].Subject;
+			thread.Title = postList[0].AdditionalMetadata.Subject;
 			thread.Posts = postList.ToArray();
 
 			var threadStats = page.QuerySelector("#thread_stats_page");

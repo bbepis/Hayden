@@ -104,7 +104,6 @@ namespace Hayden.ImportExport
 					Author = x.name,
 					Tripcode = x.trip,
 					Email = x.email,
-					Subject = x.title,
 					ContentRaw = x.comment,
 					ContentRendered = null,
 					ContentType = ContentType.Yotsuba,
@@ -120,6 +119,8 @@ namespace Hayden.ImportExport
 								FileExtension = Path.GetExtension(x.media),
 								TimestampedFilename = Path.GetFileNameWithoutExtension(x.media_filename),
 								Index = 0,
+								ImageHeight = x.media_h,
+								ImageWidth = x.media_w,
 								FileSize = x.media_size,
 								IsSpoiler = x.spoiler,
 								ThumbnailExtension = Path.GetExtension(x.preview),
@@ -130,7 +131,8 @@ namespace Hayden.ImportExport
 						},
 					AdditionalMetadata = new()
 					{
-						Capcode = x.capcode != null && x.capcode != "N" ? x.capcode : null
+						Capcode = x.capcode != null && x.capcode != "N" ? x.capcode : null,
+						Subject = x.title,
 					}
 				}).ToArray()
 			};

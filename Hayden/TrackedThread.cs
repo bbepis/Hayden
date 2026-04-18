@@ -44,7 +44,9 @@ namespace Hayden
 				{
 					// new post
 					updateInfo.NewPosts.Add(post);
-					PostHashes[post.PostNumber] = HashFunction(post);
+
+					if (processModifications)
+						PostHashes[post.PostNumber] = HashFunction(post);
 				}
 				else if (processModifications)
 				{
@@ -89,7 +91,7 @@ namespace Hayden
 			trackedThread.HashFunction = hashFunction;
 			trackedThread.PostHashes = new();
 
-			if (existingThreadInfo.PostHashes != null)
+			if (existingThreadInfo?.PostHashes != null)
 			{
 				foreach (var hash in existingThreadInfo.PostHashes)
 					trackedThread.PostHashes[hash.PostId] = hash.PostHash;

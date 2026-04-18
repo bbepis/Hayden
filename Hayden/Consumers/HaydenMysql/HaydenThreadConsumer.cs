@@ -499,12 +499,11 @@ namespace Hayden.Consumers
 						BoardId = boardId,
 						ThreadId = threadUpdateInfo.ThreadPointer.ThreadId,
 						TimeDeleted = threadUpdateInfo.Thread.DeletedTime?.UtcDateTime
-						            ?? (threadUpdateInfo.Thread.Posts.FirstOrDefault(x => x.PostNumber == threadUpdateInfo.ThreadPointer.ThreadId)?.TimeDeleted?.UtcDateTime)
-						            ?? null,
+						            ?? (threadUpdateInfo.Thread.Posts.FirstOrDefault(x => x.PostNumber == threadUpdateInfo.ThreadPointer.ThreadId)?.TimeDeleted?.UtcDateTime),
 						TimeArchived = threadUpdateInfo.Thread.ArchivedTime?.UtcDateTime,
 						LastModified = threadUpdateInfo.Thread.Posts.DefaultIfEmpty().Max(x => x.TimePosted).UtcDateTime,
 						Title = threadUpdateInfo.Thread.Title.TrimAndNullify(),
-						AdditionalMetadata = Common.SerializeAdditionalMetadata(threadUpdateInfo.Thread.AdditionalMetadata),
+						AdditionalMetadata = SerializeAdditionalMetadata(threadUpdateInfo.Thread.AdditionalMetadata),
 						PostCount = (uint)threadUpdateInfo.NewPosts.Count,
 						ImageCount = (uint)threadUpdateInfo.NewPosts.Sum(x => x.Media?.Length ?? 0),
 					};
@@ -570,6 +569,33 @@ namespace Hayden.Consumers
 						continue;
 					}
 
+					byte? sourceValue = null;
+
+					if (post.AdditionalMetadata?.Source != null)
+					{
+						if (SourceMappings.TryGetValue(post.AdditionalMetadata.Source, out var actualSourceValue))
+							sourceValue = actualSourceValue;
+						else
+						{
+							lock (SourceMappings)
+							{
+								if (!SourceMappings.TryGetValue(post.AdditionalMetadata.Source, out actualSourceValue))
+								{
+									actualSourceValue = (byte)(SourceMappings.Max(x => x.Value, 0) + 1);
+									
+									SourceMappings[post.AdditionalMetadata.Source] = actualSourceValue;
+
+									var newDbSource = new DBSource { Id = actualSourceValue, Name = post.AdditionalMetadata.Source };
+									dbContext.Add(newDbSource);
+								}
+
+								sourceValue = actualSourceValue;
+							}
+						}
+
+						post.AdditionalMetadata.Source = null;
+					}
+
 					dbContext.Add(new DBPost
 					{
 						BoardId = boardId,
@@ -583,7 +609,8 @@ namespace Hayden.Consumers
 						Tripcode = post.Tripcode.TrimAndNullify(),
 						Email = post.Email.TrimAndNullify(),
 						DateTime = post.TimePosted.UtcDateTime,
-						AdditionalMetadata = Common.SerializeAdditionalMetadata(post.AdditionalMetadata)
+						Source = sourceValue,
+						AdditionalMetadata = SerializeAdditionalMetadata(post.AdditionalMetadata)
 					});
 				}
 

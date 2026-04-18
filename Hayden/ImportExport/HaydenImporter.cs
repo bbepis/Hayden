@@ -7,7 +7,6 @@ using Hayden.Config;
 using Hayden.Consumers.HaydenMysql.DB;
 using Hayden.Models;
 using Microsoft.EntityFrameworkCore.Infrastructure;
-using Microsoft.EntityFrameworkCore.Migrations;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using Serilog;
@@ -16,17 +15,15 @@ namespace Hayden.ImportExport;
 
 public class HaydenImporter : IImporter
 {
-	private SourceConfig sourceConfig;
 	private DbContextOptions<HaydenDbContext> dbContextOptions;
 	protected PooledDbContextFactory<HaydenDbContext> DbContextPool { get; set; }
 	private Dictionary<string, ushort> boardDictionary;
+	private Dictionary<byte, string> sourceDictionary;
 
 	private ILogger Logger { get; } = SerilogManager.CreateSubLogger("HaydenDB");
 
 	public HaydenImporter(SourceConfig sourceConfig)
 	{
-		this.sourceConfig = sourceConfig;
-
 		dbContextOptions = new DbContextOptionsBuilder<HaydenDbContext>()
 			.SetupHaydenDb(sourceConfig)
 			.Options;
@@ -38,6 +35,7 @@ public class HaydenImporter : IImporter
 		dbContext.UpgradeOrCreateAsync().Wait();
 
 		boardDictionary = dbContext.Boards.ToDictionary(x => x.ShortName, x => x.Id);
+		sourceDictionary = dbContext.Sources.ToDictionary(x => x.Id, x => x.Name);
 	}
 
 	private HaydenDbContext GetDbContext() => DbContextPool.CreateDbContext(); //new(dbContextOptions);
@@ -121,7 +119,6 @@ public class HaydenImporter : IImporter
 				Author = x.Author,
 				Tripcode = x.Tripcode,
 				Email = x.Email,
-				// Subject = x.,
 				ContentRaw = x.ContentRaw,
 				ContentRendered = x.ContentHtml,
 				ContentType = x.ContentType,
@@ -144,6 +141,9 @@ public class HaydenImporter : IImporter
 						FileExtension = m.file?.Extension ?? mappingAdditionalMetadata?.Value<string>("missing_extension"),
 						Index = m.mapping.Index,
 						FileSize = m.file?.Size ?? mappingAdditionalMetadata?.Value<uint?>("missing_size"),
+						TimestampedFilename = m.mapping.TimestampedFilename,
+						ImageHeight = m.file?.ImageHeight,
+						ImageWidth = m.file?.ImageWidth,
 						IsSpoiler = m.mapping.IsSpoiler,
 						IsDeleted = m.mapping.IsDeleted,
 						ThumbnailExtension = m.file?.ThumbnailExtension,
@@ -157,10 +157,19 @@ public class HaydenImporter : IImporter
 						//ThumbnailUrl = $"{CdnUrl}data/{pointer.Board}/thumb/{radix}/{x.preview}"
 					};
 				}).ToArray(),
-				AdditionalMetadata = string.IsNullOrWhiteSpace(x.AdditionalMetadata)
-					? null
-					: JsonConvert.DeserializeObject<Post.PostAdditionalMetadata>(x.AdditionalMetadata)
+				AdditionalMetadata = GetPostAdditionalMetadata(x)
 			}).ToArray()
 		};
+	}
+
+	private Post.PostAdditionalMetadata GetPostAdditionalMetadata(DBPost x)
+	{
+		if (string.IsNullOrWhiteSpace(x.AdditionalMetadata))
+			return null;
+
+		var metadata = JsonConvert.DeserializeObject<Post.PostAdditionalMetadata>(x.AdditionalMetadata);
+		metadata.Source = x.Source != null ? sourceDictionary[x.Source.Value] : null;
+
+		return metadata;
 	}
 }

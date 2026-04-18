@@ -352,16 +352,14 @@ namespace Hayden
 						Filename = HttpUtility.HtmlDecode(Path.GetFileNameWithoutExtension(Media.OriginalFilename)),
 						FileExtension = Path.GetExtension(Media.OriginalFilename),
 						ThumbnailExtension = Path.GetExtension(Media.OriginalFilename),
+						TimestampedFilename = Path.GetFileNameWithoutExtension(Media.TimestampedFilename),
 						Index = 0,
+						// TODO: height and width
 						FileSize = Media.FileSize,
 						IsDeleted = false, // asagi schema doesn't store this info
 						IsSpoiler = Media.IsSpoiler,
 						Md5Hash = Convert.FromBase64String(Media.Md5HashString),
-						OriginalObject = Media,
-						AdditionalMetadata = new()
-						{
-							YotsubaTimestamp = ulong.Parse(Path.GetFileNameWithoutExtension(Media.TimestampedFilename))
-						}
+						OriginalObject = Media
 					}
 				};
 

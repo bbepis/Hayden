@@ -34,7 +34,9 @@ namespace Hayden
 
 			var writer = new StringBuilderWriter();
 			LeanSerializer.Serialize(writer, o);
-			return writer.ToString();
+			var result = writer.ToString();
+
+			return result == "{}" ? null : result;
 	    }
 
 		public enum MediaType

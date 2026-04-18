@@ -30,8 +30,12 @@ namespace Hayden.Consumers.HaydenMysql.DB
 		public DateTime DateTime { get; set; }
 		public DateTime? TimeDeleted { get; set; }
 
+		public bool IsBanned { get; set; }
+
 		[MaxLength(16)]
 		public byte[] PosterIP { get; set; }
+
+		public byte? Source { get; set; }
 
 		[Column(TypeName = "json")]
 		public string AdditionalMetadata { get; set; }

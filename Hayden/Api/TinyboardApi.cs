@@ -80,7 +80,7 @@ namespace Hayden
 
 				if (isOp)
 				{
-					post.Subject = postElement.QuerySelector("span.subject")?.TextContent.TrimAndNullify();
+					post.AdditionalMetadata.Subject = postElement.QuerySelector("span.subject")?.TextContent.TrimAndNullify();
 				}
 
 				var fileContainerElement = isOp ? threadElement : postElement;
@@ -177,7 +177,7 @@ namespace Hayden
 								FileExtension = Path.GetExtension(fileUrl),
 								ThumbnailExtension = Path.GetExtension(thumbUrl),
 								FileSize = (uint)fileSize,
-								IsSpoiler = thumbUrl?.Contains("spoiler", StringComparison.OrdinalIgnoreCase), // supposedly we can check the file info element, but this hasn't failed me yet
+								IsSpoiler = thumbUrl?.Contains("spoiler", StringComparison.OrdinalIgnoreCase) ?? false, // supposedly we can check the file info element, but this hasn't failed me yet
 								AdditionalMetadata = new()
 								{
 									ExternalMediaUrl = youtubeUrl
@@ -195,7 +195,7 @@ namespace Hayden
 								FileUrl = fileUrl,
 								ThumbnailUrl = thumbUrl,
 								Filename = "<blank>",
-								IsSpoiler = thumbUrl?.Contains("spoiler", StringComparison.OrdinalIgnoreCase),
+								IsSpoiler = thumbUrl?.Contains("spoiler", StringComparison.OrdinalIgnoreCase) ?? false,
 								FileExtension = Path.GetExtension(fileUrl),
 								ThumbnailExtension = Path.GetExtension(thumbUrl),
 								AdditionalMetadata = new()
@@ -215,7 +215,7 @@ namespace Hayden
 			}
 
 			thread.ThreadId = postList[0].PostNumber;
-			thread.Title = postList[0].Subject;
+			thread.Title = postList[0].AdditionalMetadata.Subject;
 			thread.Posts = postList.ToArray();
 
 			return thread;

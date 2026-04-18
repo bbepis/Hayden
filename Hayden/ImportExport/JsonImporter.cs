@@ -15,13 +15,15 @@ public class JsonImporter : IForwardOnlyImporter
 {
 	private SourceConfig sourceConfig;
 	private ConsumerConfig consumerConfig;
+	private HaydenConfigOptions haydenConfig;
 
 	private ILogger Logger { get; } = SerilogManager.CreateSubLogger("Json");
 
-	public JsonImporter(SourceConfig sourceConfig, ConsumerConfig consumerConfig)
+	public JsonImporter(SourceConfig sourceConfig, ConsumerConfig consumerConfig, HaydenConfigOptions haydenConfig)
 	{
 		this.sourceConfig = sourceConfig;
 		this.consumerConfig = consumerConfig;
+		this.haydenConfig = haydenConfig;
 	}
 
 	private Stream GetStream(string filename)
@@ -29,7 +31,7 @@ public class JsonImporter : IForwardOnlyImporter
 		if (!File.Exists(filename))
 			throw new FileNotFoundException("Cannot find import file");
 
-		Stream filestream = new FileStream(filename, FileMode.Open, FileAccess.Read, FileShare.Read, 4096,
+		Stream filestream = new FileStream(filename, FileMode.Open, FileAccess.Read, FileShare.ReadWrite, 4096,
 			FileOptions.SequentialScan | FileOptions.Asynchronous);
 
 		if (filename.EndsWith(".zst"))
@@ -84,6 +86,8 @@ public class JsonImporter : IForwardOnlyImporter
 					if (string.IsNullOrWhiteSpace(file.FileExtension))
 						file.FileExtension = "";
 				}
+
+				post.AdditionalMetadata.Source ??= haydenConfig.Source;
 			}
 
 			var threadPointer = new ThreadPointer(string.Intern(thread.Board), thread.ThreadId);

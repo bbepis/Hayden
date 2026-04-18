@@ -56,6 +56,9 @@ namespace Hayden.Consumers.HaydenMysql.DB.Migrations
 				b.Property<byte>("MultiImageLimit")
 					.HasColumnType("tinyint unsigned");
 
+				b.Property<ushort>("Ordering")
+					.HasColumnType("smallint unsigned");
+
 				b.Property<string>("ShortName")
 					.IsRequired()
 					.HasMaxLength(16)
@@ -214,19 +217,25 @@ namespace Hayden.Consumers.HaydenMysql.DB.Migrations
 				b.Property<DateTime>("DateTime")
 					.HasColumnType("datetime(6)");
 
-				b.Property<DateTime?>("DeletedTime")
-					.HasColumnType("datetime(6)");
-
 				b.Property<string>("Email")
 					.HasMaxLength(255)
 					.HasColumnType("varchar(255)");
+
+				b.Property<bool>("IsBanned")
+					.HasColumnType("tinyint(1)");
 
 				b.Property<byte[]>("PosterIP")
 					.HasMaxLength(16)
 					.HasColumnType("varbinary(16)");
 
+				b.Property<byte>("Source")
+					.HasColumnType("tinyint unsigned");
+
 				b.Property<ulong>("ThreadId")
 					.HasColumnType("bigint unsigned");
+
+				b.Property<DateTime?>("TimeDeleted")
+					.HasColumnType("datetime(6)");
 
 				b.Property<string>("Tripcode")
 					.HasMaxLength(255)
@@ -237,6 +246,27 @@ namespace Hayden.Consumers.HaydenMysql.DB.Migrations
 				b.HasIndex("BoardId", "ThreadId", "DateTime");
 
 				b.ToTable("posts");
+			});
+
+			modelBuilder.Entity("Hayden.Consumers.HaydenMysql.DB.DBSource", b =>
+			{
+				b.Property<byte>("Id")
+					.ValueGeneratedOnAdd()
+					.HasColumnType("tinyint unsigned");
+
+				MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<byte>("Id"));
+
+				b.Property<string>("Name")
+					.IsRequired()
+					.HasMaxLength(255)
+					.HasColumnType("varchar(255)");
+
+				b.Property<string>("Notes")
+					.HasColumnType("longtext");
+
+				b.HasKey("Id");
+
+				b.ToTable("sources");
 			});
 
 			modelBuilder.Entity("Hayden.Consumers.HaydenMysql.DB.DBThread", b =>

@@ -8,8 +8,6 @@ public class Post
 {
 	public string Author { get; set; }
 	public string Tripcode { get; set; }
-	// TODO: add this to the schema
-	public string Subject { get; set; }
 	public string Email { get; set; }
 
 	public DateTimeOffset TimePosted { get; set; }
@@ -38,8 +36,8 @@ public class Post
 		[JsonProperty("subject")]
 		public string Subject { get; set; }
 
-		[JsonProperty("modifications")]
-		public PostModification Modifications { get; set; }
+		[JsonProperty("content_modifications")]
+		public ContentModification[] Modifications { get; set; }
 
 		[JsonProperty("countryCode")]
 		public string CountryCode { get; set; }
@@ -66,5 +64,21 @@ public class Post
 
 		[JsonProperty("source")]
 		public string Source { get; set; }
+	}
+
+	public class ContentModification
+	{
+		[JsonProperty("time")]
+		public DateTimeOffset Time { get; set; }
+
+		[JsonProperty("old_content_html")]
+		public string OldContentHtml { get; set; }
+		[JsonProperty("old_content_raw")]
+		public string OldContentRaw { get; set; }
+
+		[JsonProperty("new_content_html")]
+		public string NewContentHtml { get; set; }
+		[JsonProperty("new_content_raw")]
+		public string NewContentRaw { get; set; }
 	}
 }
