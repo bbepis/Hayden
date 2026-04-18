@@ -90,7 +90,7 @@ public class AsagiDbContext : DbContext
 		public uint media_size { get; set; }
 		public string media_hash { get; set; }
 
-		public bool spoiler { get; set; }
+		public byte spoiler { get; set; }
 		public bool deleted { get; set; }
 		public string capcode { get; set; }
 
