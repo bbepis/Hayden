@@ -11,7 +11,6 @@ using Hayden.Consumers.HaydenMysql.DB;
 using Hayden.Contract;
 using Hayden.Models;
 using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
 using Thread = Hayden.Models.Thread;
 
 #pragma warning disable CS0649 // Field is never assigned to, and will always have its default value null
@@ -39,6 +38,15 @@ namespace Hayden
 			request.Headers.IfModifiedSince = modifiedSince;
 			request.Headers.Referrer = new Uri(ImageboardWebsite);
 
+			if (!string.IsNullOrWhiteSpace(SourceConfig.UserAgent))
+				request.Headers.TryAddWithoutValidation("User-Agent", SourceConfig.UserAgent);
+
+			if (uri.Host == "8chan.moe")
+			{
+				// dumb bot check
+				request.Headers.Add("Cookie", "inbound=/; TOS20250418=1");
+			}
+
 			return request;
 		}
 
@@ -59,16 +67,7 @@ namespace Hayden
 			if (rawThreadResponse.ResponseType != ResponseType.Ok)
 				return new ApiResponse<LynxChanThread>(rawThreadResponse.ResponseType, null);
 
-			var rawThread = rawThreadResponse.Data;
-
-			var opPost = rawThread.MapToPost();
-
-			if (rawThread.Posts == null)
-				rawThread.Posts = new List<LynxChanPost>();
-
-			rawThread.Posts.Insert(0, opPost);
-
-			var thread = rawThread.MapToThread();
+			var thread = rawThreadResponse.Data.MapToThread();
 
 			return new ApiResponse<LynxChanThread>(ResponseType.Ok, thread);
 		}
@@ -82,7 +81,11 @@ namespace Hayden
 				ArchivedTime = thread.Archived ? DateTimeOffset.MinValue : null,
 				OriginalObject = thread,
 				Posts = thread.Posts.Select(x => x.ConvertToPost(ImageboardWebsite)).ToArray(),
-				AdditionalMetadata = null
+				AdditionalMetadata =
+				{
+					Sticky = thread.Pinned,
+					UniqueIps = thread.UniquePosters
+				}
 			};
 		}
 
@@ -169,14 +172,15 @@ namespace Hayden
 			{
 				return new LynxChanThread
 				{
-					Posts = Posts,
+					Posts = [MapToPost(), ..(Posts ?? [])],
 					Archived = Archived,
 					AutoSage = AutoSage,
 					Cyclic = Cyclic,
 					Locked = Locked,
 					Pinned = Pinned,
 					ThreadId = ThreadId,
-					Subject = Subject
+					Subject = Subject,
+					UniquePosters = UniquePosters
 				};
 			}
 		}
@@ -210,6 +214,9 @@ namespace Hayden
 
 		[JsonProperty("autoSage")]
 		public bool AutoSage { get; set; }
+
+		[JsonProperty("uniquePosters")]
+		public uint? UniquePosters { get; set; }
 	}
 
 	public class LynxChanPost
@@ -263,10 +270,13 @@ namespace Hayden
 					Filename = Path.GetFileNameWithoutExtension(file.OriginalName),
 					FileExtension = Path.GetExtension(file.OriginalName),
 					ThumbnailExtension = Path.GetExtension(file.OriginalName),
+					TimestampedFilename = Path.GetFileNameWithoutExtension(file.DirectPath),
+					ImageHeight = file.Height.HasValue ? (uint?)file.Height.Value : null,
+					ImageWidth = file.Width.HasValue ? (uint?)file.Width.Value : null,
 					Index = (byte)i,
 					FileSize = (uint)file.FileSize,
 					IsDeleted = false, // not exposed by API
-					IsSpoiler = null, // not exposed by API
+					IsSpoiler = false, // not exposed by API
 					// no reliable hashes from this API
 					OriginalObject = this,
 					AdditionalMetadata = null
@@ -281,7 +291,7 @@ namespace Hayden
 				Tripcode = null, // ?
 				Email = Email,
 				ContentRendered = Markdown,
-				ContentRaw = Message,
+				// ContentRaw = Message,
 				ContentType = ContentType.LynxChan,
 				Media = media,
 				OriginalObject = this,
