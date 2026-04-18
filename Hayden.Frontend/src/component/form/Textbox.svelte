@@ -7,6 +7,7 @@
 		class?: string;
 		value?: string;
 		area?: boolean;
+		contents?: boolean;
 	};
 
 	let focused = $state(false);
@@ -16,11 +17,12 @@
 		class: className = "",
 		value = $bindable(),
 		area = false,
+		contents = false,
 		...restProps
 	}: Props = $props();
 </script>
 
-<div class="relative">
+<div class="relative {contents ? "contents" : ""}">
 	{#if showSearch}
 		<div class="absolute left-[5px] top-1/2 mt-[-9px] opacity-90 pointer-events-none"><Search size={18} color={focused ? "var(--color-highlight)" : "currentColor"} /></div>
 	{/if}
@@ -45,5 +47,4 @@
 			}}
 		/>
 	{/if}
-
 </div>

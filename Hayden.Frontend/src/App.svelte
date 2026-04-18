@@ -16,6 +16,7 @@
 	import { setContext } from "svelte";
 	import HoverPost from "./component/HoverPost.svelte";
 	import LoadPostPage from "./page/LoadPostPage.svelte";
+	import FirstLaunch from "./page/admin/FirstLaunch.svelte";
 
 	theme.subscribe(currentTheme => {
 		document.documentElement.className = `theme-${currentTheme}`;
@@ -29,7 +30,11 @@
 	setContext("deletePost", (boardId: number, postId: number) => deletePostModal?.showModal(boardId, postId));
 	setContext("banUser", (boardId: number, postId: number) => banUserModal?.showModal(boardId, postId));
 
-	const routes = {
+	const firstSetupRoutes = {
+		"*": FirstLaunch
+	};
+
+	const defaultRoutes = {
 		"/": IndexPage,
 		"/search": SearchPage,
 		"/admin/login": LoginPage,
@@ -40,10 +45,13 @@
 		"/:board/thread/:threadid": ThreadPage,
 		"/:board/post/:postid": LoadPostPage,
 	};
+
+	let isFirstLaunch = true;
+	let routes = isFirstLaunch ? firstSetupRoutes : defaultRoutes;
 </script>
 
 <Layout>
-	<Router {routes}/>
+	<Router routes={routes}/>
 </Layout>
 
 <BanUserModal bind:this={banUserModal} />

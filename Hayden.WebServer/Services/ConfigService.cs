@@ -81,6 +81,8 @@ public static class ConfigExtensions
 
 		services.AddSingleton(x => cs.RegisterConfig<ServerDataConfig>());
 		services.AddSingleton(x => cs.RegisterConfig<ServerSearchConfig>());
+		services.AddSingleton(x => cs.RegisterConfig<ServerCaptchaConfig>());
+		services.AddSingleton(x => cs.RegisterConfig<ServerSiteConfig>());
 
 		configService = cs;
 		return services;
@@ -130,6 +132,39 @@ public class ServerDataConfig
 	public string ConnectionString { get; set; }
 }
 
+public class ServerCaptchaConfig
+{
+	private const string prefix = "Captcha.";
+
+	[ConfigKey(prefix + "CaptchaEnabled")]
+	public bool CaptchaEnabled { get; set; }
+	[ConfigKey(prefix + "CaptchaSiteKey")]
+	public string CaptchaSiteKey { get; set; }
+	[ConfigKey(prefix + "CaptchaSecret")]
+	public string CaptchaSecret { get; set; }
+	[ConfigKey(prefix + "CaptchaTesting")]
+	public bool CaptchaTesting { get; set; }
+}
+
+public class ServerSiteConfig
+{
+	private const string prefix = "Site.";
+
+	[ConfigKey(prefix + "SiteName")]
+	public string SiteName { get; set; }
+	[ConfigKey(prefix + "MaxFileUploadSizeMB")]
+	public double? MaxFileUploadSizeMB { get; set; }
+
+	[ConfigKey(prefix + "CompactBoardsUi")]
+	public bool CompactBoardsUi { get; set; }
+
+	[ConfigKey(prefix + "ShiftJisArt")]
+	public string ShiftJisArt { get; set; }
+
+	[ConfigKey(prefix + "EnableHttps")]
+	public bool EnableHttps { get; set; }
+}
+
 #endregion
 
 #region Config classes and helpers
@@ -175,9 +210,10 @@ public class ConfigOption<T> : IDatabaseOption, IOptions<T> where T : class, new
 		foreach (var (prop, key) in ReadReflectionInfo())
 		{
 			var configValue = (await WebDbContext.ConfigEntries.AsNoTracking()
-				.FirstOrDefaultAsync(x => x.Key == key))?.Value;
+				.FirstOrDefaultAsync(x => x.Key == key));
 
-			prop.SetValue(Value, Convert.ChangeType(configValue, prop.PropertyType));
+			if (configValue != null)
+				prop.SetValue(Value, Convert.ChangeType(configValue.Value, prop.PropertyType));
 		}
 	}
 
@@ -191,9 +227,9 @@ public class ConfigOption<T> : IDatabaseOption, IOptions<T> where T : class, new
 				.FirstOrDefaultAsync(x => x.Key == key);
 
 			if (configValue == null)
-				WebDbContext.Add(new DBConfigEntry(key, modelValue.ToString()));
+				WebDbContext.Add(new DBConfigEntry(key, modelValue?.ToString()));
 			else
-				configValue.Value = modelValue.ToString();
+				configValue.Value = modelValue?.ToString();
 		}
 
 		await WebDbContext.SaveChangesAsync();

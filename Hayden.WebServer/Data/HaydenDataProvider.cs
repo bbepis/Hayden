@@ -6,7 +6,6 @@ using System.Security.Cryptography;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
-using AngleSharp.Common;
 using Hayden.Consumers;
 using Hayden.Consumers.HaydenMysql.DB;
 using Hayden.Models;
@@ -17,7 +16,6 @@ using Hayden.WebServer.WebDb;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Options;
 using Newtonsoft.Json;
 using static Hayden.WebServer.Controllers.Api.ApiController;
 

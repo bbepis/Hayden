@@ -1,19 +1,10 @@
-using System;
-using System.Collections.Generic;
 using System.CommandLine;
-using System.IO;
-using System.IO.Abstractions;
 using System.Threading.Tasks;
 using Hayden.WebServer.Config;
 using Hayden.WebServer.WebDb;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Options;
-using Newtonsoft.Json;
-using Newtonsoft.Json.Converters;
-using Newtonsoft.Json.Serialization;
 using Serilog;
 using Serilog.Events;
 
@@ -30,21 +21,15 @@ public static class Program
 	{
 		var rootCommand = new RootCommand();
 
-		var configFileOption = new Option<string>(new[] { "-c", "--config" }, () => "config.json", "Configuration file to use when launching");
+		var auxiliaryDbOption = new Argument<string>("database", () => "hayden-database.db", "The path to the Sqlite website database to use");
 		var portOption = new Option<ushort>(new[] { "-p", "--port" }, () => 5000, "Port to listen to requests from");
+		var sqlLoggingOption = new Option<bool>(new[] { "--sql-logging" }, "Enable logging for SQL commands");
 
-		rootCommand.AddOption(configFileOption);
+		rootCommand.AddArgument(auxiliaryDbOption);
 		rootCommand.AddOption(portOption);
-		rootCommand.SetHandler((configFile, port) => RunServer(args, configFile, port),
-			configFileOption, portOption);
-
-		var createConfigCommand = new Command("genconfig", "Generate config");
-		var configFileArgument = new Argument<string>("config file", () => "config.json", "Write the config file to this location");
-
-		createConfigCommand.Add(configFileArgument);
-		createConfigCommand.SetHandler(GenerateConfig, configFileArgument);
-
-		rootCommand.Add(createConfigCommand);
+		rootCommand.AddOption(sqlLoggingOption);
+		rootCommand.SetHandler((auxiliaryDb, port, sqlLogging) => RunServer(args, auxiliaryDb, sqlLogging, port),
+			auxiliaryDbOption, portOption, sqlLoggingOption);
 
 		return rootCommand;
 	}
@@ -78,6 +63,9 @@ public static class Program
 
 	public static IHostBuilder CreateHostBuilder(string[] args, string auxiliaryDbPath, ushort port)
 	{
+		var initialWebDbOptions = new DbContextOptionsBuilder<WebDbContext>()
+			.UseSqlite($"Data Source={auxiliaryDbPath}")
+			.Options;
 
 		return Host.CreateDefaultBuilder(args)
 			.UseSerilog()
@@ -91,41 +79,5 @@ public static class Program
 					.ConfigureKestrel(c => c.ListenAnyIP(port));
 			});
 
-	}
-
-	private static void GenerateConfig(string outputFile)
-	{
-		var sampleServerConfig = new ServerConfig()
-		{
-			Captcha = new ServerCaptchaConfig()
-			{
-				HCaptchaTesting = true,
-				HCaptchaSiteKey = "Foobar",
-				HCaptchaSecret = "Foobar"
-			},
-
-			Extensions = new ServerExtensionsConfig(),
-
-			Settings = new ServerSettingsConfig
-			{
-				CompactBoardsUi = false,
-				MaxFileUploadSizeMB = 4,
-				SiteName = "Hayden Archive",
-				ShiftJisArt = null
-			},
-
-			RedirectToHTTPS = false,
-			SqlLogging = false
-		};
-
-		File.WriteAllText(outputFile, JsonConvert.SerializeObject(sampleServerConfig, new JsonSerializerSettings
-		{
-			Formatting = Formatting.Indented,
-			NullValueHandling = NullValueHandling.Include,
-			Converters = new List<JsonConverter>
-			{
-				new StringEnumConverter(new DefaultNamingStrategy(), false)
-			}
-		}));
 	}
 }

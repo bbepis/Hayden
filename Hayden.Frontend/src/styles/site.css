@@ -23,15 +23,35 @@ button, input::file-selector-button {
 	accent-color: var(--color-highlight);
 }
 
+input:where([type="checkbox"]) {
+	accent-color: var(--color-highlight);
+}
+
 button:not(:disabled):hover, input:not(:disabled)::file-selector-button:hover {
 	border-color: var(--color-highlight);
 	background-color: var(--box-background-color);
 }
 
-button:disabled, input:disabled::file-selector-button {
+button:not(:disabled):active, input:not(:disabled)::file-selector-button:active {
+	border-color: var(--color-highlight);
+	background-color: var(--page-background-color);
+}
+
+button:disabled,
+input:disabled::file-selector-button,
+input:where([type="text"]):disabled,
+select:disabled,
+input[type="number"]:disabled {
 	cursor: not-allowed;
 	background-color: var(--page-background-color);
 }
+
+/* old disabled */
+/* {
+  border: 1px solid #0000;
+  background-color: var(--color-box-header);
+  cursor: not-allowed;
+}*/
 
 button:not(:disabled):focus,
 button:not(:disabled):focus-visible {
@@ -47,12 +67,6 @@ input:not(:where([type="file"])) {
 input:not(:disabled):focus, select:not(:disabled):focus {
   outline: none !important;
   border: 1px solid var(--color-highlight);
-}
-
-input:where([type="text"]):disabled {
-  border: 1px solid #0000;
-  background-color: var(--color-box-header);
-  cursor: not-allowed;
 }
 
 select, .textbox-container {

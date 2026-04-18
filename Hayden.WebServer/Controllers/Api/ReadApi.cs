@@ -9,319 +9,318 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Newtonsoft.Json.Linq;
 
-namespace Hayden.WebServer.Controllers.Api
+namespace Hayden.WebServer.Controllers.Api;
+
+public partial class ApiController
 {
-	public partial class ApiController
+	[HttpGet("index")]
+	public async Task<IActionResult> Index([FromServices] HaydenDbContext dbContext)
 	{
-		[HttpGet("index")]
-		public async Task<IActionResult> Index([FromServices] HaydenDbContext dbContext)
-		{
-			var topThreads = await dbContext.Threads.AsNoTracking()
-				.OrderByDescending(x => x.LastModified)
-				.Take(10)
-				.ToArrayAsync();
+		var topThreads = await dbContext.Threads.AsNoTracking()
+			.OrderByDescending(x => x.LastModified)
+			.Take(10)
+			.ToArrayAsync();
 			
-			JsonThreadModel[] threadModels = new JsonThreadModel[topThreads.Length];
+		JsonThreadModel[] threadModels = new JsonThreadModel[topThreads.Length];
 
-			for (var i = 0; i < topThreads.Length; i++)
+		for (var i = 0; i < topThreads.Length; i++)
+		{
+			var thread = topThreads[i];
+
+			var (boardObj, threadObj, posts, mappings) = await dbContext.GetThreadInfo(thread.ThreadId, thread.BoardId);
+
+			var limitedPosts = posts.Take(1).Concat(posts.TakeLast(3)).Distinct();
+
+			threadModels[i] = new JsonThreadModel(boardObj, threadObj, limitedPosts.Select(x =>
+					new JsonPostModel(x,
+						mappings.Where(y => y.Item1.PostId == x.PostId)
+							.Select(y =>
+							{
+								var (imageUrl, thumbUrl) = HaydenDataProvider.GenerateUrls(y.Item2, boardObj.ShortName, DataConfig.Value);
+
+								return new JsonFileModel(y.Item2, y.Item1, imageUrl, thumbUrl);
+							}).ToArray()))
+				.ToArray());
+		}
+
+		return Json(threadModels);
+	}
+
+	[HttpGet("search")]
+	public async Task<IActionResult> Search([FromServices] IDataProvider dataProvider,
+		[FromQuery] string query,
+		[FromQuery] string subject,
+		[FromQuery] string boards,
+		[FromQuery] string postType,
+		[FromQuery] string orderType,
+		[FromQuery] string posterId,
+		[FromQuery] string name,
+		[FromQuery] string trip,
+		[FromQuery] string filename,
+		[FromQuery] string md5Hash,
+		[FromQuery] string dateStart,
+		[FromQuery] string dateEnd,
+		[FromQuery] int? page)
+	{
+		if (SearchService == null || !SearchConfig.Value.Enabled)
+			return BadRequest("Search is not enabled");
+			
+		var boardInfo = await dataProvider.GetBoardInfo();
+
+		ushort[] boardIds = string.IsNullOrWhiteSpace(boards)
+			? null
+			: boards.Split(',')
+				.Select(x =>
+					boardInfo.FirstOrDefault(
+						y => y.ShortName.Equals(x, StringComparison.InvariantCultureIgnoreCase))?.Id)
+				.Where(x => x.HasValue)
+				.Select(x => x.Value)
+				.ToArray();
+
+		const int pageSize = 40;
+
+		var searchRequest = new SearchRequest
+		{
+			TextQuery = query,
+			Subject = subject,
+			Boards = boardIds,
+			IsOp = postType == "op" ? true : postType == "reply" ? false : null,
+			PosterID = posterId,
+			PosterName = name,
+			PosterTrip = trip,
+			Filename = filename,
+			FileMD5 = md5Hash,
+			DateStart = dateStart,
+			DateEnd = dateEnd,
+			OrderType = orderType,
+			Offset = page.HasValue ? (page.Value - 1) * pageSize : null,
+			ResultSize = pageSize
+		};
+
+		var searchResult = await SearchService.PerformSearch(searchRequest);
+
+		if (searchResult.PostNumbers.Length == 0)
+			return Json(new JsonBoardPageModel
 			{
-				var thread = topThreads[i];
-
-				var (boardObj, threadObj, posts, mappings) = await dbContext.GetThreadInfo(thread.ThreadId, thread.BoardId);
-
-				var limitedPosts = posts.Take(1).Concat(posts.TakeLast(3)).Distinct();
-
-				threadModels[i] = new JsonThreadModel(boardObj, threadObj, limitedPosts.Select(x =>
-						new JsonPostModel(x,
-							mappings.Where(y => y.Item1.PostId == x.PostId)
-								.Select(y =>
-								{
-									var (imageUrl, thumbUrl) = HaydenDataProvider.GenerateUrls(y.Item2, boardObj.ShortName, Config.Value);
-
-									return new JsonFileModel(y.Item2, y.Item1, imageUrl, thumbUrl);
-								}).ToArray()))
-					.ToArray());
-			}
-
-			return Json(threadModels);
-		}
-
-		[HttpGet("search")]
-		public async Task<IActionResult> Search([FromServices] IDataProvider dataProvider,
-			[FromQuery] string query,
-			[FromQuery] string subject,
-			[FromQuery] string boards,
-			[FromQuery] string postType,
-			[FromQuery] string orderType,
-			[FromQuery] string posterId,
-			[FromQuery] string name,
-			[FromQuery] string trip,
-			[FromQuery] string filename,
-			[FromQuery] string md5Hash,
-			[FromQuery] string dateStart,
-			[FromQuery] string dateEnd,
-			[FromQuery] int? page)
-		{
-			if (SearchService == null || !Config.Value.Search.Enabled)
-				return BadRequest("Search is not enabled");
+				totalThreadCount = searchResult.SearchHitCount,
+				threads = Array.Empty<JsonThreadModel>(),
+				boardInfo = null
+			});
 			
-			var boardInfo = await dataProvider.GetBoardInfo();
+		return Json(await dataProvider.ReadSearchResults(searchResult.PostNumbers, searchResult.SearchHitCount));
+	}
 
-			ushort[] boardIds = string.IsNullOrWhiteSpace(boards)
-				? null
-				: boards.Split(',')
-					.Select(x =>
-						boardInfo.FirstOrDefault(
-							y => y.ShortName.Equals(x, StringComparison.InvariantCultureIgnoreCase))?.Id)
-					.Where(x => x.HasValue)
-					.Select(x => x.Value)
-					.ToArray();
+	[HttpGet("{board}/post/{postid}")]
+	public async Task<IActionResult> IndividualPost(string board, ulong postid, [FromServices] IDataProvider dataProvider)
+	{
+		var postData = await dataProvider.GetPost(board, postid);
 
-			const int pageSize = 40;
+		if (postData == null)
+			return NotFound();
 
-			var searchRequest = new SearchRequest
-            {
-				TextQuery = query,
-				Subject = subject,
-				Boards = boardIds,
-				IsOp = postType == "op" ? true : postType == "reply" ? false : null,
-				PosterID = posterId,
-				PosterName = name,
-				PosterTrip = trip,
-				Filename = filename,
-				FileMD5 = md5Hash,
-				DateStart = dateStart,
-				DateEnd = dateEnd,
-				OrderType = orderType,
-				Offset = page.HasValue ? (page.Value - 1) * pageSize : null,
-				ResultSize = pageSize
-			};
+		return Json(postData);
+	}
 
-			var searchResult = await SearchService.PerformSearch(searchRequest);
+	[HttpGet("{board}/thread/{threadid}")]
+	public async Task<IActionResult> ThreadIndex(string board, ulong threadid, [FromServices] IDataProvider dataProvider)
+	{
+		var threadData = await dataProvider.GetThread(board, threadid);
 
-			if (searchResult.PostNumbers.Length == 0)
-				return Json(new JsonBoardPageModel
-				{
-					totalThreadCount = searchResult.SearchHitCount,
-					threads = Array.Empty<JsonThreadModel>(),
-					boardInfo = null
-				});
-			
-			return Json(await dataProvider.ReadSearchResults(searchResult.PostNumbers, searchResult.SearchHitCount));
-		}
+		if (threadData == null)
+			return NotFound();
 
-		[HttpGet("{board}/post/{postid}")]
-		public async Task<IActionResult> IndividualPost(string board, ulong postid, [FromServices] IDataProvider dataProvider)
-		{
-			var postData = await dataProvider.GetPost(board, postid);
-
-			if (postData == null)
-				return NotFound();
-
-			return Json(postData);
-		}
-
-		[HttpGet("{board}/thread/{threadid}")]
-		public async Task<IActionResult> ThreadIndex(string board, ulong threadid, [FromServices] IDataProvider dataProvider)
-		{
-			var threadData = await dataProvider.GetThread(board, threadid);
-
-			if (threadData == null)
-				return NotFound();
-
-			return Json(threadData);
-		}
+		return Json(threadData);
+	}
 
 
-		[HttpGet("board/all/info")]
-		public async Task<IActionResult> AllBoardInfo([FromServices] IDataProvider dataProvider)
-		{
-			var boardInfos = await dataProvider.GetBoardInfo();
+	[HttpGet("board/all/info")]
+	public async Task<IActionResult> AllBoardInfo([FromServices] IDataProvider dataProvider)
+	{
+		var boardInfos = await dataProvider.GetBoardInfo();
 
-			var jsonModels = boardInfos.Select(x => new JsonBoardModel(x, StatsService.CurrentStats?.FirstOrDefault(y => y.Key == x.Id).Value));
+		var jsonModels = boardInfos.Select(x => new JsonBoardModel(x, StatsService.CurrentStats?.FirstOrDefault(y => y.Key == x.Id).Value));
 
-			return Json(jsonModels);
-		}
+		return Json(jsonModels);
+	}
 
-		[HttpGet("board/{board}/index")]
-		public async Task<IActionResult> BoardIndex([FromServices] IDataProvider dataProvider, string board, [FromQuery] int? page)
-		{
-			return Json(await dataProvider.GetBoardPage(board, page));
-		}
+	[HttpGet("board/{board}/index")]
+	public async Task<IActionResult> BoardIndex([FromServices] IDataProvider dataProvider, string board, [FromQuery] int? page)
+	{
+		return Json(await dataProvider.GetBoardPage(board, page));
+	}
 		
-		public class JsonBoardPageModel
+	public class JsonBoardPageModel
+	{
+		public long totalThreadCount { get; set; }
+		public DBBoard boardInfo { get; set; }
+		public JsonThreadModel[] threads { get; set; }
+	}
+
+	public class JsonBoardModel
+	{
+		public ushort id { get; set; }
+		public string shortName { get; set; }
+		public string longName { get; set; }
+		public string category { get; set; }
+
+		public bool isNSFW { get; set; }
+		public byte multiImageLimit { get; set; }
+		public bool isReadOnly { get; set; }
+		public bool showsDeletedPosts { get; set; }
+
+		public string additionalMetadata { get; set; }
+
+		public long? threadCount { get; set; }
+		public long? postCount { get; set; }
+		public long? imageCount { get; set; }
+
+		public JsonBoardModel() { }
+
+		public JsonBoardModel(DBBoard board, BoardStats stats)
 		{
-			public long totalThreadCount { get; set; }
-			public DBBoard boardInfo { get; set; }
-			public JsonThreadModel[] threads { get; set; }
-		}
+			id = board.Id;
+			shortName = board.ShortName;
+			longName = board.LongName;
+			category = board.Category;
 
-		public class JsonBoardModel
-		{
-			public ushort id { get; set; }
-			public string shortName { get; set; }
-			public string longName { get; set; }
-			public string category { get; set; }
+			isNSFW = board.IsNSFW;
+			multiImageLimit = board.MultiImageLimit;
+			isReadOnly = board.IsReadOnly;
+			showsDeletedPosts = board.ShowsDeletedPosts;
 
-			public bool isNSFW { get; set; }
-			public byte multiImageLimit { get; set; }
-			public bool isReadOnly { get; set; }
-			public bool showsDeletedPosts { get; set; }
+			additionalMetadata = board.AdditionalMetadata;
 
-			public string additionalMetadata { get; set; }
-
-			public long? threadCount { get; set; }
-			public long? postCount { get; set; }
-			public long? imageCount { get; set; }
-
-			public JsonBoardModel() { }
-
-			public JsonBoardModel(DBBoard board, BoardStats stats)
+			if (stats != null)
 			{
-				id = board.Id;
-				shortName = board.ShortName;
-				longName = board.LongName;
-				category = board.Category;
-
-				isNSFW = board.IsNSFW;
-				multiImageLimit = board.MultiImageLimit;
-				isReadOnly = board.IsReadOnly;
-				showsDeletedPosts = board.ShowsDeletedPosts;
-
-				additionalMetadata = board.AdditionalMetadata;
-
-				if (stats != null)
-				{
-					threadCount = stats.ThreadCount;
-					postCount = stats.PostCount;
-					imageCount = stats.ImageCount;
-				}
+				threadCount = stats.ThreadCount;
+				postCount = stats.PostCount;
+				imageCount = stats.ImageCount;
 			}
 		}
+	}
 
-		public class JsonThreadModel
+	public class JsonThreadModel
+	{
+		public ulong threadId { get; set; }
+
+		public DBBoard board { get; set; }
+
+		public string subject { get; set; }
+		public DateTime lastModified { get; set; }
+
+		public DateTime? archived { get; set; }
+		public DateTime? deleted { get; set; }
+
+		public JsonPostModel[] posts { get; set; }
+
+		public JsonThreadModel(DBBoard board, DBThread thread, JsonPostModel[] posts)
 		{
-			public ulong threadId { get; set; }
+			this.board = board;
 
-			public DBBoard board { get; set; }
+			threadId = thread.ThreadId;
+			subject = thread.Title;
+			lastModified = thread.LastModified;
+			archived = thread.TimeArchived;
+			deleted = thread.TimeDeleted;
 
-			public string subject { get; set; }
-			public DateTime lastModified { get; set; }
-
-			public DateTime? archived { get; set; }
-			public DateTime? deleted { get; set; }
-
-			public JsonPostModel[] posts { get; set; }
-
-			public JsonThreadModel(DBBoard board, DBThread thread, JsonPostModel[] posts)
-			{
-				this.board = board;
-
-				threadId = thread.ThreadId;
-				subject = thread.Title;
-				lastModified = thread.LastModified;
-				archived = thread.TimeArchived;
-				deleted = thread.TimeDeleted;
-
-				this.posts = posts;
-			}
-
-			public JsonThreadModel() { }
+			this.posts = posts;
 		}
 
-		public class JsonPostModel
+		public JsonThreadModel() { }
+	}
+
+	public class JsonPostModel
+	{
+		public ulong postId { get; set; }
+		public ulong threadId { get; set; }
+
+		public string contentHtml { get; set; }
+		public string contentRaw { get; set; }
+
+		public string author { get; set; }
+		public string tripcode { get; set; }
+
+		public DateTime dateTime { get; set; }
+
+		public DateTime? deleted { get; set; }
+
+		public JsonFileModel[] files { get; set; }
+
+		public JsonPostModel(DBPost post, JsonFileModel[] files)
 		{
-			public ulong postId { get; set; }
-			public ulong threadId { get; set; }
+			postId = post.PostId;
+			threadId = post.ThreadId;
+			contentHtml = post.ContentHtml;
+			contentRaw = post.ContentRaw;
+			author = post.Author;
+			tripcode = post.Tripcode;
+			dateTime = post.DateTime.ToUniversalTime();
+			deleted = post.TimeDeleted;
 
-			public string contentHtml { get; set; }
-			public string contentRaw { get; set; }
-
-			public string author { get; set; }
-			public string tripcode { get; set; }
-
-			public DateTime dateTime { get; set; }
-
-			public DateTime? deleted { get; set; }
-
-			public JsonFileModel[] files { get; set; }
-
-			public JsonPostModel(DBPost post, JsonFileModel[] files)
-			{
-				postId = post.PostId;
-				threadId = post.ThreadId;
-				contentHtml = post.ContentHtml;
-				contentRaw = post.ContentRaw;
-				author = post.Author;
-				tripcode = post.Tripcode;
-				dateTime = post.DateTime.ToUniversalTime();
-				deleted = post.TimeDeleted;
-
-				this.files = files;
-			}
-
-			public JsonPostModel() { }
+			this.files = files;
 		}
 
-		public class JsonFileModel
+		public JsonPostModel() { }
+	}
+
+	public class JsonFileModel
+	{
+		public uint? fileId { get; set; }
+
+		public byte[] md5Hash { get; set; }
+		public byte[] sha1Hash { get; set; }
+		public byte[] sha256Hash { get; set; }
+
+		public string extension { get; set; }
+
+		public ushort? imageWidth { get; set; }
+		public ushort? imageHeight { get; set; }
+
+		public uint? fileSize { get; set; }
+
+		public byte index { get; set; }
+
+		public string filename { get; set; }
+
+		public bool spoiler { get; set; }
+		public bool deleted { get; set; }
+
+		public string imageUrl { get; set; }
+		public string thumbnailUrl { get; set; }
+
+		public JsonFileModel(DBFile file, DBFileMapping fileMapping, string imageUrl, string thumbnailUrl)
 		{
-			public uint? fileId { get; set; }
+			var mappingMetadata = !string.IsNullOrWhiteSpace(fileMapping.AdditionalMetadata)
+				? JObject.Parse(fileMapping.AdditionalMetadata)
+				: null;
 
-			public byte[] md5Hash { get; set; }
-			public byte[] sha1Hash { get; set; }
-			public byte[] sha256Hash { get; set; }
+			fileId = file?.Id;
 
-			public string extension { get; set; }
-
-			public ushort? imageWidth { get; set; }
-			public ushort? imageHeight { get; set; }
-
-			public uint? fileSize { get; set; }
-
-			public byte index { get; set; }
-
-			public string filename { get; set; }
-
-			public bool spoiler { get; set; }
-			public bool deleted { get; set; }
-
-			public string imageUrl { get; set; }
-			public string thumbnailUrl { get; set; }
-
-			public JsonFileModel(DBFile file, DBFileMapping fileMapping, string imageUrl, string thumbnailUrl)
+			md5Hash = file?.Md5Hash;
+			if (md5Hash == null)
 			{
-				var mappingMetadata = !string.IsNullOrWhiteSpace(fileMapping.AdditionalMetadata)
-					? JObject.Parse(fileMapping.AdditionalMetadata)
-					: null;
+				var md5HashB64 = mappingMetadata?.Value<string>("missing_md5hash");
 
-				fileId = file?.Id;
-
-				md5Hash = file?.Md5Hash;
-				if (md5Hash == null)
-				{
-					var md5HashB64 = mappingMetadata?.Value<string>("missing_md5hash");
-
-					if (md5HashB64 != null)
-						md5Hash = Convert.FromBase64String(md5HashB64);
-				}
-
-				sha1Hash = file?.Sha1Hash;
-				sha256Hash = file?.Sha256Hash;
-				extension = file?.Extension ?? mappingMetadata?.Value<string>("missing_extension")?.TrimStart('.');
-				imageWidth = file?.ImageWidth;
-				imageHeight = file?.ImageHeight;
-				fileSize = file?.Size ?? mappingMetadata?.Value<uint?>("missing_size");
-
-				index = fileMapping.Index;
-				filename = fileMapping.Filename;
-				spoiler = fileMapping.IsSpoiler;
-				deleted = fileMapping.IsDeleted;
-
-				this.imageUrl = imageUrl;
-				this.thumbnailUrl = thumbnailUrl;
+				if (md5HashB64 != null)
+					md5Hash = Convert.FromBase64String(md5HashB64);
 			}
 
-			public JsonFileModel() { }
+			sha1Hash = file?.Sha1Hash;
+			sha256Hash = file?.Sha256Hash;
+			extension = file?.Extension ?? mappingMetadata?.Value<string>("missing_extension")?.TrimStart('.');
+			imageWidth = file?.ImageWidth;
+			imageHeight = file?.ImageHeight;
+			fileSize = file?.Size ?? mappingMetadata?.Value<uint?>("missing_size");
+
+			index = fileMapping.Index;
+			filename = fileMapping.Filename;
+			spoiler = fileMapping.IsSpoiler;
+			deleted = fileMapping.IsDeleted;
+
+			this.imageUrl = imageUrl;
+			this.thumbnailUrl = thumbnailUrl;
 		}
+
+		public JsonFileModel() { }
 	}
 }

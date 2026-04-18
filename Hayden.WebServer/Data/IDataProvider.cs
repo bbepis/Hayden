@@ -21,6 +21,8 @@ public interface IDataProvider
 	Task<ApiController.JsonBoardPageModel> GetBoardPage(string board, int? page);
 	Task<ApiController.JsonBoardPageModel> ReadSearchResults((ushort BoardId, ulong ThreadId, ulong PostId)[] threadIdArray, long hitCount);
 
+	Task<bool> DeletePost(ushort boardId, ulong postId, bool banImages);
+
 	// Search indexing
 	IAsyncEnumerable<PostDocument> GetIndexEntities(string board, ulong minPostNo);
 }

@@ -1,9 +1,8 @@
-﻿using System.Threading.Tasks;
+using System.Threading.Tasks;
 
-namespace Hayden.WebServer.Services.Captcha
+namespace Hayden.WebServer.Services.Captcha;
+
+public interface ICaptchaProvider
 {
-    public interface ICaptchaProvider
-    {
-        Task<bool> VerifyCaptchaAsync(string response);
-    }
+	Task<bool> VerifyCaptchaAsync(string response);
 }

@@ -1,9 +1,11 @@
 @using Hayden.WebServer
+@using Hayden.WebServer.Config
 @using Hayden.WebServer.Services.Captcha
-@using Microsoft.Extensions.Options
 @using Newtonsoft.Json
 
-@inject IOptions<ServerConfig> Config;
+@inject ConfigOption<ServerSearchConfig> SearchConfig;
+@inject ConfigOption<ServerSiteConfig> SiteConfig;
+@inject ConfigOption<ServerCaptchaConfig> CaptchaConfig;
 
 @addTagHelper *, Microsoft.AspNetCore.Mvc.TagHelpers
 
@@ -11,34 +13,34 @@
 <!DOCTYPE html>
 <html lang="en" class="theme-tomorrow">
 <head>
-    <meta charset='utf-8'>
-    <meta name='viewport' content='width=device-width,initial-scale=1'>
+	<meta charset='utf-8'>
+	<meta name='viewport' content='width=device-width,initial-scale=1'>
 
-    <title>@(Config.Value.Settings.SiteName ?? "Hayden")</title>
+	<title>@(SiteConfig.Value.SiteName ?? "Hayden")</title>
 
-    <link rel='icon' type='image/png' href='/favicon.png'>
+	<link rel='icon' type='image/png' href='/favicon.png'>
 
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.3.1/dist/css/bootstrap.min.css" integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
-    @*<link rel="stylesheet" href="/css/site.css" />*@
-    <link rel='stylesheet' href='/build/bundle.css'>
+	<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.3.1/dist/css/bootstrap.min.css" integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
+	@*<link rel="stylesheet" href="/css/site.css" />*@
+	<link rel='stylesheet' href='/build/bundle.css'>
 
-    <script defer src="https://cdn.jsdelivr.net/npm/moment@2.29.1/moment.min.js"></script>
-    <script defer src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script>
-    <script defer src="https://cdn.jsdelivr.net/npm/bootstrap@4.3.1/dist/js/bootstrap.min.js" integrity="sha384-JjSmVgyd0p3pXB1rRibZUAYoIIy6OrQ6VrjIEaFf/nJGzIxFDsf4x0xIM+B07jRM" crossorigin="anonymous"></script>
-    <script async defer src="https://js.hcaptcha.com/1/api.js"></script>
-    <script defer src='/build/bundle.js'></script>
-    <script>
-        var info = {
-            apiEndpoint: "/api",
-            rawEndpoint: "",
-            hCaptchaSiteKey: @Html.Raw(JsonConvert.SerializeObject(Config.Value.Captcha.HCaptchaTesting ? HCaptchaProvider.DummySiteKey : Config.Value.Captcha.HCaptchaSiteKey)),
-            maxGlobalUploadSize: @(Config.Value.Settings.MaxFileUploadSizeMB == null ? "null" : (Config.Value.Settings.MaxFileUploadSizeMB * 1024 * 1024)),
-            siteName: "@(Config.Value.Settings.SiteName ?? "Hayden")",
-            shiftJisArt: @Html.Raw(JsonConvert.SerializeObject(Config.Value.Settings.ShiftJisArt)),
-            searchEnabled: @(Config.Value.Search.Enabled.ToString().ToLower()),
-            compactBoardMode: @(Config.Value.Settings.CompactBoardsUi.ToString().ToLower()),
-        }
-    </script>
+	<script defer src="https://cdn.jsdelivr.net/npm/moment@2.29.1/moment.min.js"></script>
+	<script defer src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script>
+	<script defer src="https://cdn.jsdelivr.net/npm/bootstrap@4.3.1/dist/js/bootstrap.min.js" integrity="sha384-JjSmVgyd0p3pXB1rRibZUAYoIIy6OrQ6VrjIEaFf/nJGzIxFDsf4x0xIM+B07jRM" crossorigin="anonymous"></script>
+	<script async defer src="https://js.hcaptcha.com/1/api.js"></script>
+	<script defer src='/build/bundle.js'></script>
+	<script>
+		var info = {
+			apiEndpoint: "/api",
+			rawEndpoint: "",
+			hCaptchaSiteKey: @Html.Raw(JsonConvert.SerializeObject(CaptchaConfig.Value.CaptchaTesting ? HCaptchaProvider.DummySiteKey : CaptchaConfig.Value.CaptchaSiteKey)),
+			maxGlobalUploadSize: @(SiteConfig.Value.MaxFileUploadSizeMB == null ? "null" : (SiteConfig.Value.MaxFileUploadSizeMB * 1024 * 1024)),
+			siteName: "@(SiteConfig.Value.SiteName ?? "Hayden")",
+			shiftJisArt: @Html.Raw(JsonConvert.SerializeObject(SiteConfig.Value.ShiftJisArt)),
+			searchEnabled: @(SearchConfig.Value.Enabled.ToString().ToLower()),
+			compactBoardMode: @(SiteConfig.Value.CompactBoardsUi.ToString().ToLower()),
+		}
+	</script>
 </head>
 
 <body>
