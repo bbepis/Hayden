@@ -33,6 +33,7 @@ namespace Hayden.Consumers
 		private ILogger Logger { get; } = SerilogManager.CreateSubLogger("HaydenDB");
 
 		protected Dictionary<string, ushort> BoardIdMappings { get; } = new(StringComparer.OrdinalIgnoreCase);
+		protected Dictionary<string, byte> SourceMappings { get; } = new(StringComparer.OrdinalIgnoreCase);
 
 		/// <param name="consumerConfig">The object to load configuration values from.</param>
 		public HaydenThreadConsumer(ConsumerConfig consumerConfig, SourceConfig sourceConfig, IFileSystem fileSystem, IMediaInspector mediaInspector)
@@ -74,9 +75,10 @@ namespace Hayden.Consumers
 			}
 
 			await foreach (var board in context.Boards)
-			{
 				BoardIdMappings[board.ShortName] = board.Id;
-			}
+
+			await foreach (var source in context.Sources)
+				SourceMappings[source.Name] = source.Id;
 
 			foreach (var boardRule in SourceConfig.Boards)
 			{
