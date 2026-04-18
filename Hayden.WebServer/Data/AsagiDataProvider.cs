@@ -94,7 +94,7 @@ namespace Hayden.WebServer.Data
 							md5Hash = Convert.FromBase64String(post.media_hash),
 							sha1Hash = null,
 							sha256Hash = null,
-							spoiler = post.spoiler,
+						spoiler = post.spoiler > 0,
 							imageUrl = GetMediaUrl(board, image.media, false),
 							thumbnailUrl = GetMediaUrl(board, image.preview_op ?? image.preview_reply, true)
 						}
