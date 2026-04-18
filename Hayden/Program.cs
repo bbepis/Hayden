@@ -299,6 +299,7 @@ public class Program
 			case "Meguca":        serviceCollection.AddSingleton<IFrontendApi, MegucaApi>(); break;
 			case "InfinityNext":  serviceCollection.AddSingleton<IFrontendApi, InfinityNextApi>(); break;
 			case "ASPNetChan":    serviceCollection.AddSingleton<IFrontendApi, ASPNetChanApi>(); break;
+			case "Kissu":         serviceCollection.AddSingleton<IFrontendApi, KissuApi>(); break;
 			case "Tinyboard":     serviceCollection.AddSingleton<IFrontendApi, TinyboardApi>(); break;
 			case "FoolFuuka":     serviceCollection.AddSingletonMulti<IFrontendApi, ISearchableFrontendApi, FoolFuukaApi>(); break;
 			case "Hayden":        serviceCollection.AddSingleton<IImporter, HaydenImporter>(); break;
