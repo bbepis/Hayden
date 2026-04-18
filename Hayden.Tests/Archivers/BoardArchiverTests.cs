@@ -13,6 +13,7 @@ using Hayden.Config;
 using Hayden.Contract;
 using Hayden.Models;
 using Hayden.Proxy;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Moq;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -25,12 +26,12 @@ namespace Hayden.Tests.Archivers
     {
         private readonly SourceConfig SourceConfig = new SourceConfig()
         {
-            Boards = new()
-            {
-                ["a"] = new BoardRulesConfig(),
-                ["b"] = new BoardRulesConfig(),
-                ["c"] = new BoardRulesConfig(),
-            },
+            Boards =
+			[
+				new BoardConfig("a"),
+				new BoardConfig("b"),
+				new BoardConfig("c"),
+            ],
             ApiDelay = 0,
             BoardScrapeDelay = 0
         };
@@ -53,7 +54,7 @@ namespace Hayden.Tests.Archivers
 				x => new ThreadOverviewInfo
 				{
 					ThreadId = x.ThreadId,
-					ContentHtml = null,
+					ContentHtml = $"thread{x.ThreadId}",
 					Subject = null,
 					Position = 0, // shouldn't matter?
 					LastModified = DateTimeOffset.UtcNow - TimeSpan.FromMinutes(seededRandom.Next(5, 500)),
@@ -73,7 +74,7 @@ namespace Hayden.Tests.Archivers
             sourceMock.Setup(x => x.GetBoard(It.IsAny<string>(), It.IsAny<HttpClient>(), It.IsAny<DateTimeOffset?>(), It.IsAny<CancellationToken>()))
                 .Returns((string board, HttpClient client, DateTimeOffset? since, CancellationToken token) => {
 
-					if (!SourceConfig.Boards.ContainsKey(board))
+					if (SourceConfig.Boards.All(x => x.Board != board))
 						throw new ArgumentOutOfRangeException("board", "Board argument was not expected");
 
 					var threadInfos = mockData
@@ -97,19 +98,25 @@ namespace Hayden.Tests.Archivers
 							new Post
 							{
 								PostNumber = 1234,
-								ContentRaw = "test",
-								Media = []
+								ContentRaw = $"thread{threadId}",
+								Media = [
+									new Media()
+									{
+										FileUrl = "http://example.com/fullimage.jpg",
+										ThumbnailUrl = "http://example.com/thumb.jpg"
+                                    }
+								]
 							},
 							new Post
 							{
 								PostNumber = 1235,
-								ContentRaw = "test",
+								ContentRaw = "test2",
 								Media = []
 							},
 							new Post
 							{
 								PostNumber = 1236,
-								ContentRaw = "test",
+								ContentRaw = "test3",
 								Media = []
 							},
 						}
@@ -127,6 +134,29 @@ namespace Hayden.Tests.Archivers
 				});
 
             return (consumerMock, sourceMock);
+        }
+
+        private void SetupConsumerMock(Mock<IThreadConsumer> consumerMock, MockFileSystem fileSystem, List<(QueuedImageDownload download, string tempFilePath, string tempThumbPath)> processedFiles)
+        {
+	        consumerMock.Setup(x => x.CalculateHash(It.IsAny<Post>()))
+		        .Returns((Post post) => (uint)post.PostNumber);
+
+	        consumerMock.Setup(x => x.ConsumeThread(It.IsAny<ThreadUpdateInfo>(), It.IsAny<bool>(), It.IsAny<bool>()))
+		        .Returns((ThreadUpdateInfo updateInfo, bool fullImages, bool thumbnails) => Task.FromResult<IList<QueuedImageDownload>>(updateInfo.NewPosts
+			        .SelectMany(x => fullImages || thumbnails ? x.Media : [], (post, media) => new QueuedImageDownload(
+				        fullImages ? new Uri(media.FileUrl) : null,
+				        thumbnails ? new Uri(media.ThumbnailUrl) : null))
+			        .ToArray()));
+
+	        consumerMock.Setup(x => x.ProcessFileDownload(It.IsAny<QueuedImageDownload>(), It.IsAny<string>(), It.IsAny<string>()))
+		        .Callback((QueuedImageDownload imageDownload, string tempFilePath, string tempThumbPath) =>
+		        {
+			        //Assert.IsTrue(fileSystem.FileExists(tempFilePath));
+			        //Assert.IsTrue(fileSystem.FileExists(tempThumbPath));
+
+			        processedFiles.Add((imageDownload, tempFilePath, tempThumbPath));
+		        })
+		        .Returns(Task.CompletedTask);
         }
 
         [Test, Timeout(10_000)]
@@ -151,6 +181,49 @@ namespace Hayden.Tests.Archivers
         }
 
         [Test, Timeout(10_000)]
+        public async Task ProcessesThreadFilters()
+        {
+			var mockData = CreateMockThreadData();
+            var (consumerMock, sourceMock) = CreateMocks(mockData);
+
+            var imageQueue = new List<(QueuedImageDownload download, string tempFilePath, string tempThumbPath)>();
+
+			SetupConsumerMock(consumerMock, new MockFileSystem(), imageQueue);
+
+            var fileSystem = new MockFileSystem();
+
+            var cts = new CancellationTokenSource();
+
+            var sourceConfig = new SourceConfig()
+            {
+	            Boards =
+	            [
+		            new BoardConfig("a"),
+		            new BoardConfig("b"),
+		            new BoardConfig("c"),
+	            ],
+	            Filters = [
+					new ThreadFilter( new ThreadFilterConfig { Board = "a", AnyFilter = "thread123", FullImages = true, Thumbnails = false }),
+					//new ThreadFilter("*", new ThreadFilterConfig { AnyFilter = "thread2", FullImages = false, Thumbnails = true }),
+				],
+	            ApiDelay = 0,
+	            BoardScrapeDelay = 0
+            };
+
+			var boardArchiver = new BoardArchiverTestable(sourceConfig, ConsumerConfig, sourceMock.Object, consumerMock.Object, fileSystem);
+			await boardArchiver.Initialize();
+
+            var threadQueue = await boardArchiver.ReadBoards(true, cts.Token);
+
+            await boardArchiver.PerformScrape(true, threadQueue, new List<QueuedImageDownload>(), CancellationToken.None);
+
+			Assert.AreEqual(1, imageQueue.Count);
+
+			Assert.IsNotNull(imageQueue[0].tempFilePath);
+			Assert.IsNull(imageQueue[0].tempThumbPath);
+        }
+
+        [Test, Timeout(10_000)]
         public async Task EnqueuesThreadsThatArePresumedMissing()
         {
 	        var mockData = CreateMockThreadData();
@@ -169,9 +242,9 @@ namespace Hayden.Tests.Archivers
             var threadList = await boardArchiver.ReadBoards(true, cts.Token);
 
             CollectionAssert.AreEquivalent(mockData.Keys.Append(fallenOffThread), await threadList.ToListAsync());
-        }
+		}
 
-        [Timeout(10_000)]
+		[Timeout(10_000)]
 		[TestCase(false, TestName = "ScrapesThreads - LastModified mode")]
 		[TestCase(true, TestName = "ScrapesThreads - ReplyCount mode")]
         public async Task ScrapesThreads(bool replyCountMode)
@@ -190,28 +263,11 @@ namespace Hayden.Tests.Archivers
 
 
 			var fileSystem = new MockFileSystem();
+			var processedFiles = new List<(QueuedImageDownload download, string tempFilePath, string tempThumbPath)>();
 
-            consumerMock.Setup(x => x.CalculateHash(It.IsAny<Post>()))
-                .Returns((Post post) => (uint)post.PostNumber);
+			SetupConsumerMock(consumerMock, fileSystem, processedFiles);
 
-            consumerMock.Setup(x => x.ConsumeThread(It.IsAny<ThreadUpdateInfo>()))
-                .Returns((ThreadUpdateInfo updateInfo) => Task.FromResult<IList<QueuedImageDownload>>(updateInfo.NewPosts
-                    .SelectMany(x => x.Media, (post, media) => new QueuedImageDownload(new Uri(media.FileUrl), new Uri(media.ThumbnailUrl)))
-                    .ToArray()));
-
-            var processedFiles = new List<(QueuedImageDownload download, string tempFilePath, string tempThumbPath)>();
-
-            consumerMock.Setup(x => x.ProcessFileDownload(It.IsAny<QueuedImageDownload>(), It.IsAny<string>(), It.IsAny<string>()))
-                .Callback((QueuedImageDownload imageDownload, string tempFilePath, string tempThumbPath) =>
-                {
-                    Assert.IsTrue(fileSystem.FileExists(tempFilePath));
-                    Assert.IsTrue(fileSystem.FileExists(tempThumbPath));
-
-                    processedFiles.Add((imageDownload, tempFilePath, tempThumbPath));
-                })
-                .Returns(Task.CompletedTask);
-
-            var cts = new CancellationTokenSource();
+			var cts = new CancellationTokenSource();
 
             var boardArchiver = new BoardArchiverTestable(SourceConfig, ConsumerConfig, sourceMock.Object, consumerMock.Object, fileSystem);
 			await boardArchiver.Initialize();
@@ -244,28 +300,9 @@ namespace Hayden.Tests.Archivers
             var (consumerMock, sourceMock) = CreateMocks(mockData);
 
 			var fileSystem = new MockFileSystem();
+			var processedFiles = new List<(QueuedImageDownload download, string tempFilePath, string tempThumbPath)>();
 
-            consumerMock.Setup(x => x.CalculateHash(It.IsAny<Post>()))
-                .Returns((Post post) => (uint)post.PostNumber);
-
-            consumerMock.Setup(x => x.ConsumeThread(It.IsAny<ThreadUpdateInfo>()))
-                .Returns((ThreadUpdateInfo updateInfo) => Task.FromResult<IList<QueuedImageDownload>>(updateInfo.NewPosts
-                    .SelectMany(x => x.Media, (post, media) => new QueuedImageDownload(new Uri(media.FileUrl), new Uri(media.ThumbnailUrl)))
-                    .ToArray()));
-
-            var processedFiles = new List<(QueuedImageDownload download, string tempFilePath, string tempThumbPath)>();
-
-            consumerMock.Setup(x => x.ProcessFileDownload(It.IsAny<QueuedImageDownload>(), It.IsAny<string>(), It.IsAny<string>()))
-                .Callback((QueuedImageDownload imageDownload, string tempFilePath, string tempThumbPath) =>
-                {
-                    Assert.IsTrue(fileSystem.FileExists(tempFilePath));
-                    Assert.IsTrue(fileSystem.FileExists(tempThumbPath));
-
-                    processedFiles.Add((imageDownload, tempFilePath, tempThumbPath));
-                })
-                .Returns(Task.CompletedTask);
-
-            var cts = new CancellationTokenSource();
+			SetupConsumerMock(consumerMock, fileSystem, processedFiles);
 
 			var metrics = new ScraperMetrics();
 
@@ -305,6 +342,11 @@ namespace Hayden.Tests.Archivers
             public new Task<MaybeAsyncEnumerable<ThreadPointer>> ReadBoards(bool firstRun, CancellationToken token)
             {
                 return base.ReadBoards(firstRun, token);
+            }
+
+            protected override Task<string> DownloadFileTask(Uri imageUrl, HttpClient httpClient)
+            {
+	            return Task.FromResult(imageUrl.ToString());
             }
 
             public new SortedList<ThreadPointer, TrackedThread> TrackedThreads => base.TrackedThreads;

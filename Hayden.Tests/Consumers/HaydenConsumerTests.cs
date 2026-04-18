@@ -59,13 +59,13 @@ namespace Hayden.Tests.Consumers
 
 			var sourceConfig = new SourceConfig
 			{
-				Boards = new Dictionary<string, BoardRulesConfig>(),
+				Boards = [],
 				BoardScrapeDelay = 0,
 				ApiDelay = 0
 			};
 
 			if (createTestBoard)
-				sourceConfig.Boards["test"] = new BoardRulesConfig();
+				sourceConfig.Boards = [new BoardConfig("test")];
 
 			if (setupConfig != null)
 				setupConfig(consumerConfig,  sourceConfig);
@@ -118,7 +118,7 @@ namespace Hayden.Tests.Consumers
 
 			var additionalMetadata = Common.SerializeAdditionalMetadata(post.AdditionalMetadata);
 			if (additionalMetadata == null)
-				Assert.AreEqual(null, dbPost.AdditionalMetadata);
+				Assert.IsNull(dbPost.AdditionalMetadata);
 			else
 				Assert.IsTrue(JToken.DeepEquals(JToken.Parse(additionalMetadata), JToken.Parse(dbPost.AdditionalMetadata)));
 		}
@@ -165,7 +165,7 @@ namespace Hayden.Tests.Consumers
 			var threadTracker = TrackedThread.StartTrackingThread(consumer.CalculateHash);
 			var threadUpdate = threadTracker.ProcessThreadUpdates(threadPointer, thread);
 
-			var pendingDownloads = await consumer.ConsumeThread(threadUpdate);
+			var pendingDownloads = await consumer.ConsumeThread(threadUpdate, true, true);
 
 			Assert.AreEqual(2, pendingDownloads.Count);
 			AssertDataIsSame(thread.Posts[0], pendingDownloads[0]);
@@ -267,7 +267,7 @@ namespace Hayden.Tests.Consumers
 
 			var threadTracker = TrackedThread.StartTrackingThread(consumer.CalculateHash);
 			var threadUpdate = threadTracker.ProcessThreadUpdates(threadPointer, thread);
-			var pendingDownloads = await consumer.ConsumeThread(threadUpdate);
+			var pendingDownloads = await consumer.ConsumeThread(threadUpdate, fullImagesEnabled, thumbnailsEnabled);
 
 			if (anyImages)
 			{
@@ -383,7 +383,7 @@ namespace Hayden.Tests.Consumers
 			var threadTracker = TrackedThread.StartTrackingThread(consumer.CalculateHash);
 			var threadUpdate = threadTracker.ProcessThreadUpdates(threadPointer, thread);
 
-			var pendingDownloads = await consumer.ConsumeThread(threadUpdate);
+			var pendingDownloads = await consumer.ConsumeThread(threadUpdate, false, false);
 
 			Assert.AreEqual(0, pendingDownloads.Count);
 
@@ -419,7 +419,7 @@ namespace Hayden.Tests.Consumers
 			var threadTracker = TrackedThread.StartTrackingThread(consumer.CalculateHash);
 			var threadUpdate = threadTracker.ProcessThreadUpdates(threadPointer, thread);
 
-			await consumer.ConsumeThread(threadUpdate);
+			await consumer.ConsumeThread(threadUpdate, false, false);
 
 			// simulate post deletion
 			var deletedPost = thread.Posts[1];
@@ -429,7 +429,7 @@ namespace Hayden.Tests.Consumers
 			};
 
 			threadUpdate = threadTracker.ProcessThreadUpdates(threadPointer, thread);
-			await consumer.ConsumeThread(threadUpdate);
+			await consumer.ConsumeThread(threadUpdate, false, false);
 
 			await using (var context = new HaydenDbContext(options))
 			{
@@ -452,7 +452,7 @@ namespace Hayden.Tests.Consumers
 			var threadTracker = TrackedThread.StartTrackingThread(consumer.CalculateHash);
 			var threadUpdate = threadTracker.ProcessThreadUpdates(threadPointer, thread);
 
-			await consumer.ConsumeThread(threadUpdate);
+			await consumer.ConsumeThread(threadUpdate, false, false);
 
 			var deletedTime = DateTimeOffset.Now;
 
@@ -479,13 +479,13 @@ namespace Hayden.Tests.Consumers
 			var threadTracker = TrackedThread.StartTrackingThread(consumer.CalculateHash);
 			var threadUpdate = threadTracker.ProcessThreadUpdates(threadPointer, thread);
 
-			await consumer.ConsumeThread(threadUpdate);
+			await consumer.ConsumeThread(threadUpdate, false, false);
 
 
 			thread.ArchivedTime = DateTimeOffset.Now;
 
 			threadUpdate = threadTracker.ProcessThreadUpdates(threadPointer, thread);
-			await consumer.ConsumeThread(threadUpdate);
+			await consumer.ConsumeThread(threadUpdate, false, false);
 
 			await using (var context = new HaydenDbContext(options))
 			{
@@ -509,7 +509,7 @@ namespace Hayden.Tests.Consumers
 			var threadTracker = TrackedThread.StartTrackingThread(consumer.CalculateHash);
 			var threadUpdate = threadTracker.ProcessThreadUpdates(threadPointer, thread);
 
-			await consumer.ConsumeThread(threadUpdate);
+			await consumer.ConsumeThread(threadUpdate, false, false);
 
 
 			await using (var context = new HaydenDbContext(options))
@@ -534,7 +534,7 @@ namespace Hayden.Tests.Consumers
 			};
 
 			threadUpdate = threadTracker.ProcessThreadUpdates(threadPointer, thread);
-			await consumer.ConsumeThread(threadUpdate);
+			await consumer.ConsumeThread(threadUpdate, false, false);
 
 			await using (var context = new HaydenDbContext(options))
 			{
@@ -551,7 +551,7 @@ namespace Hayden.Tests.Consumers
 			};
 
 			threadUpdate = threadTracker.ProcessThreadUpdates(threadPointer, thread);
-			await consumer.ConsumeThread(threadUpdate);
+			await consumer.ConsumeThread(threadUpdate, false, false);
 
 			await using (var context = new HaydenDbContext(options))
 			{
@@ -577,7 +577,7 @@ namespace Hayden.Tests.Consumers
 			var threadTracker = TrackedThread.StartTrackingThread(consumer.CalculateHash);
 			var threadUpdate = threadTracker.ProcessThreadUpdates(threadPointer, thread);
 
-			var pendingDownloads = await consumer.ConsumeThread(threadUpdate);
+			var pendingDownloads = await consumer.ConsumeThread(threadUpdate, true, true);
 
 			CreateMockTempFiles(mockFilesystem);
 
@@ -611,7 +611,7 @@ namespace Hayden.Tests.Consumers
 			threadTracker = TrackedThread.StartTrackingThread(consumer.CalculateHash);
 			threadUpdate = threadTracker.ProcessThreadUpdates(threadPointer, thread);
 
-			pendingDownloads = await consumer.ConsumeThread(threadUpdate);
+			pendingDownloads = await consumer.ConsumeThread(threadUpdate, true, true);
 			
 			Assert.AreEqual(2, pendingDownloads.Count);
 
@@ -673,7 +673,7 @@ namespace Hayden.Tests.Consumers
 			var threadTracker = TrackedThread.StartTrackingThread(consumer.CalculateHash);
 			var threadUpdate = threadTracker.ProcessThreadUpdates(threadPointer, thread);
 
-			var pendingDownloads = await consumer.ConsumeThread(threadUpdate);
+			var pendingDownloads = await consumer.ConsumeThread(threadUpdate, true, true);
 
 			// There are 2 files supplied with the thread, one should be banned from being downloaded
 			Assert.AreEqual(1, pendingDownloads.Count);
@@ -703,11 +703,11 @@ namespace Hayden.Tests.Consumers
 			var threadTracker = TrackedThread.StartTrackingThread(consumer.CalculateHash);
 			var threadUpdate = threadTracker.ProcessThreadUpdates(threadPointer, thread);
 
-			await consumer.ConsumeThread(threadUpdate);
+			await consumer.ConsumeThread(threadUpdate, false, false);
 
 			await using (var context = new HaydenDbContext(options))
 			{
-				Assert.AreEqual(2, context.FileMappings.Where(x => !x.IsDeleted).Count());
+				Assert.AreEqual(2, context.FileMappings.Count(x => !x.IsDeleted));
 			}
 
 			// delete image 1
@@ -715,7 +715,7 @@ namespace Hayden.Tests.Consumers
 
 			threadUpdate = threadTracker.ProcessThreadUpdates(threadPointer, thread);
 			Assert.AreEqual(1, threadUpdate.UpdatedPosts.Count);
-			await consumer.ConsumeThread(threadUpdate);
+			await consumer.ConsumeThread(threadUpdate, false, false);
 
 			await using (var context = new HaydenDbContext(options))
 			{
@@ -728,7 +728,7 @@ namespace Hayden.Tests.Consumers
 
 			threadUpdate = threadTracker.ProcessThreadUpdates(threadPointer, thread);
 			Assert.AreEqual(1, threadUpdate.UpdatedPosts.Count);
-			await consumer.ConsumeThread(threadUpdate);
+			await consumer.ConsumeThread(threadUpdate, false, false);
 
 			await using (var context = new HaydenDbContext(options))
 			{
@@ -782,7 +782,7 @@ namespace Hayden.Tests.Consumers
 			var threadTracker = TrackedThread.StartTrackingThread(consumer.CalculateHash);
 			var threadUpdate = threadTracker.ProcessThreadUpdates(threadPointer, thread);
 
-			var pendingDownloads = await consumer.ConsumeThread(threadUpdate);
+			var pendingDownloads = await consumer.ConsumeThread(threadUpdate, true, true);
 			Assert.AreEqual(2, pendingDownloads.Count);
 
 			CreateMockTempFiles(mockFilesystem);
@@ -856,7 +856,7 @@ namespace Hayden.Tests.Consumers
 			var threadTracker = TrackedThread.StartTrackingThread(consumer.CalculateHash);
 			var threadUpdate = threadTracker.ProcessThreadUpdates(threadPointer, thread);
 
-			var pendingDownloads = await consumer.ConsumeThread(threadUpdate);
+			var pendingDownloads = await consumer.ConsumeThread(threadUpdate, true, true);
 
 			// Since we can't compare hashes yet, it'll try downloading the banned image
 			Assert.AreEqual(2, pendingDownloads.Count);
@@ -902,7 +902,7 @@ namespace Hayden.Tests.Consumers
 			var threadTracker = TrackedThread.StartTrackingThread(consumer.CalculateHash);
 			var threadUpdate = threadTracker.ProcessThreadUpdates(threadPointer, thread);
 
-			var pendingDownloads = await consumer.ConsumeThread(threadUpdate);
+			var pendingDownloads = await consumer.ConsumeThread(threadUpdate, true, true);
 			
 			CreateMockTempFiles(mockFilesystem);
 
@@ -920,7 +920,7 @@ namespace Hayden.Tests.Consumers
 			thread.Posts[1].Media = thread.Posts[0].Media; // simulate new post media
 
 			threadUpdate = threadTracker.ProcessThreadUpdates(threadPointer, thread);
-			pendingDownloads = await consumer.ConsumeThread(threadUpdate);
+			pendingDownloads = await consumer.ConsumeThread(threadUpdate, false, false);
 
 			// NOTE: we don't change the hash here, so the image should be reused
 			Assert.AreEqual(0, pendingDownloads.Count);
@@ -958,7 +958,7 @@ namespace Hayden.Tests.Consumers
 			var threadTracker = TrackedThread.StartTrackingThread(consumer.CalculateHash);
 			var threadUpdate = threadTracker.ProcessThreadUpdates(threadPointer, thread);
 
-			await consumer.ConsumeThread(threadUpdate);
+			await consumer.ConsumeThread(threadUpdate, false, false);
 
 			async Task<ExistingThreadInfo> GetExistingThreadInfo()
 			{
@@ -997,7 +997,7 @@ namespace Hayden.Tests.Consumers
 			var threadTracker = TrackedThread.StartTrackingThread(consumer.CalculateHash);
 			var threadUpdate = threadTracker.ProcessThreadUpdates(threadPointer, thread);
 
-			await consumer.ConsumeThread(threadUpdate);
+			await consumer.ConsumeThread(threadUpdate, false, false);
 
 			async Task<ExistingThreadInfo> GetExistingThreadInfo()
 			{

@@ -21,9 +21,14 @@ namespace Hayden.Tests
 			// Set this to true when debugging migration issues
 			bool logEfCore = false;
 
+			var connection = new SqliteConnection("Data Source=:memory:");
+			SQLiteExtensionInterceptor.ApplyExtensions(connection);
+
 			var builder = new DbContextOptionsBuilder<HaydenDbContext>()
 				.SetupHaydenDb(Config.DatabaseType.None, null)
-				.UseSqlite(new SqliteConnection("Data Source=:memory:"));
+				.UseSqlite(connection);
+
+
 
 			if (logEfCore)
 			{
