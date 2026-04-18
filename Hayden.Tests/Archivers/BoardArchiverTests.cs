@@ -159,7 +159,7 @@ namespace Hayden.Tests.Archivers
 		        .Returns(Task.CompletedTask);
         }
 
-        [Test, Timeout(10_000)]
+        [Test, CancelAfter(10_000)]
         public async Task EnqueuesThreadsWhenExpected()
         {
 			var mockData = CreateMockThreadData();
@@ -180,7 +180,7 @@ namespace Hayden.Tests.Archivers
             CollectionAssert.IsEmpty(await threadList.ToListAsync());
         }
 
-        [Test, Timeout(10_000)]
+        [Test, CancelAfter(10_000)]
         public async Task ProcessesThreadFilters()
         {
 			var mockData = CreateMockThreadData();
@@ -223,7 +223,7 @@ namespace Hayden.Tests.Archivers
 			Assert.IsNull(imageQueue[0].tempThumbPath);
         }
 
-        [Test, Timeout(10_000)]
+        [Test, CancelAfter(10_000)]
         public async Task EnqueuesThreadsThatArePresumedMissing()
         {
 	        var mockData = CreateMockThreadData();
@@ -244,7 +244,7 @@ namespace Hayden.Tests.Archivers
             CollectionAssert.AreEquivalent(mockData.Keys.Append(fallenOffThread), await threadList.ToListAsync());
 		}
 
-		[Timeout(10_000)]
+		[CancelAfter(10_000)]
 		[TestCase(false, TestName = "ScrapesThreads - LastModified mode")]
 		[TestCase(true, TestName = "ScrapesThreads - ReplyCount mode")]
         public async Task ScrapesThreads(bool replyCountMode)
@@ -292,7 +292,7 @@ namespace Hayden.Tests.Archivers
 			CollectionAssert.AreEquivalent(new[] { updatedThreadPointer }, await threadList.ToListAsync());
         }
 
-        [Timeout(10_000)]
+        [CancelAfter(10_000)]
 		[Test]
         public async Task MeasuresMetrics()
         {

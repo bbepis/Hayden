@@ -1,0 +1,8 @@
+<Solution>
+  <Project Path="build/build.csproj">
+    <Build Project="false" />
+  </Project>
+  <Project Path="Hayden.Tests/Hayden.Tests.csproj" />
+  <Project Path="Hayden.WebServer/Hayden.WebServer.csproj" />
+  <Project Path="Hayden/Hayden.csproj" />
+</Solution>

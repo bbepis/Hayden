@@ -373,11 +373,4 @@ internal class MaintenanceManager
 		var upgrader = new HaydenDbUpgrader();
 		await upgrader.UpgradeAsync(ConsumerConfig, DbContextOptions, new FileSystem(), false);
 	}
-
-	//public async Task ImportMediaFromFolder(string folder, )
-	//{
-	//	using var context = new HaydenDbContext(DbContextOptions);
-
-		
-	//}
 }
