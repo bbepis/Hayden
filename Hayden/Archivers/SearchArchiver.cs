@@ -274,7 +274,7 @@ namespace Hayden
 						}
 
 						// Log the status of the scraped thread
-						Log.Information($"{"[Thread]",-9} {$"/{nextThread.Board}/{nextThread.ThreadId}",-17} {threadStatus} {$"+({result.ImageDownloads.Count}/{result.PostCountChange})",-13} [{enqueuedImages.Count}/{newCompletedCount}/{totalSearchCountString}]");
+						Log.Information($"{"[Thread]",-9} {$"/{nextThread.Board}/{nextThread.ThreadId}",-17} {threadStatus} {$"+({result.ImageDownloads.Count}/{result.PostsAdded})",-13} [{enqueuedImages.Count}/{newCompletedCount}/{totalSearchCountString}]");
 					});
 
 					return outerSuccess;
@@ -396,7 +396,7 @@ namespace Hayden
 				var existing = await ThreadConsumer.CheckExistingThreads(new[] { threadNumber }, board, false);
 
 				if (existing.Count > 0)
-					return new ThreadUpdateTaskResult(true, Array.Empty<QueuedImageDownload>(), ThreadUpdateStatus.NotModified, 0);
+					return new ThreadUpdateTaskResult(true, Array.Empty<QueuedImageDownload>(), ThreadUpdateStatus.NotModified, 0, 0, 0);
 
 				Log.Debug($"{workerId,-2}: Polling thread /{board}/{threadNumber}", true);
 				
@@ -427,7 +427,7 @@ namespace Hayden
 							
 							await ThreadConsumer.ThreadUntracked(threadNumber, board, DateTimeOffset.UtcNow, null);
 
-							return new ThreadUpdateTaskResult(true, Array.Empty<QueuedImageDownload>(), ThreadUpdateStatus.Deleted, 0);
+							return new ThreadUpdateTaskResult(true, Array.Empty<QueuedImageDownload>(), ThreadUpdateStatus.Deleted, 0, 0, 0);
 						}
 
 						// Process the thread data with its assigned TrackedThread instance, then pass the results to the consumer
@@ -449,14 +449,14 @@ namespace Hayden
 						{
 							// This should be safe when a thread becomes archived, because that archive bit flip should be counted as a change as well
 
-							return new ThreadUpdateTaskResult(true, Array.Empty<QueuedImageDownload>(), ThreadUpdateStatus.NotModified, 0);
+							return new ThreadUpdateTaskResult(true, Array.Empty<QueuedImageDownload>(), ThreadUpdateStatus.NotModified, 0, 0, 0);
 						}
 						
 						// TODO: handle failures from this call
 						// Right now if this call fails, Hayden's state will assume that it has succeeded because the
 						//   TrackedThread instance's state hasn't rolled back
 
-						var images = await ThreadConsumer.ConsumeThread(threadUpdateInfo);
+						var images = await ThreadConsumer.ConsumeThread(threadUpdateInfo, ConsumerConfig.FullImagesEnabled, ConsumerConfig.ThumbnailsEnabled);
 
 						if (response.Data.ArchivedTime != null)
 						{
@@ -468,11 +468,13 @@ namespace Hayden
 						return new ThreadUpdateTaskResult(true,
 							images,
 							response.Data.ArchivedTime != null ? ThreadUpdateStatus.Archived : ThreadUpdateStatus.Ok,
-							threadUpdateInfo.NewPosts.Count - threadUpdateInfo.DeletedPosts.Count);
+							threadUpdateInfo.NewPosts.Count,
+							threadUpdateInfo.UpdatedPosts.Count,
+							threadUpdateInfo.DeletedPosts.Count);
 
 					case ResponseType.NotModified:
 						// There are no updates for this thread
-						return new ThreadUpdateTaskResult(true, Array.Empty<QueuedImageDownload>(), ThreadUpdateStatus.NotModified, 0);
+						return new ThreadUpdateTaskResult(true, Array.Empty<QueuedImageDownload>(), ThreadUpdateStatus.NotModified, 0, 0, 0);
 
 					case ResponseType.NotFound:
 						// This thread returned a 404, indicating a deletion
@@ -481,7 +483,7 @@ namespace Hayden
 						
 						await ThreadConsumer.ThreadUntracked(threadNumber, board, DateTimeOffset.UtcNow, null);
 
-						return new ThreadUpdateTaskResult(true, Array.Empty<QueuedImageDownload>(), ThreadUpdateStatus.Deleted, 0);
+						return new ThreadUpdateTaskResult(true, Array.Empty<QueuedImageDownload>(), ThreadUpdateStatus.Deleted, 0, 0, 0);
 
 					default:
 						throw new ArgumentOutOfRangeException();
@@ -491,7 +493,7 @@ namespace Hayden
 			{
 				Log.Error(exception, $"Could not poll or update thread /{board}/{threadNumber}. Will try again next board update\nClient name: {client.Name}");
 
-				return new ThreadUpdateTaskResult(false, Array.Empty<QueuedImageDownload>(), ThreadUpdateStatus.Error, 0);
+				return new ThreadUpdateTaskResult(false, Array.Empty<QueuedImageDownload>(), ThreadUpdateStatus.Error, 0, 0, 0);
 			}
 		}
 

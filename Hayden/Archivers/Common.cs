@@ -5,6 +5,8 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Hayden.Config;
+using Hayden.Consumers.HaydenMysql.DB;
+using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using Serilog;
 
@@ -180,14 +182,18 @@ namespace Hayden
 		public bool Success { get; set; }
 		public IList<QueuedImageDownload> ImageDownloads { get; set; }
 		public ThreadUpdateStatus Status { get; set; }
-		public int PostCountChange { get; set; }
+		public int PostsAdded { get; set; }
+		public int PostsModified { get; set; }
+		public int PostsRemoved { get; set; }
 
-		public ThreadUpdateTaskResult(bool success, IList<QueuedImageDownload> imageDownloads, ThreadUpdateStatus status, int postCountChange)
+		public ThreadUpdateTaskResult(bool success, IList<QueuedImageDownload> imageDownloads, ThreadUpdateStatus status, int postsAdded, int postsModified, int postsRemoved)
 		{
 			Success = success;
 			ImageDownloads = imageDownloads;
 			Status = status;
-			PostCountChange = postCountChange;
+			PostsAdded = postsAdded;
+			PostsModified = postsModified;
+			PostsRemoved = postsRemoved;
 		}
 	}
 

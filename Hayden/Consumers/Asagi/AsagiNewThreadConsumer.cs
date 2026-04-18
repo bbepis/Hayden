@@ -32,7 +32,7 @@ public class AsagiNewThreadConsumer : IThreadConsumer
 	{
 		ConsumerConfig = consumerConfig;
 		ConnectionPool = new MySqlConnectionPool(consumerConfig.ConnectionString, consumerConfig.SqlConnectionPoolSize ?? 4);
-		Boards = sourceConfig.Boards.Keys;
+		Boards = sourceConfig.Boards.Select(x => x.TranslatedBoardName ?? x.Board).ToArray();
 	}
 
 	public async Task InitializeAsync()
@@ -46,7 +46,7 @@ public class AsagiNewThreadConsumer : IThreadConsumer
 	public Task CommitAsync() => Task.CompletedTask;
 
 	/// <inheritdoc/>
-	public async Task<IList<QueuedImageDownload>> ConsumeThread(ThreadUpdateInfo threadUpdateInfo)
+	public async Task<IList<QueuedImageDownload>> ConsumeThread(ThreadUpdateInfo threadUpdateInfo, bool downloadFullImages, bool downloadThumbnails)
 	{
 		if (!(threadUpdateInfo.Thread.OriginalObject is YotsubaThread))
 			throw new InvalidOperationException(
@@ -73,7 +73,7 @@ public class AsagiNewThreadConsumer : IThreadConsumer
 				string fullImageFilename = null, thumbFilename = null;
 				Uri imageUrl = null, thumbUrl = null;
 
-				if (ConsumerConfig.FullImagesEnabled)
+				if (downloadFullImages)
 				{
 					string fullImageName = mediaInfo?.MediaFilename ?? post.TimestampedFilenameFull;
 
@@ -85,7 +85,7 @@ public class AsagiNewThreadConsumer : IThreadConsumer
 					imageUrl = new Uri($"https://i.4cdn.org/{board}/{post.TimestampedFilenameFull}");
 				}
 
-				if (ConsumerConfig.ThumbnailsEnabled)
+				if (downloadThumbnails)
 				{
 					string thumbImageName;
 

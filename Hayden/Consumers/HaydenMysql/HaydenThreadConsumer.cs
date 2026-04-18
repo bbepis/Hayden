@@ -47,10 +47,12 @@ namespace Hayden.Consumers
 
 		private string GetTranslatedBoardName(string boardName)
 		{
-			if (!SourceConfig.Boards.TryGetValue(boardName, out var boardConfig) || string.IsNullOrWhiteSpace(boardConfig.StoredBoardName))
+			var config = SourceConfig.Boards.FirstOrDefault(x => x.Board == boardName);
+
+			if (config == null || string.IsNullOrWhiteSpace(config.TranslatedBoardName))
 				return boardName;
 
-			return boardConfig.StoredBoardName;
+			return config.TranslatedBoardName;
 		}
 
 		public async Task InitializeAsync()
@@ -78,7 +80,7 @@ namespace Hayden.Consumers
 
 			foreach (var boardRule in SourceConfig.Boards)
 			{
-				var translatedBoardName = GetTranslatedBoardName(boardRule.Key);
+				var translatedBoardName = boardRule.TranslatedBoardName ?? boardRule.Board;
 
 				if (BoardIdMappings.ContainsKey(translatedBoardName))
 					continue;
@@ -115,7 +117,7 @@ namespace Hayden.Consumers
 		protected virtual HaydenDbContext GetDBContext() => DbContextPool.CreateDbContext(); // new(DbContextOptions); 
 
 		/// <inheritdoc/>
-		public async Task<IList<QueuedImageDownload>> ConsumeThread(ThreadUpdateInfo threadUpdateInfo)
+		public async Task<IList<QueuedImageDownload>> ConsumeThread(ThreadUpdateInfo threadUpdateInfo, bool downloadFullImages, bool downloadThumbnails)
 		{
 			await using var dbContext = GetDBContext();
 
@@ -127,6 +129,7 @@ namespace Hayden.Consumers
 			try
 			{
 				dbContext.ChangeTracker.AutoDetectChangesEnabled = false;
+				dbContext.ChangeTracker.Clear();
 
 				List<QueuedImageDownload> imageDownloads = new List<QueuedImageDownload>();
 
@@ -151,10 +154,10 @@ namespace Hayden.Consumers
 
 						Uri imageUrl = null, thumbUrl = null;
 
-						if (ConsumerConfig.FullImagesEnabled && media.FileUrl != null && !dbFile.FileExists)
+						if (downloadFullImages && media.FileUrl != null && !dbFile.FileExists)
 							imageUrl = new Uri(media.FileUrl);
 
-						if (ConsumerConfig.ThumbnailsEnabled && media.ThumbnailUrl != null && !dbFile.ThumbnailExists)
+						if (downloadThumbnails && media.ThumbnailUrl != null && !dbFile.ThumbnailExists)
 							thumbUrl = new Uri(media.ThumbnailUrl);
 
 						if (imageUrl != null || thumbUrl != null)
@@ -389,8 +392,8 @@ namespace Hayden.Consumers
 								TimestampedFilename = media.TimestampedFilename ?? (media.FileUrl != null ? FileSystem.Path.GetFileNameWithoutExtension(media.FileUrl) : null),
 								Index = media.Index,
 								IsDeleted = media.IsDeleted,
-								IsSpoiler = media.IsSpoiler.GetValueOrDefault(),
-								AdditionalMetadata = media.AdditionalMetadata?.Serialize()
+								IsSpoiler = media.IsSpoiler,
+								AdditionalMetadata = SerializeAdditionalMetadata(media.AdditionalMetadata)
 							};
 
 							if (existingFile != null)
@@ -458,6 +461,8 @@ namespace Hayden.Consumers
 						foreach (var post in threadUpdateInfo.UpdatedPosts)
 						{
 							var postMappings = existingFileMappings.Where(x => x.PostId == post.PostNumber).ToArray();
+
+							// todo: track post content diffs
 
 							if (post.Media.Length == 0)
 							{
@@ -617,7 +622,7 @@ namespace Hayden.Consumers
 				if (ConsumerConfig.ConsolidationMode == ConsolidationMode.Authoritative)
 					foreach (var post in threadUpdateInfo.UpdatedPosts)
 					{
-						Logger.Debug("Post /{board}/{postNumber} has been modified", board, post.PostNumber);
+						Logger.Information("Post /{board}/{postNumber} has been modified", board, post.PostNumber);
 
 						var dbPost = await dbContext.Posts.FirstAsync(x => x.BoardId == boardId && x.PostId == post.PostNumber);
 
@@ -684,9 +689,9 @@ namespace Hayden.Consumers
 						dbContext.Update(dbPost);
 					}
 				
-				dbContext.ChangeTracker.DetectChanges();
-				await dbContext.SaveChangesAsync();
-				dbContext.ChangeTracker.Clear();
+				//dbContext.ChangeTracker.DetectChanges();
+				//await dbContext.SaveChangesAsync();
+				//dbContext.ChangeTracker.Clear();
 			
 				await ProcessImages();
 			
@@ -701,6 +706,28 @@ namespace Hayden.Consumers
 			{
 				dbContext.ChangeTracker.AutoDetectChangesEnabled = true;
 			}
+		}
+
+		public async Task<bool> NeedToDownloadImage(QueuedImageDownload queuedImageDownload)
+		{
+			if (!queuedImageDownload.TryGetProperty("fileId", out uint fileId)
+				|| !queuedImageDownload.TryGetProperty("media", out Media media))
+			{
+				Logger.Error("Queued image download did not have the required properties. URL: {url}", queuedImageDownload.FullImageUri);
+				return false;
+			}
+
+			await using var dbContext = GetDBContext();
+
+			var file = dbContext.Files.FirstOrDefault(x => x.Id == fileId);
+
+			if (file == null)
+			{
+				Logger.Error("Could not find relevant file in database for download. URL: {url}", queuedImageDownload.FullImageUri);
+				return false;
+			}
+
+			return !file.FileExists || !file.ThumbnailExists;
 		}
 
 		/// <inheritdoc/>

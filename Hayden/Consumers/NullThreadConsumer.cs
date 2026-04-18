@@ -10,7 +10,7 @@ namespace Hayden.Consumers
 	{
 		public Task InitializeAsync() => Task.CompletedTask;
 
-		public Task<IList<QueuedImageDownload>> ConsumeThread(ThreadUpdateInfo threadUpdateInfo)
+		public Task<IList<QueuedImageDownload>> ConsumeThread(ThreadUpdateInfo threadUpdateInfo, bool downloadFullImages, bool downloadThumbnails)
 			=> Task.FromResult<IList<QueuedImageDownload>>(new List<QueuedImageDownload>());
 
 		public Task ProcessFileDownload(QueuedImageDownload queuedImageDownload, string imageTempFilename, string thumbTempFilename)

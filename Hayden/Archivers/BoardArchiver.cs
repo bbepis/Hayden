@@ -11,6 +11,7 @@ using System.Threading.Tasks;
 using Hayden.Api;
 using Hayden.Cache;
 using Hayden.Config;
+using Hayden.Consumers;
 using Hayden.Contract;
 using Hayden.Proxy;
 using Nito.AsyncEx;
@@ -93,13 +94,12 @@ namespace Hayden
 			LoopArchive = !sourceConfig.SingleScan;
 		}
 
-		public async virtual Task Initialize()
+		public virtual async Task Initialize()
 		{
-			using (var rentedClient = await ProxyProvider.RentHttpClient())
+			await using (var rentedClient = await ProxyProvider.RentHttpClient())
 				ApiCapabilities = await FrontendApi.DetermineCapabilitiesAsync(rentedClient.Object.Client);
 
 			BoardTracker = ApiCapabilities.SupportsBoardLastModified ? new LastModifiedBoardTracker() : new ReplyCountBoardTracker();
-
 		}
 
 		/// <summary>
@@ -163,6 +163,7 @@ namespace Hayden
 					lock (threadQueue)
 						threadQueue.Add(threads);
 
+				// there's a bug here enabling archives for tinyboard
 				if (firstRun && SourceConfig.ReadArchive && ApiCapabilities.SupportsArchive)
 				{
 					// Get a list of archived threads to include to be scraped.
@@ -234,13 +235,22 @@ namespace Hayden
 
 					if (queuedDownload.FullImageUri != null)
 					{
+						if (ThreadConsumer is HaydenThreadConsumer hayden && !await hayden.NeedToDownloadImage(queuedDownload))
+						{
+							await StateStore.RemoveDownload(queuedDownload);
+							return Interlocked.Increment(ref imageCompletedCount);
+						}
+
 						tempFilePath = await DownloadFileTask(queuedDownload.FullImageUri, client.Client);
 
-						if (!queuedDownload.TryGetProperty<string>("board", out string board))
-							board = "unknown";
+						if (tempFilePath != null)
+						{
+							if (!queuedDownload.TryGetProperty<string>("board", out string board))
+								board = "unknown";
 
-						Metrics?.TotalImagesScraped.WithLabels(board).Inc(1);
-						Metrics?.TotalImageSizeScraped.WithLabels(board).Inc(new System.IO.FileInfo(tempFilePath).Length);
+							Metrics?.TotalImagesScraped.WithLabels(board).Inc(1);
+							Metrics?.TotalImageSizeScraped.WithLabels(board).Inc(new System.IO.FileInfo(tempFilePath).Length);
+						}
 					}
 
 					if (queuedDownload.ThumbnailImageUri != null)
@@ -374,7 +384,7 @@ namespace Hayden
 						catch (Exception ex)
 						{
 							Log.Error(ex, "Exception when polling thread");
-							result = new ThreadUpdateTaskResult(false, Array.Empty<QueuedImageDownload>(), ThreadUpdateStatus.Error, 0);
+							result = new ThreadUpdateTaskResult(false, Array.Empty<QueuedImageDownload>(), ThreadUpdateStatus.Error, 0, 0, 0);
 						}
 
 						int newCompletedCount = Interlocked.Increment(ref threadCompletedCount);
@@ -403,7 +413,7 @@ namespace Hayden
 						ReportProgress(nextThread, result, enqueuedImages.Count, newCompletedCount, threadQueue.Count);
 
 						Metrics?.TotalThreadsScraped.WithLabels(board).Inc();
-						Metrics?.TotalPostsScraped.WithLabels(board).Inc(Math.Max(0, result.PostCountChange));
+						Metrics?.TotalPostsScraped.WithLabels(board).Inc(Math.Max(0, result.PostsAdded + result.PostsModified));
 					});
 
 					return true;
@@ -509,7 +519,7 @@ namespace Hayden
 				default:								threadStatus = "?"; break;
 			}
 
-			Log.Information($"{"[Thread]",-9} {$"/{completedThread.Board}/{completedThread.ThreadId}",-17} {threadStatus} {$"+({result.ImageDownloads.Count}/{result.PostCountChange})",-13} [{enqueuedImageCount}/{newCompletedCount}/{totalThreadCount?.ToString() ?? "?"}]");
+			Log.Information($"{"[Thread]",-9} {$"/{completedThread.Board}/{completedThread.ThreadId}",-17} {threadStatus} {$"+({result.ImageDownloads.Count}i / {result.PostsAdded}a / {result.PostsModified}m / {result.PostsRemoved}r)",-13} [{enqueuedImageCount}/{newCompletedCount}/{totalThreadCount?.ToString() ?? "?"}]");
 		}
 
 		#region Network
@@ -561,11 +571,11 @@ namespace Hayden
 				.FirstOrDefault();
 
 			if (successfulFilter == null)
-					return false;
+				return false;
 
 			fullImages = successfulFilter.FullImages ?? ConsumerConfig.FullImagesEnabled;
 			thumbnails = successfulFilter.Thumbnails ?? ConsumerConfig.ThumbnailsEnabled;
-				return true;
+			return true;
 		}
 
 		private bool ThreadIdFilter(ThreadPointer threadPointer)
@@ -873,7 +883,10 @@ namespace Hayden
 
 						var opPost = response.Data.Posts.FirstOrDefault();
 
-						if (response.Data != null && !ThreadFilter(response.Data.Title, opPost?.ContentRendered ?? opPost?.ContentRaw, board))
+						bool downloadFullImages = false;
+						bool downloadThumbnails = false;
+
+						if (response.Data != null && !ThreadFilter(response.Data.Title, opPost?.ContentRendered ?? opPost?.ContentRaw, board, out downloadFullImages, out downloadThumbnails))
 						{
 							Log.Debug($"{workerId,-2}: Blacklisting thread /{board}/{threadNumber} due to title filter");
 							
@@ -881,7 +894,7 @@ namespace Hayden
 								if (!ThreadIdBlacklist.Contains(threadPointer))
 									ThreadIdBlacklist.Add(threadPointer);
 
-							return new ThreadUpdateTaskResult(true, Array.Empty<QueuedImageDownload>(), ThreadUpdateStatus.DoNotArchive, 0);
+							return new ThreadUpdateTaskResult(true, Array.Empty<QueuedImageDownload>(), ThreadUpdateStatus.DoNotArchive, 0, 0, 0);
 						}
 
 						Log.Debug($"{workerId,-2}: Downloading changes from thread /{board}/{threadNumber}");
@@ -905,7 +918,7 @@ namespace Hayden
 							HandleThreadRemoval(threadPointer);
 							await ThreadConsumer.ThreadUntracked(threadNumber, board, DateTime.UtcNow, null);
 
-							return new ThreadUpdateTaskResult(true, Array.Empty<QueuedImageDownload>(), ThreadUpdateStatus.Deleted, 0);
+							return new ThreadUpdateTaskResult(true, Array.Empty<QueuedImageDownload>(), ThreadUpdateStatus.Deleted, 0, 0, 0);
 						}
 
 						// Process the thread data with its assigned TrackedThread instance, then pass the results to the consumer
@@ -948,16 +961,16 @@ namespace Hayden
 
 						Log.Verbose($"{workerId,-2}: Thread /{board}/{threadNumber}: New {threadUpdateInfo.NewPosts.Count} / updated {threadUpdateInfo.UpdatedPosts.Count} / deleted {threadUpdateInfo.DeletedPosts.Count}");
 						
-						if (!threadUpdateInfo.HasChanges && threadUpdateInfo.Thread.ArchivedTime == null)
+						if (!threadUpdateInfo.HasChanges && !ConsumerConfig.ForceRescanImages && threadUpdateInfo.Thread.ArchivedTime == null)
 						{
-							return new ThreadUpdateTaskResult(true, Array.Empty<QueuedImageDownload>(), ThreadUpdateStatus.NotModified, 0);
+							return new ThreadUpdateTaskResult(true, Array.Empty<QueuedImageDownload>(), ThreadUpdateStatus.NotModified, 0, 0, 0);
 						}
 						
 						// TODO: handle failures from this call
 						// Right now if this call fails, Hayden's state will assume that it has succeeded because the
 						//   TrackedThread instance's state hasn't rolled back
 
-						var images = await ThreadConsumer.ConsumeThread(threadUpdateInfo);
+						var images = await ThreadConsumer.ConsumeThread(threadUpdateInfo, downloadFullImages, downloadThumbnails);
 
 						if (response.Data.ArchivedTime != null)
 						{
@@ -970,11 +983,13 @@ namespace Hayden
 						return new ThreadUpdateTaskResult(true,
 							images,
 							response.Data.ArchivedTime != null ? ThreadUpdateStatus.Archived : ThreadUpdateStatus.Ok,
-							threadUpdateInfo.NewPosts.Count - threadUpdateInfo.DeletedPosts.Count);
+							threadUpdateInfo.NewPosts.Count,
+							threadUpdateInfo.UpdatedPosts.Count,
+							threadUpdateInfo.DeletedPosts.Count);
 
 					case ResponseType.NotModified:
 						// There are no updates for this thread
-						return new ThreadUpdateTaskResult(true, Array.Empty<QueuedImageDownload>(), ThreadUpdateStatus.NotModified, 0);
+						return new ThreadUpdateTaskResult(true, Array.Empty<QueuedImageDownload>(), ThreadUpdateStatus.NotModified, 0, 0, 0);
 
 					case ResponseType.NotFound:
 						// This thread returned a 404, indicating a deletion
@@ -984,7 +999,7 @@ namespace Hayden
 						HandleThreadRemoval(new ThreadPointer(board, threadNumber));
 						await ThreadConsumer.ThreadUntracked(threadNumber, board, DateTime.UtcNow, null);
 
-						return new ThreadUpdateTaskResult(true, Array.Empty<QueuedImageDownload>(), ThreadUpdateStatus.Deleted, 0);
+						return new ThreadUpdateTaskResult(true, Array.Empty<QueuedImageDownload>(), ThreadUpdateStatus.Deleted, 0, 0, 0);
 
 					default:
 						throw new ArgumentOutOfRangeException();
@@ -994,7 +1009,7 @@ namespace Hayden
 			{
 				Log.Error(exception, $"Could not poll or update thread /{board}/{threadNumber}. Will try again next board update");
 
-				return new ThreadUpdateTaskResult(false, Array.Empty<QueuedImageDownload>(), ThreadUpdateStatus.Error, 0);
+				return new ThreadUpdateTaskResult(false, Array.Empty<QueuedImageDownload>(), ThreadUpdateStatus.Error, 0, 0, 0);
 			}
 		}
 
@@ -1003,7 +1018,7 @@ namespace Hayden
 		/// </summary>
 		/// <param name="imageUrl">The <see cref="Uri"/> of the image.</param>
 		/// <param name="httpClient">The client to use for the request.</param>
-		protected async Task<string> DownloadFileTask(Uri imageUrl, HttpClient httpClient)
+		protected virtual async Task<string> DownloadFileTask(Uri imageUrl, HttpClient httpClient)
 		{
 			var tempFilePath = FileSystem.Path.Combine(ConsumerConfig.DownloadLocation, "hayden", Guid.NewGuid().ToString("N") + ".temp");
 
@@ -1032,7 +1047,7 @@ namespace Hayden
 					if (imageUrl.Host == "8chan.moe")
 					{
 						// dumb bot check
-						request.Headers.Add("Cookie", "splash=1");
+						request.Headers.Add("Cookie", "inbound=/; TOS20250418=1");
 					}
 
 					if (!string.IsNullOrWhiteSpace(SourceConfig.CookieString))
@@ -1047,7 +1062,12 @@ namespace Hayden
 
 			if (response.StatusCode == HttpStatusCode.NotFound)
 			{
-				Log.Warning($"Image URL returned a 404: {imageUrl}");
+				Log.Warning($"Image URL returned a 404 Not Found: {imageUrl}");
+				return null;
+			}
+			if (response.StatusCode == HttpStatusCode.Forbidden)
+			{
+				Log.Warning($"Image URL returned a 403 Forbidden: {imageUrl}");
 				return null;
 			}
 

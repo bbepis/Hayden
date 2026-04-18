@@ -64,7 +64,7 @@ namespace Hayden.Consumers
 
 		}
 
-		public Task<IList<QueuedImageDownload>> ConsumeThread(ThreadUpdateInfo threadUpdateInfo)
+		public Task<IList<QueuedImageDownload>> ConsumeThread(ThreadUpdateInfo threadUpdateInfo, bool downloadFullImages, bool downloadThumbnails)
 		{
 			var pointer = threadUpdateInfo.ThreadPointer;
 
@@ -88,23 +88,25 @@ namespace Hayden.Consumers
 
 			// download files from new posts only
 			
-			return Task.FromResult(CalculateImageDownloads(threadUpdateInfo, threadDirectory, pointer, threadThumbsDirectory));
+			return Task.FromResult(CalculateImageDownloads(threadUpdateInfo, threadDirectory, pointer, threadThumbsDirectory, downloadFullImages, downloadThumbnails));
 		}
 
 		protected IList<QueuedImageDownload> CalculateImageDownloads(
 			ThreadUpdateInfo threadUpdateInfo,
 			string threadImageDirectory,
 			ThreadPointer pointer,
-			string threadThumbsDirectory)
+			string threadThumbsDirectory,
+			bool downloadFullImages,
+			bool downloadThumbnails)
 		{
-			if (!Config.FullImagesEnabled && !Config.ThumbnailsEnabled)
+			if (!downloadFullImages && !downloadThumbnails)
 				return Array.Empty<QueuedImageDownload>();
 
 			List<QueuedImageDownload> imageDownloads = new List<QueuedImageDownload>();
 
 			foreach (var post in threadUpdateInfo.NewPosts)
 			{
-				foreach (var imageData in GetImageDownloadPaths(post, threadImageDirectory, pointer, threadThumbsDirectory))
+				foreach (var imageData in GetImageDownloadPaths(post, threadImageDirectory, pointer, threadThumbsDirectory, downloadFullImages, downloadThumbnails))
 				{
 					var (queuedDownload, imageFilename, thumbFilename) = imageData;
 
@@ -131,7 +133,9 @@ namespace Hayden.Consumers
 		protected IEnumerable<(QueuedImageDownload download, string imageFilename, string thumbFilename)> GetImageDownloadPaths(Post post,
 			string threadImageDirectory,
 			ThreadPointer pointer,
-			string threadThumbsDirectory)
+			string threadThumbsDirectory,
+			bool downloadFullImages,
+			bool downloadThumbnails)
 		{
 			if (post.Media == null || post.Media.Length == 0)
 				yield break;
@@ -142,13 +146,13 @@ namespace Hayden.Consumers
 				string fullImageFilename = null, thumbFilename = null;
 				Uri imageUrl = null, thumbUrl = null;
 
-				if (Config.FullImagesEnabled)
+				if (downloadFullImages)
 				{
 					fullImageFilename = Path.Combine(threadImageDirectory, Path.ChangeExtension($"{post.PostNumber}-{media.Index}", media.FileExtension));
 					imageUrl = new Uri(media.FileUrl);
 				}
 
-				if (Config.ThumbnailsEnabled)
+				if (downloadThumbnails)
 				{
 					thumbFilename = Path.Combine(threadThumbsDirectory, Path.ChangeExtension($"{post.PostNumber}-{media.Index}-thumb", media.ThumbnailExtension));
 					thumbUrl = new Uri(media.ThumbnailUrl);
@@ -342,7 +346,7 @@ namespace Hayden.Consumers
 
 		public uint CalculateHash(Post post)
 			=> HaydenThreadConsumer.CalculatePostHash(post.ContentRendered, post.ContentRaw,
-				post.Media.Count(x => x.IsSpoiler ?? false),
+				post.Media.Count(x => x.IsSpoiler),
 				post.Media.Length,
 				post.Media.Count(x => x.IsDeleted));
 

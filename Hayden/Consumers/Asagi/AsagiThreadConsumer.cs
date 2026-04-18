@@ -44,7 +44,7 @@ namespace Hayden.Consumers
 		}
 
 		/// <inheritdoc/>
-		public async Task<IList<QueuedImageDownload>> ConsumeThread(ThreadUpdateInfo threadUpdateInfo)
+		public async Task<IList<QueuedImageDownload>> ConsumeThread(ThreadUpdateInfo threadUpdateInfo, bool downloadFullImages, bool downloadThumbnails)
 		{
 			if (!(threadUpdateInfo.Thread.OriginalObject is YotsubaThread))
 				throw new InvalidOperationException(
@@ -55,7 +55,7 @@ namespace Hayden.Consumers
 
 			async Task ProcessImages(YotsubaPost post)
 			{
-				if (!ConsumerConfig.FullImagesEnabled && !ConsumerConfig.ThumbnailsEnabled)
+				if (!downloadFullImages && !downloadThumbnails)
 					return; // skip the DB check since we're not even bothering with images
 
 				if (post.FileMd5 != null)
@@ -71,7 +71,7 @@ namespace Hayden.Consumers
 					string fullImageFilename = null, thumbFilename = null;
 					Uri imageUrl = null, thumbUrl = null;
 
-					if (ConsumerConfig.FullImagesEnabled)
+					if (downloadFullImages)
 					{
 						string fullImageName = mediaInfo?.MediaFilename ?? post.TimestampedFilenameFull;
 
@@ -83,7 +83,7 @@ namespace Hayden.Consumers
 						imageUrl = new Uri($"https://i.4cdn.org/{board}/{post.TimestampedFilenameFull}");
 					}
 
-					if (ConsumerConfig.ThumbnailsEnabled)
+					if (downloadThumbnails)
 					{
 						string thumbImageName;
 

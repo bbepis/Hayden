@@ -16,17 +16,14 @@ public interface IThreadConsumer : IDisposable
 	Task InitializeAsync();
 
 	/// <summary>
-	/// Tells the thread consumer to commit any pending writes.
-	/// </summary>
-	//Task CommitAsync();
-
-	/// <summary>
 	/// Consumes a thread, and returns a list of images to be downloaded.
 	/// <para>For implementers: Assume that the thread always has changes whenever this method is called</para>
 	/// </summary>
 	/// <param name="threadUpdateInfo">Data object containing information about the thread's updates.</param>
+	/// <param name="downloadFullImages">If full images should be downloaded</param>
+	/// <param name="downloadThumbnails">If thumbnails should be downloaded</param>
 	/// <returns>A list of images to be downloaded</returns>
-	Task<IList<QueuedImageDownload>> ConsumeThread(ThreadUpdateInfo threadUpdateInfo);
+	Task<IList<QueuedImageDownload>> ConsumeThread(ThreadUpdateInfo threadUpdateInfo, bool downloadFullImages, bool downloadThumbnails);
 
 	/// <summary>
 	/// Executed when the Engine module has downloaded an image & thumbnail, to store the image somewhere and mark it in a possible database.
