@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using Hayden.Config;
 using Hayden.Contract;
 using Hayden.ImportExport;
+using Hayden.Models;
 using Hayden.Proxy;
 using Microsoft.Extensions.DependencyInjection;
 using Serilog;
@@ -43,7 +44,7 @@ namespace Hayden
 			_ = Task.Run(() => ReportingTask(CancellationToken.None));
 
 			int readParallelism = 20;
-			int writeParallelism = 100;
+			int writeParallelism = 40;
 
 			var threadChannel = Channel.CreateBounded<(ThreadPointer, Thread)>(1000);
 
@@ -59,54 +60,96 @@ namespace Hayden
 				})
 				.ContinueWith(task => threadChannel.Writer.Complete(task.Exception));
 
-			var writerTask = Parallel.ForEachAsync(threadChannel.Reader.ReadAllAsync(token), new ParallelOptions{
-				MaxDegreeOfParallelism = writeParallelism,
-				CancellationToken = token
-			}, async (thread, token) =>
+			var writerTasks = Enumerable.Range(0, writeParallelism).Select(i => Task.Run(async () =>
 			{
-				try
+				var threadInfos = new List<(ThreadPointer, Thread, ExistingThreadInfo)>();
+
+				await foreach (var batch in threadChannel.Reader.ReadAllAsync(token).Batch(20))
 				{
-					var threadInfo = await ThreadConsumer.CheckExistingThread(thread.Item1.ThreadId, thread.Item1.Board,
-						ConsumerConfig.ConsolidationMode == ConsolidationMode.Authoritative ? MetadataMode.FullHashMetadata : MetadataMode.ThreadIdAndPostId,
-						false);
+					threadInfos.Clear();
 
-					var trackedThread = TrackedThread.StartTrackingThread(ThreadConsumer.CalculateHash, threadInfo);
-					var updateInfo = trackedThread.ProcessThreadUpdates(thread.Item1, thread.Item2, ConsumerConfig.ConsolidationMode == ConsolidationMode.Authoritative);
-
-					var queuedImages = await ThreadConsumer.ConsumeThread(updateInfo);
-					foreach (var queuedDownload in queuedImages)
+					foreach (var boardBatch in batch.GroupBy(x => x.Item1.Board))
 					{
-						string tempFilePath = null, tempThumbPath = null;
+						var batchedThreadInfos = await ThreadConsumer.CheckExistingThreads(boardBatch.Select(x => x.Item1.ThreadId), boardBatch.Key, false,
+							ConsumerConfig.ConsolidationMode == ConsolidationMode.Authoritative ? MetadataMode.FullHashMetadata : MetadataMode.ThreadIdAndPostId,
+							false);
 
-						if (queuedDownload.FullImageUri != null)
-						{
-							tempFilePath = await DownloadFileTask(queuedDownload.FullImageUri, null);
-
-							if (!queuedDownload.TryGetProperty<string>("board", out string board))
-								board = "unknown";
-
-							Metrics?.TotalImagesScraped.WithLabels(board).Inc(1);
-							Metrics?.TotalImageSizeScraped.WithLabels(board).Inc(new System.IO.FileInfo(tempFilePath).Length);
-						}
-
-						if (queuedDownload.ThumbnailImageUri != null)
-						{
-							tempThumbPath = await DownloadFileTask(queuedDownload.ThumbnailImageUri, null);
-						}
-
-						await ThreadConsumer.ProcessFileDownload(queuedDownload, tempFilePath, tempThumbPath);
+						threadInfos.AddRange(boardBatch.Select(x =>
+							(x.Item1, x.Item2, batchedThreadInfos.FirstOrDefault(y => y.ThreadId == x.Item1.ThreadId))));
 					}
 
-					Interlocked.Increment(ref LastProgressThreadsProcessed);
-					Interlocked.Add(ref LastProgressPostsProcessed, updateInfo.NewPosts.Count);
-				}
-				catch (Exception ex)
-				{
-					Logger.Error(ex, "Failed to write thread");
-				}
-			});
+					foreach (var threadInfo in threadInfos)
+					{
+						var op = threadInfo.Item2.Posts[0];
+						if (!ThreadFilter(threadInfo.Item2.Title, op.ContentRendered ?? op.ContentRaw,
+							    threadInfo.Item1.Board,
+							    out bool fullImages, out bool thumbnails))
+							continue;
 
-			await Task.WhenAll(readerTask, writerTask);
+						try
+						{
+							ThreadUpdateInfo updateInfo;
+
+							if (ConsumerConfig.ConsolidationMode == ConsolidationMode.Authoritative)
+							{
+								var trackedThread = TrackedThread.StartTrackingThread(ThreadConsumer.CalculateHash, threadInfo.Item3);
+								updateInfo = trackedThread.ProcessThreadUpdates(threadInfo.Item1, threadInfo.Item2, ConsumerConfig.ConsolidationMode == ConsolidationMode.Authoritative);
+							}
+							else
+							{
+								var isNew = threadInfo.Item3 == null || threadInfo.Item3.PostHashes.Count == 0;
+								updateInfo = new ThreadUpdateInfo(threadInfo.Item1, threadInfo.Item2, isNew,
+									isNew ? threadInfo.Item2.Posts : threadInfo.Item2.Posts.ExceptBy(threadInfo.Item3.PostHashes.Select(x => x.PostId), k => k.PostNumber).ToArray(),
+									Array.Empty<Post>(), Array.Empty<ulong>());
+							}
+
+							if (updateInfo.HasChanges || ConsumerConfig.ForceRescanImages || SourceConfig.ForceRescan)
+							{
+								
+
+								var queuedImages = await ThreadConsumer.ConsumeThread(updateInfo, fullImages, thumbnails);
+								foreach (var queuedDownload in queuedImages)
+								{
+									string tempFilePath = null, tempThumbPath = null;
+
+									if (queuedDownload.FullImageUri != null)
+									{
+										tempFilePath = await DownloadFileTask(queuedDownload.FullImageUri, null);
+
+										if (!queuedDownload.TryGetProperty<string>("board", out string board))
+											board = "unknown";
+
+										Metrics?.TotalImagesScraped.WithLabels(board).Inc(1);
+										Metrics?.TotalImageSizeScraped.WithLabels(board).Inc(new System.IO.FileInfo(tempFilePath).Length);
+									}
+
+									if (queuedDownload.ThumbnailImageUri != null)
+									{
+										tempThumbPath = await DownloadFileTask(queuedDownload.ThumbnailImageUri, null);
+									}
+
+									await ThreadConsumer.ProcessFileDownload(queuedDownload, tempFilePath, tempThumbPath);
+								}
+							}
+
+							Interlocked.Increment(ref LastProgressThreadsProcessed);
+							Interlocked.Add(ref LastProgressPostsProcessed, updateInfo.NewPosts.Count);
+						}
+						catch (Exception ex)
+						{
+							Logger.Error(ex, "Failed to write thread");
+						}
+
+						if (token.IsCancellationRequested)
+							return;
+					}
+
+					if (token.IsCancellationRequested)
+						return;
+				}
+			})).ToArray();
+
+			await Task.WhenAll(writerTasks.Append(readerTask));
 		}
 
 		protected IAsyncEnumerable<(ThreadPointer, Thread)> ReadThreads(CancellationToken token, int parallelism)
@@ -163,7 +206,7 @@ namespace Hayden
 		protected override void ReportProgress(ThreadPointer completedThread, ThreadUpdateTaskResult result, int enqueuedImageCount, int newCompletedCount, int? totalThreadCount)
 		{
 			Interlocked.Increment(ref LastProgressThreadsProcessed);
-			Interlocked.Add(ref LastProgressPostsProcessed, result.PostCountChange);
+			Interlocked.Add(ref LastProgressPostsProcessed, result.PostsAdded + result.PostsModified);
 
 			if (result.Status == ThreadUpdateStatus.Error || result.Status == ThreadUpdateStatus.Deleted)
 				base.ReportProgress(completedThread, result, enqueuedImageCount, newCompletedCount, totalThreadCount);

@@ -12,6 +12,7 @@ using Hayden.Contract;
 using Hayden.ImportExport;
 using Hayden.Models;
 using Microsoft.Extensions.DependencyInjection;
+using Newtonsoft.Json.Linq;
 using Serilog;
 using ZstdSharp;
 using Thread = Hayden.Models.Thread;
@@ -50,7 +51,7 @@ public class ExportArchiver : IArchiver
 		if (exportSettings.OutputFile.EndsWith(".json.zst"))
 			return new JsonExporter(exportSettings.OutputFile, exportSettings.CompressionLevel);
 
-		if (exportSettings.OutputFile.EndsWith(".json"))
+		if (exportSettings.OutputFile.EndsWith(".json") || exportSettings.OutputFile == "-")
 			return new JsonExporter(exportSettings.OutputFile);
 
 		throw new Exception("Expected .json.zst or .json file");
@@ -82,7 +83,7 @@ public class ExportArchiver : IArchiver
 
 			await foreach (var (pointer, thread) in threadChannel.Reader.ReadAllAsync(token))
 			{
-				await exporter.ConsumeThread(pointer, thread);
+				await exporter.ConsumeThread(pointer, thread, false, false);
 
 				Interlocked.Increment(ref LastProgressThreadsProcessed);
 				Interlocked.Add(ref LastProgressPostsProcessed, thread.Posts.Length);
@@ -183,7 +184,7 @@ public class ExportArchiver : IArchiver
 
 	private class JsonExporter : IThreadConsumer
 	{
-		private FileStream FileStream { get; set; }
+		private Stream FileStream { get; set; }
 		private CompressionStream ZstdStream { get; set; }
 		private Utf8JsonWriter JsonWriter { get; set; }
 
@@ -206,6 +207,7 @@ public class ExportArchiver : IArchiver
 			NumberHandling = System.Text.Json.Serialization.JsonNumberHandling.Strict,
 			ReadCommentHandling = JsonCommentHandling.Skip,
 			DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
+			
 			Converters =
 			{
 				new JsonStringEnumConverter(null, false)
@@ -214,10 +216,17 @@ public class ExportArchiver : IArchiver
 
 		public JsonExporter(string filename, int? compressionLevel = null)
 		{
-			FileStream = new FileStream(filename, FileMode.Create);
-		
-			if (compressionLevel != null)
-				ZstdStream = new CompressionStream(FileStream, compressionLevel.Value, leaveOpen: false);
+			if (filename == "-")
+			{
+				FileStream = Console.OpenStandardOutput();
+			}
+			else
+			{
+				FileStream = new FileStream(filename, FileMode.Create);
+
+				if (compressionLevel != null)
+					ZstdStream = new CompressionStream(FileStream, compressionLevel.Value, leaveOpen: false);
+			}
 
 			JsonWriter = new Utf8JsonWriter((Stream)ZstdStream ?? FileStream, new JsonWriterOptions
 			{
@@ -247,18 +256,47 @@ public class ExportArchiver : IArchiver
 			return Task.CompletedTask;
 		}
 
-		public Task<IList<QueuedImageDownload>> ConsumeThread(ThreadUpdateInfo threadUpdateInfo)
-			=> ConsumeThread(threadUpdateInfo.ThreadPointer, threadUpdateInfo.Thread);
+		public Task<IList<QueuedImageDownload>> ConsumeThread(ThreadUpdateInfo threadUpdateInfo, bool downloadFullImages, bool downloadThumbnails)
+			=> ConsumeThread(threadUpdateInfo.ThreadPointer, threadUpdateInfo.Thread, downloadFullImages, downloadThumbnails);
 
-		public async Task<IList<QueuedImageDownload>> ConsumeThread(ThreadPointer pointer, Thread thread)
+		public async Task<IList<QueuedImageDownload>> ConsumeThread(ThreadPointer pointer, Thread thread, bool downloadFullImages, bool downloadThumbnails)
 		{
 			if (IsDisposed)
 				throw new Exception("Consumer disposed");
 
 			thread.OriginalObject = null;
 
+			if (thread.AdditionalMetadata != null && !JObject.FromObject(thread.AdditionalMetadata, Common.LeanSerializer).HasValues)
+				thread.AdditionalMetadata = null;
+
 			foreach (var post in thread.Posts)
+			{
 				post.OriginalObject = null;
+
+				if (post.AdditionalMetadata != null)
+				{
+					if (!JObject.FromObject(post.AdditionalMetadata, Common.LeanSerializer).HasValues)
+						post.AdditionalMetadata = null;
+				}
+
+
+				if (post.Media != null)
+				{
+					if (post.Media.Length == 0)
+						post.Media = null;
+					else
+						foreach (var media in post.Media)
+						{
+							if (media.AdditionalMetadata == null)
+								continue;
+
+							if (!JObject.FromObject(media.AdditionalMetadata, Common.LeanSerializer).HasValues)
+							{
+								media.AdditionalMetadata = null;
+							}
+						}
+				}
+			}
 
 			await ThreadChannel.Writer.WriteAsync(DumpedThread.Create(thread, pointer.Board));
 
