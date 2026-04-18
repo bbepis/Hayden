@@ -38,7 +38,8 @@ namespace Hayden
 		protected List<ThreadPointer> ThreadIdBlacklist { get; } = new();
 		protected SortedList<ThreadPointer, TrackedThread> TrackedThreads { get; } = new();
 
-		protected Dictionary<string, BoardRules> BoardRules { get; } = new();
+		protected string[] Boards { get; private set; }
+		protected ThreadFilter[] Filters { get; private set; }
 
 		protected virtual bool LoopArchive { get; }
 		protected virtual bool ForceSingleRun { get; } = false;
@@ -84,10 +85,8 @@ namespace Hayden
 			ImageCooldownTimespan = TimeSpan.FromSeconds(sourceConfig.ImageDownloadDelay ?? 0.1);
 			BoardUpdateTimespan = TimeSpan.FromSeconds(sourceConfig.BoardScrapeDelay ?? 30);
 
-			foreach (var (board, boardConfig) in sourceConfig.Boards)
-			{
-				BoardRules[board] = new BoardRules(boardConfig);
-			}
+			Boards = sourceConfig.Boards?.Select(x => x.Board).ToArray();
+			Filters = sourceConfig.Filters;
 
 			ImageDownloadClient = new HttpClientProxy(ProxyProvider.CreateNewClient(), "baseconnection/image");
 
@@ -153,12 +152,12 @@ namespace Hayden
 			int currentBoardCount = 0;
 
 			// For each board (maximum of 8 concurrently), retrieve a list of threads that need to be scraped
-			await SourceConfig.Boards.Keys.ForEachAsync(ProxyProvider.ProxyCount, async board =>
+			await SourceConfig.Boards.ForEachAsync(ProxyProvider.ProxyCount, async board =>
 			{
 				token.ThrowIfCancellationRequested();
 
 				// Get a list of threads to be scraped
-				var threads = await GetBoardThreads(token, board, firstRun);
+				var threads = await GetBoardThreads(token, board.Board, firstRun);
 
 				if (threads != null)
 					lock (threadQueue)
@@ -167,7 +166,7 @@ namespace Hayden
 				if (firstRun && SourceConfig.ReadArchive && ApiCapabilities.SupportsArchive)
 				{
 					// Get a list of archived threads to include to be scraped.
-					var archivedThreads = await GetArchivedBoardThreads(token, board);
+					var archivedThreads = await GetArchivedBoardThreads(token, board.Board);
 
 					lock (threadQueue)
 						threadQueue.Add(new MaybeAsyncEnumerable<ThreadPointer>(archivedThreads));
@@ -175,9 +174,9 @@ namespace Hayden
 				
 				var atomicCount = Interlocked.Increment(ref currentBoardCount);
 
-				if (atomicCount % 5 == 0 || atomicCount == SourceConfig.Boards.Count)
+				if (atomicCount % 5 == 0 || atomicCount == SourceConfig.Boards.Length)
 				{
-					Log.Information("{currentBoardCount} / {SourceConfigBoardsCount} boards polled", currentBoardCount, SourceConfig.Boards.Count);
+					Log.Information("{currentBoardCount} / {SourceConfigBoardsCount} boards polled", currentBoardCount, SourceConfig.Boards.Length);
 				}
 			});
 
@@ -545,39 +544,28 @@ namespace Hayden
 
 		#region Filter-related
 
-		private bool ThreadFilter(string subject, string html, string board)
+		protected bool ThreadFilter(string subject, string html, string board, out bool fullImages, out bool thumbnails)
 		{
-			var rules = BoardRules[board];
+			fullImages = ConsumerConfig.FullImagesEnabled;
+			thumbnails = ConsumerConfig.ThumbnailsEnabled;
 
-			var result = false;
-
-			if (rules.AnyBlacklist != null)
-			{
-				if (subject != null && rules.AnyBlacklist.IsMatch(subject))
-					return false;
-
-				if (html != null && rules.AnyBlacklist.IsMatch(html))
-					return false;
-			}
-
-			if (rules.ThreadTitleRegex == null
-				&& rules.OPContentRegex == null
-				&& rules.AnyFilter == null)
+			if (Filters == null || Filters.Length == 0)
 				return true;
 
-			if (!result && rules.ThreadTitleRegex != null && subject != null && rules.ThreadTitleRegex.IsMatch(subject))
-				result = true;
+			var successfulFilter = Filters
+				.Where(x => x.Test(subject, html, board))
+				.Select((x, i) => (x, i))
+				.OrderBy(x => x.x.Board == "*" ? 2 : 1)
+				.ThenBy(x => x.i)
+				.Select(x => x.x)
+				.FirstOrDefault();
 
-			if (!result && rules.OPContentRegex != null
-						&& html != null && rules.OPContentRegex.IsMatch(html))
-				result = true;
+			if (successfulFilter == null)
+					return false;
 
-			if (!result && rules.AnyFilter != null 
-						&& ((html != null && rules.AnyFilter.IsMatch(html))
-							|| (subject != null && rules.AnyFilter.IsMatch(subject))))
-				result = true;
-
-			return result;
+			fullImages = successfulFilter.FullImages ?? ConsumerConfig.FullImagesEnabled;
+			thumbnails = successfulFilter.Thumbnails ?? ConsumerConfig.ThumbnailsEnabled;
+				return true;
 		}
 
 		private bool ThreadIdFilter(ThreadPointer threadPointer)
@@ -740,9 +728,8 @@ namespace Hayden
 						// Preliminary filter
 						var threadList = pagesRequest.Data
 							.Where(x =>
-								ThreadIdFilter(new ThreadPointer(board,
-									x.ThreadId)) // Exclude any that are already blacklisted
-								&& ThreadFilter(x.Subject, x.ContentHtml, board)); // and exclude any that don't conform to our filter(s)
+								ThreadIdFilter(new ThreadPointer(board, x.ThreadId)) // Exclude any that are already blacklisted
+								&& ThreadFilter(x.Subject, x.ContentHtml, board, out _, out _)); // and exclude any that don't conform to our filter(s)
 
 						var threadsToFilter = new List<ThreadOverviewInfo>();
 

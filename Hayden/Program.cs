@@ -129,11 +129,10 @@ public class Program
 				Type = "4chan",
 				ImageboardWebsite = "",
 				DbConnectionString = "",
-				Boards = new Dictionary<string, Config.BoardRulesConfig>
-				{
-					["a"] = new Config.BoardRulesConfig(),
-					["b"] = new Config.BoardRulesConfig(),
-				},
+				Boards = [
+					new BoardConfig("a"),
+					new BoardConfig("b"),
+				],
 				ApiDelay = 1,
 				BoardScrapeDelay = 30,
 				ImageDownloadDelay = 1,
@@ -339,7 +338,7 @@ public class Program
 		if (configFile.Proxy != null)
 		{
 			proxyProvider = new ConfigProxyProvider(configFile.Proxy);
-			await proxyProvider.InitializeAsync(usingConsumer);
+			await proxyProvider.InitializeAsync(usingConsumer, configFile.Source?.ImageboardWebsite);
 			serviceCollection.AddSingleton<ProxyProvider>(proxyProvider);
 		}
 
@@ -352,6 +351,20 @@ public class Program
 		//metricServer.Start();
 		
 		var serviceProvider = serviceCollection.BuildServiceProvider();
+
+		var frontendApi = serviceProvider.GetService<IFrontendApi>();
+
+		if (frontendApi != null && configFile.Source != null && (configFile.Source.Boards?.Length ?? 0) == 0)
+		{
+			await using var rentedClient = await serviceProvider.GetRequiredService<ProxyProvider>().RentHttpClient();
+
+			var apiCapabilities = await frontendApi.DetermineCapabilitiesAsync(rentedClient.Object.Client);
+
+			if (!apiCapabilities.SupportsBoardListing)
+				throw new Exception("Could not automatically identify which boards are available to be scraped");
+
+			configFile.Source.Boards = apiCapabilities.BoardList.Select(x => new BoardConfig(x)).ToArray();
+		}
 
 		if (usingConsumer)
 			await serviceProvider.GetRequiredService<IThreadConsumer>().InitializeAsync();

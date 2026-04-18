@@ -95,10 +95,10 @@ public class ExportArchiver : IArchiver
 	protected IAsyncEnumerable<(ThreadPointer, Thread)> ReadThreads(CancellationToken token, int parallelism)
 	{
 		if (ForwardOnlyImporter != null)
-			return ForwardOnlyImporter.RetrieveThreads(SourceConfig.Boards.Keys.ToArray());
+			return ForwardOnlyImporter.RetrieveThreads(SourceConfig.Boards.Select(x => x.Board).ToArray());
 
-		string[] boardList = SourceConfig.Boards.Keys.Count > 0
-			? SourceConfig.Boards.Keys.ToArray()
+		string[] boardList = SourceConfig.Boards != null && SourceConfig.Boards.Length > 0
+			? SourceConfig.Boards.Select(x => x.Board).ToArray()
 			: Importer.GetBoardList().Result;
 
 		async IAsyncEnumerable<(ThreadPointer, Thread)> InnerEnumerable()

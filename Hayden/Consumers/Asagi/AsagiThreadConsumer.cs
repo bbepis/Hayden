@@ -32,7 +32,7 @@ namespace Hayden.Consumers
 		{
 			ConsumerConfig = consumerConfig;
 			ConnectionPool = new MySqlConnectionPool(consumerConfig.ConnectionString, consumerConfig.SqlConnectionPoolSize ?? 4);
-			Boards = sourceConfig.Boards.Keys;
+			Boards = sourceConfig.Boards.Select(x => x.Board).ToArray();
 		}
 
 		public async Task InitializeAsync()

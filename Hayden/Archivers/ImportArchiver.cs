@@ -111,12 +111,12 @@ namespace Hayden
 
 		protected IAsyncEnumerable<(ThreadPointer, Thread)> ReadThreads(CancellationToken token, int parallelism)
 		{
-			if (ForwardOnlyImporter != null)
-				return ForwardOnlyImporter.RetrieveThreads(SourceConfig.Boards.Keys.ToArray());
+			var boardArray = SourceConfig.Boards.Select(x => x.Board).ToArray();
 
-			string[] boardList = SourceConfig.Boards.Keys.Count > 0
-				? SourceConfig.Boards.Keys.ToArray()
-				: Importer.GetBoardList().Result;
+			if (ForwardOnlyImporter != null)
+				return ForwardOnlyImporter.RetrieveThreads(boardArray);
+
+			string[] boardList = boardArray.Length > 0 ? boardArray : Importer.GetBoardList().Result;
 
 			async IAsyncEnumerable<(ThreadPointer, Thread)> InnerEnumerable()
 			{

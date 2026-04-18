@@ -191,14 +191,19 @@ namespace Hayden
 		}
 	}
 
-	public class BoardRules
+	[JsonConverter(typeof(ThreadFilterConverter))]
+	public class ThreadFilter
 	{
+		public string Board { get; set; }
 		public Regex ThreadTitleRegex { get; set; }
 		public Regex OPContentRegex { get; set; }
 		public Regex AnyFilter { get; set; }
 		public Regex AnyBlacklist { get; set; }
 
-		public BoardRules(BoardRulesConfig config)
+		public bool? FullImages { get; set; }
+		public bool? Thumbnails{ get; set; }
+
+		public ThreadFilter(ThreadFilterConfig config)
 		{
 			if (!string.IsNullOrWhiteSpace(config.ThreadTitleRegexFilter))
 			{
@@ -219,6 +224,45 @@ namespace Hayden
 			{
 				AnyBlacklist = new Regex(config.AnyBlacklist, RegexOptions.IgnoreCase | RegexOptions.Compiled);
 			}
+
+			Board = config.Board;
+			FullImages = config.FullImages;
+			Thumbnails = config.Thumbnails;
+		}
+
+		public bool Test(string subject, string html, string board)
+		{
+			if (board != Board && Board != "*")
+				return false;
+
+			if (AnyBlacklist != null)
+			{
+				if (subject != null && AnyBlacklist.IsMatch(subject))
+					return false;
+
+				if (html != null && AnyBlacklist.IsMatch(html))
+					return false;
+			}
+
+			if (ThreadTitleRegex == null
+			    && OPContentRegex == null
+			    && AnyFilter == null)
+				return true;
+
+			var result = false;
+
+			if (ThreadTitleRegex != null && subject != null && ThreadTitleRegex.IsMatch(subject))
+				result = true;
+
+			if (!result && OPContentRegex != null && html != null && OPContentRegex.IsMatch(html))
+				result = true;
+
+			if (!result && AnyFilter != null
+			            && ((html != null && AnyFilter.IsMatch(html))
+			                || (subject != null && AnyFilter.IsMatch(subject))))
+				result = true;
+
+			return result;
 		}
 	}
 
