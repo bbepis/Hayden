@@ -20,6 +20,7 @@ namespace Hayden
 	public class VichanApi : BaseApi<VichanThread>
 	{
 		public string ImageboardWebsite { get; }
+		private Uri ImageboardUri { get; }
 
 		public VichanApi(SourceConfig sourceConfig) : base(sourceConfig)
 		{
@@ -27,6 +28,8 @@ namespace Hayden
 
 			if (!ImageboardWebsite.EndsWith("/"))
 				ImageboardWebsite += "/";
+
+			ImageboardUri = new Uri(ImageboardWebsite);
 		}
 
 		public override Task<ApiCapabilities> DetermineCapabilitiesAsync(HttpClient client)
@@ -41,7 +44,14 @@ namespace Hayden
 		/// <inheritdoc />
 		protected override Task<ApiResponse<VichanThread>> GetThreadInternal(string board, ulong threadNumber, HttpClient client, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default)
 		{
-			return MakeJsonApiCall<VichanThread>(new Uri($"{ImageboardWebsite}{board}/thread/{threadNumber}.json"), client, modifiedSince, cancellationToken);
+			string url;
+
+			if (ImageboardUri.Host == "lainchan.org")
+				url = $"{ImageboardWebsite}{board}/res/{threadNumber}.json";
+			else
+				url = $"{ImageboardWebsite}{board}/thread/{threadNumber}.json";
+
+			return MakeJsonApiCall<VichanThread>(new Uri(url), client, modifiedSince, cancellationToken);
 		}
 
 		protected override Thread ConvertThread(VichanThread thread, string board)
@@ -189,24 +199,35 @@ namespace Hayden
 		{
 			Media[] media = Array.Empty<Media>();
 
+			// Thumbnails on Vichan are FUCKED. They're typically .jpg, but can be
+			// other formats such as .webp depending on the full file extension, Vichan version & fork
+			// It's not possible to determine this through the API
+			var thumbnailExtension = "jpg";
+
+			if (imageboardUrlRoot.Contains("lainchan.org"))
+				thumbnailExtension = "png";
+
+
 			if (FileMd5 != null)
 			{
+				var isDeleted = TimestampedFilename == "deleted" || TimestampedFilename == "";
+
 				var mediaList = new List<Media>
 				{
 					new Media
 					{
-						FileUrl = $"{imageboardUrlRoot}{board}/src/{TimestampedFilename}{FileExtension}",
-						// Thumbnails on Vichan are FUCKED. They're typically .jpg, but can be
-						// other formats such as .webp depending on the full file extension, Vichan version & fork
-						// It's not possible to determine this through the API
-						ThumbnailUrl = $"{imageboardUrlRoot}{board}/thumb/{TimestampedFilename}.jpg",
+						FileUrl = !isDeleted ? $"{imageboardUrlRoot}{board}/src/{TimestampedFilename}{FileExtension}" : null,
+						ThumbnailUrl = !isDeleted ? $"{imageboardUrlRoot}{board}/thumb/{TimestampedFilename}.{thumbnailExtension}" : null,
+						TimestampedFilename = !isDeleted ? TimestampedFilename : null,
 						Filename = OriginalFilename,
 						FileExtension = FileExtension,
-						ThumbnailExtension = "jpg",
+						ThumbnailExtension = thumbnailExtension,
 						Index = 0,
 						FileSize = FileSize.Value,
-						IsDeleted = false, // Vichan API does not expose this
-						IsSpoiler = null, // Vichan API does not expose this
+						ImageHeight = ImageHeight,
+						ImageWidth = ImageWidth,
+						IsDeleted = isDeleted,
+						IsSpoiler = false, // Vichan API does not expose this
 						Md5Hash = Convert.FromBase64String(FileMd5),
 						OriginalObject = this,
 						AdditionalMetadata = null
@@ -215,23 +236,28 @@ namespace Hayden
 
 				if (ExtraFiles != null)
 				{
-					mediaList.AddRange(ExtraFiles.Select((file, i) => new Media
+					mediaList.AddRange(ExtraFiles.Select((file, i) =>
 					{
-						FileUrl = $"{imageboardUrlRoot}{board}/src/{file.TimestampedFilename}{file.FileExtension}",
-						// Thumbnails on Vichan are FUCKED. They're typically .jpg, but can be
-						// other formats such as .webp depending on the full file extension, Vichan version & fork
-						// It's not possible to determine this through the API
-						ThumbnailUrl = $"{imageboardUrlRoot}{board}/thumb/{file.TimestampedFilename}.jpg",
-						Filename = file.OriginalFilename,
-						FileExtension = file.FileExtension,
-						ThumbnailExtension = "jpg",
-						Index = (byte)(i + 1),
-						FileSize = file.FileSize,
-						IsDeleted = false, // Vichan API does not expose this
-						IsSpoiler = null, // Vichan API does not expose this
-						Md5Hash = Convert.FromBase64String(file.FileMd5),
-						OriginalObject = this,
-						AdditionalMetadata = null
+						isDeleted = TimestampedFilename == "deleted" || TimestampedFilename == "";
+
+						return new Media
+						{
+							FileUrl = !isDeleted ? $"{imageboardUrlRoot}{board}/src/{file.TimestampedFilename}{file.FileExtension}" : null,
+							ThumbnailUrl = !isDeleted ? $"{imageboardUrlRoot}{board}/thumb/{file.TimestampedFilename}.{thumbnailExtension}" : null,
+							TimestampedFilename = !isDeleted ? file.TimestampedFilename : null,
+							Filename = file.OriginalFilename,
+							FileExtension = file.FileExtension,
+							ThumbnailExtension = thumbnailExtension,
+							Index = (byte)(i + 1),
+							FileSize = file.FileSize,
+							ImageHeight = file.ImageHeight,
+							ImageWidth = file.ImageWidth,
+							IsDeleted = isDeleted,
+							IsSpoiler = false, // Vichan API does not expose this
+							Md5Hash = Convert.FromBase64String(file.FileMd5),
+							OriginalObject = this,
+							AdditionalMetadata = null
+						};
 					}));
 				}
 

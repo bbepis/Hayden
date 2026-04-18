@@ -72,22 +72,45 @@ namespace Hayden.Api
 			return (true, httpResponse, ResponseType.Ok);
 		}
 
+		protected virtual async Task<ApiResponse<string>> MakeStringCall(Uri uri, HttpClient client, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default)
+		{
+			return await NetworkPolicies.NetworkStreamPolicy<ApiResponse<string>>(10).ExecuteAsync(async (context, requestToken) =>
+			{
+				var (success, message, responseType) = await MakeApiCallInternal(uri, client, modifiedSince, requestToken);
+
+				try
+				{
+					if (!success)
+						return new ApiResponse<string>(responseType, null);
+
+					await using var responseStream = await message.Content.ReadAsStreamAsync(requestToken);
+					using StreamReader streamReader = new StreamReader(responseStream);
+					
+					return new ApiResponse<string>(ResponseType.Ok, await streamReader.ReadToEndAsync(requestToken));
+				}
+				finally
+				{
+					message.Dispose();
+				}
+			}, new Context(uri.AbsoluteUri), cancellationToken).ConfigureAwait(false);
+		}
+
 		protected virtual async Task<ApiResponse<T>> MakeJsonApiCall<T>(Uri uri, HttpClient client, DateTimeOffset? modifiedSince = null, CancellationToken cancellationToken = default)
 		{
 			return await NetworkPolicies.NetworkStreamPolicy<ApiResponse<T>>(10).ExecuteAsync(async (context, requestToken) =>
 			{
-				var (success, message, responseType) = await MakeApiCallInternal(uri, client, modifiedSince, cancellationToken);
+				var (success, message, responseType) = await MakeApiCallInternal(uri, client, modifiedSince, requestToken);
 
 				try
 				{
 					if (!success)
 						return new ApiResponse<T>(responseType, default);
 
-					await using var responseStream = await message.Content.ReadAsStreamAsync(cancellationToken);
+					await using var responseStream = await message.Content.ReadAsStreamAsync(requestToken);
 					using StreamReader streamReader = new StreamReader(responseStream);
 					using JsonReader reader = new JsonTextReader(streamReader);
 
-					var obj = (await JToken.LoadAsync(reader, cancellationToken)).ToObject<T>();
+					var obj = (await JToken.LoadAsync(reader, requestToken)).ToObject<T>();
 					return new ApiResponse<T>(ResponseType.Ok, obj);
 				}
 				finally
