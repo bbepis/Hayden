@@ -15,6 +15,7 @@ public static class SerilogManager
 	private static readonly ExpressionTemplate expressionTemplate = new(
 		"[{@t:dd-MMM HH:mm:ss} {@l:t5}]{FilterSourceContext(SourceContext)} {@m}{#if IsError()}\n{requestInfo}{#end}\n{@x}",
 		new CultureInfo("en-GB"), theme: TemplateTheme.Code,
+		applyThemeWhenOutputIsRedirected: true,
 		nameResolver: new StaticMemberNameResolver(typeof(LoggingFunctions)));
 
 	public static LoggingLevelSwitch LevelSwitch { get; } = new();
@@ -23,7 +24,7 @@ public static class SerilogManager
 		.Enrich.FromLogContext()
 		.Enrich.WithDemystifiedStackTraces()
 		.MinimumLevel.ControlledBy(LevelSwitch)
-		.WriteTo.Console(expressionTemplate);
+		.WriteTo.Console(expressionTemplate, standardErrorFromLevel: LogEventLevel.Verbose);
 
 	public static void SetLogger()
 	{
