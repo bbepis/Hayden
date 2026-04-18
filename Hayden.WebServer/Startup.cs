@@ -110,6 +110,11 @@ namespace Hayden.WebServer
 		// This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
 		public override void Configure(IApplicationBuilder app)
 		{
+		app.UseForwardedHeaders(new ForwardedHeadersOptions
+		{
+			ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
+		});
+
 			if (Environment.IsDevelopment())
 			{
 				ApiController.RegisterCodes.Add("development", ModeratorRole.Developer);
@@ -118,22 +123,7 @@ namespace Hayden.WebServer
 			else
 			{
 				app.UseExceptionHandler("/Error");
-
-				if (ServerConfig.RedirectToHTTPS)
-				{
-					// The default HSTS value is 30 days. You may want to change this for production scenarios, see https://aka.ms/aspnetcore-hsts.
-					app.UseHsts();
-				}
-			}
-
-			app.UseForwardedHeaders(new ForwardedHeadersOptions
-			{
-				ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
-			});
-
-			if (!Environment.IsDevelopment() && ServerConfig.RedirectToHTTPS)
-			{
-				app.UseHttpsRedirection();
+			app.UseMiddleware<HstsHttpsMiddleware>();
 			}
 
 			string overridePath = Path.GetFullPath("wwwroot-override");
