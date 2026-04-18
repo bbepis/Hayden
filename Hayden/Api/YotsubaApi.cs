@@ -270,14 +270,16 @@ namespace Hayden
 				{
 					new Media
 					{
+						Index = 0,
 						FileUrl = $"https://i.4cdn.org/{board}/{TimestampedFilenameFull}",
 						ThumbnailUrl = $"https://i.4cdn.org/{board}/{TimestampedFilename}s.jpg",
 						Filename = HttpUtility.HtmlDecode(OriginalFilename)?.Trim(),
 						TimestampedFilename = TimestampedFilename?.ToString(),
 						FileExtension = FileExtension,
 						ThumbnailExtension = "jpg",
-						Index = 0,
 						FileSize = FileSize,
+						ImageWidth = ImageWidth,
+						ImageHeight = ImageHeight,
 						IsDeleted = FileDeleted ?? false,
 						IsSpoiler = SpoilerImage ?? false,
 						Md5Hash = Convert.FromBase64String(FileMd5),
